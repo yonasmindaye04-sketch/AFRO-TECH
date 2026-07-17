@@ -1,1 +1,22 @@
-{"name":"","AFRO-TECH":"","icons":[{"src":"/android-chrome-192x192.png","sizes":"192x192","type":"image/png"},{"src":"/android-chrome-512x512.png","sizes":"512x512","type":"image/png"}],"theme_color":"#ffffff","background_color":"#ffffff","display":"standalone"}
+{
+  "name": "AFRO-TECH",
+  "short_name": "AFRO-TECH",
+  "description": "Web Development & Digital Solutions in Addis Ababa, Ethiopia",
+  "icons": [
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": "/",
+  "theme_color": "#09090b",
+  "background_color": "#09090b",
+  "display": "standalone",
+  "orientation": "portrait"
+}

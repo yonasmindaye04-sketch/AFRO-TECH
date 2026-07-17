@@ -16,7 +16,7 @@ export default function Navbar() {
 
   const scrollTo = (id: string) => {
     if (!isHome) {
-      window.location.assign(`/portfolio/#${id}`);
+      window.location.assign(`/#${id}`);
       setMenuOpen(false);
       return;
     }

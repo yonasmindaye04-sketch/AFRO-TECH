@@ -318,6 +318,8 @@ export default function App() {
       {/* ── NAV ──────────────────────────────────────────────── */}
       <Navbar />
 
+      <main id="main-content">
+
       {/* ── HERO — editorial, one column ─────────────────────── */}
       <section id="hero">
         <div className="hero-left">
@@ -394,12 +396,12 @@ export default function App() {
       </section>
 
       {/* ── SHOWCASE ─────────────────────────────────────────── */}
-      <div id="showcase-section">
+      <section id="showcase-section" aria-label="Project showcase">
         <ShowcaseSection />
-      </div>
+      </section>
 
       {/* ── WHAT WE DO — teaser ──────────────────────────────── */}
-      <div id="services-section" className="section-wrap">
+      <section id="services-section" className="section-wrap" aria-label="Our services">
         <div className="section-title" data-reveal="fade-up">What We Do</div>
         <p className="what-we-do-intro" data-reveal="fade-up">
           We design, build, and launch digital systems — from marketing sites to full enterprise platforms.
@@ -420,10 +422,10 @@ export default function App() {
             View All Services & Pricing <i className="fa-solid fa-arrow-right" />
           </Link>
         </div>
-      </div>
+      </section>
 
       {/* ── HOW WE WORK — horizontal map ──────────────────────── */}
-      <div id="process-section" className="process-wrap">
+      <section id="process-section" className="process-wrap" aria-label="Our process">
         <div className="section-title" data-reveal="fade-up">Our Process</div>
         <div className="process-map">
 
@@ -477,10 +479,10 @@ export default function App() {
 
 
         </div>
-      </div>
+      </section>
 
       {/* ── WHY US ──────────────────────────────────────────── */}
-      <div id="whyus-section" className="section-wrap">
+      <section id="whyus-section" className="section-wrap" aria-label="Why choose us">
         <div className="section-title" data-reveal="fade-up">We're not a template shop.</div>
         <div className="whyus-grid" data-stagger>
           {whyUs.map(w => (
@@ -491,10 +493,10 @@ export default function App() {
             </div>
           ))}
         </div>
-      </div>
+      </section>
 
       {/* ── ABOUT ────────────────────────────────────────────── */}
-      <div id="about-section">
+      <section id="about-section" aria-label="About us">
         <div className="section-title" data-reveal="fade-up">About Us</div>
         <div className="about-inner">
           <p className="about-quote">
@@ -504,10 +506,10 @@ export default function App() {
             With years of expertise, we build high-performance websites and apps that help businesses grow locally and globally.
           </div>
         </div>
-      </div>
+      </section>
 
       {/* ── REVIEWS ──────────────────────────────────────────── */}
-      <div id="reviews-section" className="section-wrap">
+      <section id="reviews-section" className="section-wrap" aria-label="Client testimonials">
         <div className="section-title" data-reveal="fade-up">What Our Clients Say</div>
         <div className="testimonials-grid" data-stagger>
           {testimonials.map(t => (
@@ -523,10 +525,10 @@ export default function App() {
             </div>
           ))}
         </div>
-      </div>
+      </section>
 
       {/* ── CONTACT ──────────────────────────────────────────── */}
-      <div id="contact-section">
+      <section id="contact-section" aria-label="Contact us">
         <div className="contact-inner" data-reveal="fade-up">
           <div className="contact-info">
             <div className="section-title">Let's talk.</div>
@@ -578,18 +580,20 @@ export default function App() {
             </form>
           </div>
         </div>
-      </div>
+      </section>
+
+      </main>
 
       {/* ── FOOTER ───────────────────────────────────────────── */}
-      <footer data-reveal="fade-up">
+      <footer data-reveal="fade-up" role="contentinfo">
         <div className="footer-brand">
-          <img src="/logo/Untitled_design-removebg-preview.png" alt="AFRO-TECH" className="logo-img" />
+          <img src="/logo/Untitled_design-removebg-preview.png" alt="AFRO-TECH logo" className="logo-img" loading="lazy" />
           <span className="logo-text">AFRO<span>-TECH</span></span>
         </div>
         <div className="footer-copy">&copy; 2026 &middot; Made in Addis Ababa</div>
         <div className="footer-links">
-          {[['mailto:yonasmindaye04@gmail.com','fa-solid fa-envelope'],['https://t.me/yona64','fa-brands fa-telegram'],['https://wa.me/251910011818','fa-brands fa-whatsapp']].map(([href,icon]) => (
-            <a key={icon} href={href} target={href.startsWith('http')?'_blank':undefined} rel="noopener noreferrer"><i className={icon} /></a>
+          {[['mailto:yonasmindaye04@gmail.com','fa-solid fa-envelope','Email us'],['https://t.me/yona64','fa-brands fa-telegram','Telegram'],['https://wa.me/251910011818','fa-brands fa-whatsapp','WhatsApp']].map(([href,icon,label]) => (
+            <a key={icon} href={href} target={href.startsWith('http')?'_blank':undefined} rel="noopener noreferrer" aria-label={label}><i className={icon} /></a>
           ))}
         </div>
       </footer>

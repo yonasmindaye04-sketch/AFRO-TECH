@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://afro-tech-liard.vercel.app/sitemap.xml
+
+# AFRO-TECH — Web Development & Digital Solutions, Addis Ababa, Ethiopia

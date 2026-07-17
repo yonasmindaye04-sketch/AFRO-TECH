@@ -2,6 +2,27 @@
 @import 'lenis/dist/lenis.css';
 
 /* ══════════════════════════════════════════════════════════════
+   ACCESSIBILITY — Skip to content
+══════════════════════════════════════════════════════════════ */
+.skip-to-content {
+  position:absolute; top:-100%; left:50%; transform:translateX(-50%);
+  background:var(--accent); color:#fff; padding:12px 24px;
+  border-radius:0 0 8px 8px; font-weight:600; font-size:.9rem;
+  z-index:10000; text-decoration:none;
+  transition:top .2s ease;
+}
+.skip-to-content:focus {
+  top:0;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PERFORMANCE — Image defaults
+══════════════════════════════════════════════════════════════ */
+img {
+  content-visibility:auto;
+}
+
+/* ══════════════════════════════════════════════════════════════
    DESIGN TOKENS
 ══════════════════════════════════════════════════════════════ */
 :root[data-theme="dark"] {
@@ -933,6 +954,24 @@ footer .logo-text { font-size:1.15rem; }
   .nav-links a { padding:14px 0; border-bottom:1px solid var(--border); width:100%; font-size:.98rem; }
   .nav-links a::after { display:none; }
 
+  /* ── HERO mobile ── */
+  #hero {
+    flex-direction:column; align-items:center; text-align:center;
+    padding:120px 5% 60px; min-height:auto;
+  }
+  .hero-left { max-width:100%; }
+  .hero-sub { max-width:100%; }
+  .hero-actions { justify-content:center; }
+
+  /* Stack the AfroCoder below the text */
+  .afro-coder-wrap {
+    position:relative !important; right:auto !important; bottom:auto !important;
+    width:280px; height:280px; margin:40px auto 0;
+  }
+
+  /* Hide floating dashboards on mobile — they overlap text */
+  .hero-dashboard-anim { display:none; }
+
   .hero-bg-number { display:none; }
 
   .section-header-row { flex-direction:column; align-items:flex-start; }
@@ -955,7 +994,7 @@ footer .logo-text { font-size:1.15rem; }
   .form-row { grid-template-columns:1fr; }
   .contact-form-wrap { padding:24px 20px; }
   footer { flex-direction:column; text-align:center; }
-  .section-wrap, .process-wrap, #about-section, #contact-section { padding:80px 5%; }
+  .section-wrap, .process-wrap, #about-section, #contact-section { padding:60px 5%; }
   .back-to-top { bottom:20px; right:20px; }
   .toast { bottom:16px; left:16px; right:16px; max-width:none; min-width:0; }
 
@@ -973,14 +1012,36 @@ footer .logo-text { font-size:1.15rem; }
   .ui-chart { height:70px; }
   .ui-table-row { grid-template-columns:1fr auto; }
   .ui-row-id { display:none; }
+
+  /* contact section mobile */
+  .contact-inner { grid-template-columns:1fr; gap:40px; }
+  .contact-left { text-align:center; }
+  .contact-detail { justify-content:center; }
 }
 
 @media(max-width:480px){
-  #hero h1 { font-size:2.2rem; }
+  #hero { padding:100px 5% 40px; }
+  #hero h1 { font-size:2rem; }
+  .hero-sub { font-size:.92rem; }
   .hero-actions { flex-direction:column; width:100%; }
   .btn-primary, .btn-ghost { width:100%; justify-content:center; }
-  .section-title { font-size:1.8rem; }
+  .section-title { font-size:1.6rem; margin-bottom:32px; }
   .stat-number { font-size:2.4rem; }
+
+  /* AfroCoder smaller on tiny phones */
+  .afro-coder-wrap { width:220px; height:220px; }
+
+  /* Tighter sections */
+  .section-wrap, .process-wrap, #about-section, #contact-section { padding:48px 4%; }
+
+  /* About quote smaller */
+  .about-quote { font-size:1.1rem; }
+
+  /* Footer tighter */
+  footer { padding:24px 4% !important; gap:16px; }
+
+  /* Ticker smaller */
+  .ticker-item { padding:0 20px; font-size:.82rem; }
 }
 
 /* ══════════════════════════════════════════════════════════════
