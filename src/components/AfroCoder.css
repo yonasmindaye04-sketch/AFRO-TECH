@@ -1,0 +1,267 @@
+.afro-coder-wrap {
+  position: absolute;
+  right: 2%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 42%;
+  max-width: 520px;
+  min-width: 320px;
+  z-index: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+.afro-svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   COLORS & GRAPHICS
+══════════════════════════════════════════════════════════════ */
+.afro-body {
+  fill: #ffffff;
+  transition: fill 0.3s ease;
+}
+
+.afro-arm {
+  stroke: #ffffff;
+  transition: stroke 0.3s ease;
+}
+
+.afro-face {
+  fill: #8d5524;
+}
+
+.afro-ear {
+  fill: #7a481e;
+  opacity: 0.95;
+}
+
+.afro-eye { fill: #1a1a1a; }
+.afro-eyebrow { stroke: #5a3510; opacity: 0.6; }
+.afro-nostril { fill: #6b3a0f; opacity: 0.45; }
+.afro-mouth { stroke: #6b3a0f; opacity: 0.35; }
+
+[data-theme="light"] .afro-body {
+  fill: #111111;
+}
+
+[data-theme="light"] .afro-arm {
+  stroke: #111111;
+}
+
+/* Ambient Pulse Background */
+.afro-ambient {
+  animation: ambientPulse 4s ease-in-out infinite alternate;
+}
+
+@keyframes ambientPulse {
+  0% { opacity: 0.6; transform: scale(1); }
+  100% { opacity: 0.95; transform: scale(1.04); }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   HEAD & BREATHING ANIMATION
+══════════════════════════════════════════════════════════════ */
+.afro-head-group {
+  transform-origin: 370px 210px;
+  animation: faceBreath 4s ease-in-out infinite;
+}
+
+@keyframes faceBreath {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-1px, 2px); }
+}
+
+.afro-hair {
+  fill: url(#afroGrad);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TYPING ARMS & HANDS COORDINATION
+══════════════════════════════════════════════════════════════ */
+.afro-arm-l {
+  animation: typeL .28s ease infinite alternate;
+}
+
+.afro-arm-r {
+  animation: typeR .35s ease infinite alternate-reverse;
+}
+
+.afro-hand-l-group {
+  animation: typeHandL .28s ease infinite alternate;
+  transform-origin: 210px 325px;
+}
+
+.afro-hand-r-group {
+  animation: typeHandR .35s ease infinite alternate-reverse;
+  transform-origin: 215px 328px;
+}
+
+@keyframes typeL {
+  0%   { d: path('M 335 310 Q 270 335 210 325'); }
+  100% { d: path('M 335 310 Q 270 342 205 328'); }
+}
+
+@keyframes typeR {
+  0%   { d: path('M 355 305 Q 285 325 215 328'); }
+  100% { d: path('M 355 305 Q 285 318 220 322'); }
+}
+
+@keyframes typeHandL {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-5px, 3px) scale(0.98); }
+}
+
+@keyframes typeHandR {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(5px, -6px) scale(1.02); }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CODE EDITOR STYLING
+══════════════════════════════════════════════════════════════ */
+.afro-line-num {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 6.5px;
+  fill: #8b949e;
+  opacity: 0.45;
+}
+
+.afro-code-kw {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 6.5px;
+  fill: #ff7b72;
+  font-weight: 600;
+}
+
+.afro-code-var {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 6.5px;
+  fill: #79c0ff;
+}
+
+.afro-code-op {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 6.5px;
+  fill: #ff7b72;
+}
+
+.afro-code-fn {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 6.5px;
+  fill: #d2a8ff;
+}
+
+.afro-code-br {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 6.5px;
+  fill: #c9d1d9;
+}
+
+.afro-code-str {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 6.5px;
+  fill: #7ee787;
+}
+
+.afro-code-str-val {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 6.5px;
+  fill: #a5d6ff;
+}
+
+/* Cursor indicator */
+.afro-cursor {
+  fill: var(--accent, #2f4d78);
+  animation: cursorBlink 0.9s step-end infinite;
+}
+
+@keyframes cursorBlink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CIRCUIT ACCENTS & FLOATING ELEMENTS
+══════════════════════════════════════════════════════════════ */
+.afro-circuit-line {
+  stroke: var(--accent, #2f4d78);
+  opacity: 0.35;
+}
+
+.afro-circuit-node {
+  fill: var(--accent, #2f4d78);
+  opacity: 0.55;
+}
+
+.afro-float-sym {
+  font-family: 'Space Grotesk', monospace;
+  fill: var(--accent, #2f4d78);
+  font-weight: 700;
+  opacity: 0.4;
+}
+
+.afro-float-1 { font-size: 18px; animation: afFloat1 6s ease-in-out infinite; }
+.afro-float-2 { font-size: 16px; animation: afFloat2 5s ease-in-out infinite; }
+.afro-float-3 { font-size: 14px; animation: afFloat3 7s ease-in-out infinite; }
+.afro-float-4 { font-size: 16px; animation: afFloat4 5.5s ease-in-out infinite; }
+.afro-float-5 { animation: afFloat5 4s ease-in-out infinite; }
+.afro-float-6 { animation: afFloat6 6s ease-in-out infinite; }
+.afro-float-7 { font-size: 14px; animation: afFloat7 8s ease-in-out infinite; }
+
+@keyframes afFloat1 {
+  0%, 100% { transform: translate(0, 0); opacity: 0.4; }
+  50%      { transform: translate(-8px, -18px); opacity: 0.65; }
+}
+@keyframes afFloat2 {
+  0%, 100% { transform: translate(0, 0); opacity: 0.35; }
+  50%      { transform: translate(6px, 12px); opacity: 0.55; }
+}
+@keyframes afFloat3 {
+  0%, 100% { transform: translate(0, 0); opacity: 0.4; }
+  50%      { transform: translate(-5px, -14px); opacity: 0.6; }
+}
+@keyframes afFloat4 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); opacity: 0.35; }
+  50%      { transform: translate(10px, -10px) rotate(10deg); opacity: 0.55; }
+}
+@keyframes afFloat5 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.4; }
+  50%      { transform: translate(4px, -8px) scale(1.3); opacity: 0.65; }
+}
+@keyframes afFloat6 {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.35; }
+  50%      { transform: translate(-6px, 6px) scale(1.2); opacity: 0.55; }
+}
+@keyframes afFloat7 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); opacity: 0.3; }
+  50%      { transform: translate(5px, -12px) rotate(20deg); opacity: 0.5; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   RESPONSIVE DESIGN
+══════════════════════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  .afro-coder-wrap {
+    width: 35%;
+    min-width: 260px;
+    opacity: 0.8;
+  }
+}
+
+@media (max-width: 768px) {
+  .afro-coder-wrap {
+    position: relative;
+    right: auto;
+    top: auto;
+    transform: none;
+    width: 60%;
+    max-width: 280px;
+    min-width: 200px;
+    margin: 40px auto 0;
+    opacity: 0.75;
+  }
+}
