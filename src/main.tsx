@@ -14,7 +14,7 @@ if (!rootElement) {
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <ThemeProvider>
-      <BrowserRouter basename="/portfolio">
+      <BrowserRouter>
         <Routes>
           <Route path="/" element={<App />} />
           <Route path="/services" element={<ServicesPage />} />
