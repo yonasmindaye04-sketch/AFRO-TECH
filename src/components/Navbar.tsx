@@ -37,7 +37,7 @@ export default function Navbar() {
     <>
       <nav>
         <Link to="/" className="logo" style={{ textDecoration: 'none', cursor: 'pointer' }}>
-          <img src="/portfolio/logo/Untitled_design-removebg-preview.png" alt="AFRO-TECH" className="logo-img" />
+          <img src="/logo/Untitled_design-removebg-preview.png" alt="AFRO-TECH" className="logo-img" />
           <span className="logo-text">AFRO<span>-TECH</span></span>
         </Link>
 

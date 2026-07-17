@@ -177,7 +177,7 @@ export default function ServicesPage() {
       {/* ── FOOTER ─────────────────────────────────────────── */}
       <footer>
           <div className="footer-brand">
-          <img src="/portfolio/logo/Untitled_design-removebg-preview.png" alt="AFRO-TECH" className="logo-img" />
+          <img src="/logo/Untitled_design-removebg-preview.png" alt="AFRO-TECH" className="logo-img" />
           <span className="logo-text">AFRO<span>-TECH</span></span>
         </div>
         <div className="footer-copy">&copy; 2026 &middot; Made in Addis Ababa</div>
