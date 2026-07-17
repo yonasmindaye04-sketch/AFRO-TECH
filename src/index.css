@@ -363,7 +363,6 @@ nav {
 }
 
 /* table */
-.ui-table-area { }
 .ui-table-header {
   font-size:.75rem; color:var(--text-dim); font-weight:500; margin-bottom:8px;
   text-transform:uppercase; letter-spacing:.04em;
@@ -613,7 +612,7 @@ nav {
 .pm-bottom { padding-top:14px; }
 
 /* Empty slot — holds space where no card appears */
-.pm-spacer { /* intentionally empty */ }
+/* .pm-spacer removed for linting */
 
 /* Content cards */
 .pm-card {
