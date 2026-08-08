@@ -37,11 +37,11 @@ export default function Navbar() {
     <>
       <nav>
         <Link to="/" className="logo" style={{ textDecoration: 'none', cursor: 'pointer' }}>
-          <img src="/logo/Untitled_design-removebg-preview.png" alt="AFRO-TECH" className="logo-img" />
+          <img src="/logo/Untitled_design-removebg-preview.png" alt="AFRO-TECH logo" className="logo-img" width="40" height="40" />
           <span className="logo-text">AFRO<span>-TECH</span></span>
         </Link>
 
-        <div className={`nav-links ${menuOpen ? 'open' : ''}`}>
+        <div id="nav-links" className={`nav-links ${menuOpen ? 'open' : ''}`} role="navigation" aria-label="Main navigation">
           {navItems.map(([id, label]) => (
             <a key={id} href={`#${id}`} onClick={() => scrollTo(id)}>{label}</a>
           ))}
@@ -55,15 +55,15 @@ export default function Navbar() {
         </div>
 
         <div className="nav-right">
-          <button className="theme-toggle" onClick={toggle} aria-label="Toggle theme">
-            <i className={dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon'} />
+          <button className="theme-toggle" onClick={toggle} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
+            <i className={dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon'} aria-hidden="true" />
           </button>
-          <button className="hamburger" onClick={() => setMenuOpen(o => !o)} aria-label="Menu">
-            <i className={menuOpen ? 'fa-solid fa-xmark' : 'fa-solid fa-bars'} />
+          <button className="hamburger" onClick={() => setMenuOpen(o => !o)} aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen} aria-controls="nav-links">
+            <i className={menuOpen ? 'fa-solid fa-xmark' : 'fa-solid fa-bars'} aria-hidden="true" />
           </button>
         </div>
       </nav>
-      {menuOpen && <div className="nav-overlay" onClick={() => setMenuOpen(false)} />}
+      {menuOpen && <div className="nav-overlay" onClick={() => setMenuOpen(false)} aria-hidden="true" />}
     </>
   );
 }

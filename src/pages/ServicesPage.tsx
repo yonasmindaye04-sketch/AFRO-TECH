@@ -144,13 +144,13 @@ export default function ServicesPage() {
               <div key={f.name} className="comparison-row" style={{ animationDelay: `${i * 40}ms` }}>
                 <div className="comparison-col comp-feature">{f.name}</div>
                 <div className="comparison-col comp-tier">
-                  {f.starter ? <i className="fa-solid fa-check comp-check" style={{ color: tierColors.starter }} /> : <i className="fa-solid fa-minus comp-dash" />}
+                  {f.starter ? <i className="fa-solid fa-check comp-check" style={{ color: tierColors.starter }} aria-hidden="true" /> : <i className="fa-solid fa-minus comp-dash" aria-hidden="true" />}
                 </div>
                 <div className="comparison-col comp-tier comp-popular">
-                  {f.pro ? <i className="fa-solid fa-check comp-check" style={{ color: tierColors.pro }} /> : <i className="fa-solid fa-minus comp-dash" />}
+                  {f.pro ? <i className="fa-solid fa-check comp-check" style={{ color: tierColors.pro }} aria-hidden="true" /> : <i className="fa-solid fa-minus comp-dash" aria-hidden="true" />}
                 </div>
                 <div className="comparison-col comp-tier">
-                  {f.enterprise ? <i className="fa-solid fa-check comp-check" style={{ color: tierColors.enterprise }} /> : <i className="fa-solid fa-minus comp-dash" />}
+                  {f.enterprise ? <i className="fa-solid fa-check comp-check" style={{ color: tierColors.enterprise }} aria-hidden="true" /> : <i className="fa-solid fa-minus comp-dash" aria-hidden="true" />}
                 </div>
               </div>
             ))}
@@ -174,21 +174,21 @@ export default function ServicesPage() {
         </div>
       </div>
 
-      {/* ── FOOTER ─────────────────────────────────────────── */}
+{/* ── FOOTER ─────────────────────────────────────────── */}
       <footer>
-          <div className="footer-brand">
-          <img src="/logo/Untitled_design-removebg-preview.png" alt="AFRO-TECH" className="logo-img" />
+        <div className="footer-brand">
+          <img src="/logo/Untitled_design-removebg-preview.png" alt="AFRO-TECH" className="logo-img" width="40" height="40" />
           <span className="logo-text">AFRO<span>-TECH</span></span>
         </div>
         <div className="footer-copy">&copy; 2026 &middot; Made in Addis Ababa</div>
         <div className="footer-links">
           {[
-            ['mailto:yonasmindaye04@gmail.com', 'fa-solid fa-envelope'],
-            ['https://t.me/yona64', 'fa-brands fa-telegram'],
-            ['https://wa.me/251910011818', 'fa-brands fa-whatsapp'],
-          ].map(([href, icon]) => (
-            <a key={icon} href={href} target={href.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer">
-              <i className={icon} />
+            ['mailto:yonasmindaye04@gmail.com', 'fa-solid fa-envelope', 'Email us'],
+            ['https://t.me/yona64', 'fa-brands fa-telegram', 'Telegram'],
+            ['https://wa.me/251910011818', 'fa-brands fa-whatsapp', 'WhatsApp'],
+          ].map(([href, icon, label]) => (
+            <a key={icon} href={href} target={href.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer" aria-label={label}>
+              <i className={icon} aria-hidden="true" />
             </a>
           ))}
         </div>

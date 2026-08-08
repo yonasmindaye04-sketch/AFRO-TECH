@@ -1,0 +1,9 @@
+# AFRO-TECH
+
+AFRO-TECH is an Addis Ababa-based digital studio building websites, ERP systems, POS platforms, and custom software.
+
+## Links
+
+- [Home](https://afro-tech-liard.vercel.app/)
+- [Services & Pricing](https://afro-tech-liard.vercel.app/services)
+- [Contact us via email](mailto:yonasmindaye04@gmail.com)

@@ -148,68 +148,82 @@ function ShowcaseSection() {
   const [animKey, setAnimKey] = useState(0);
   const panel = showcase[active];
 
-  const handleTab = (i:number) => {
+  const handleTab = (i: number) => {
     if (i === active) return;
     setActive(i);
     setAnimKey(k => k + 1);
   };
 
   return (
-    <div className="showcase-wrap">
+    <div className="showcase-wrap" role="region" aria-label="Project showcase">
       <div className="showcase-inner">
         <div className="section-title" data-reveal="fade-up">What we've built</div>
 
-        <div className="showcase-tabs">
-          {showcase.map((p,i) => (
-            <button key={p.name} className={`showcase-tab ${i===active?'active':''}`} onClick={() => handleTab(i)}>
-              <i className={p.icon} /> {p.name}
+        <div className="showcase-tabs" role="tablist" aria-label="Project categories">
+          {showcase.map((p, i) => (
+            <button
+              key={p.name}
+              role="tab"
+              aria-selected={i === active}
+              aria-controls={`panel-${p.name.replace(/\s+/g, '-')}`}
+              id={`tab-${p.name.replace(/\s+/g, '-')}`}
+              className={`showcase-tab ${i === active ? 'active' : ''}`}
+              onClick={() => handleTab(i)}
+            >
+              <i className={p.icon} aria-hidden="true" /> {p.name}
             </button>
           ))}
         </div>
 
-        <div className="showcase-panel" key={animKey}>
+        <div
+          className="showcase-panel"
+          key={animKey}
+          role="tabpanel"
+          id={`panel-${panel.name.replace(/\s+/g, '-')}`}
+          aria-labelledby={`tab-${panel.name.replace(/\s+/g, '-')}`}
+        >
           <div className="panel-chrome">
-            <div className="panel-dots">
+            <div className="panel-dots" aria-hidden="true">
               <span /><span /><span />
             </div>
             <div className="panel-title">{panel.name} — AFRO-TECH</div>
           </div>
           <div className="panel-body">
-            <div className="ui-sidebar">
-              {panel.sidebar.map((item,j) => (
-                <div key={item} className={`ui-nav-item ${j===0?'active':''}`}>
-                  <span className="ui-nav-dot" style={{ background:j===0?panel.color:'var(--border)' }} />
+            <div className="ui-sidebar" aria-label="Navigation">
+              {panel.sidebar.map((item, j) => (
+                <div key={item} className={`ui-nav-item ${j === 0 ? 'active' : ''}`} role="button" tabIndex={0}>
+                  <span className="ui-nav-dot" style={{ background: j === 0 ? panel.color : 'var(--border)' }} aria-hidden="true" />
                   {item}
                 </div>
               ))}
             </div>
             <div className="ui-main">
               <div className="ui-stats-row">
-                {panel.stats.map((s,j) => (
-                  <div key={s.l} className="ui-stat-card" style={{ animationDelay:`${j*80}ms` }}>
+                {panel.stats.map((s, j) => (
+                  <div key={s.l} className="ui-stat-card" style={{ animationDelay: `${j * 80}ms` }}>
                     <div className="ui-stat-label">{s.l}</div>
                     <div className="ui-stat-value">{s.v}</div>
-                    <div className="ui-stat-change" style={{ color:panel.color }}>{s.c}</div>
+                    <div className="ui-stat-change" style={{ color: panel.color }}>{s.c}</div>
                   </div>
                 ))}
               </div>
               <div className="ui-chart-area">
                 <div className="ui-chart-label">Monthly Overview</div>
-                <div className="ui-chart">
-                  {panel.bars.map((h,j) => (
+                <div className="ui-chart" role="img" aria-label={`${panel.name} monthly chart`}>
+                  {panel.bars.map((h, j) => (
                     <div key={j} className="ui-bar-col">
-                      <div className="ui-bar" style={{ height:`${h}%`, background:panel.color, animationDelay:`${j*60}ms` }} />
+                      <div className="ui-bar" style={{ height: `${h}%`, background: panel.color, animationDelay: `${j * 60}ms` }} />
                     </div>
                   ))}
                 </div>
               </div>
               <div className="ui-table-area">
                 <div className="ui-table-header">Recent Activity</div>
-                {panel.rows.map((r,j) => (
-                  <div key={r.id} className="ui-table-row" style={{ animationDelay:`${j*100+200}ms` }}>
+                {panel.rows.map((r, j) => (
+                  <div key={r.id} className="ui-table-row" style={{ animationDelay: `${j * 100 + 200}ms` }}>
                     <span className="ui-row-id">{r.id}</span>
                     <span className="ui-row-detail">{r.detail}</span>
-                    <span className="ui-row-status" style={{ color:r.sc }}>{r.status}</span>
+                    <span className="ui-row-status" style={{ color: r.sc }}>{r.status}</span>
                   </div>
                 ))}
               </div>
@@ -246,19 +260,13 @@ export default function App() {
   /* Lenis */
   useEffect(() => {
     const lenis = new Lenis({ duration:1.2, easing:(t:number)=>Math.min(1,1.001-Math.pow(2,-10*t)) });
-    const raf = (time:number) => { lenis.raf(time); requestAnimationFrame(raf); };
-    requestAnimationFrame(raf);
-    return () => lenis.destroy();
+    let rafId: number;
+    const raf = (time:number) => { lenis.raf(time); rafId = requestAnimationFrame(raf); };
+    rafId = requestAnimationFrame(raf);
+    return () => { lenis.destroy(); cancelAnimationFrame(rafId); };
   }, []);
 
-  /* FontAwesome */
-  useEffect(() => {
-    if(document.getElementById('fa-cdn')) return;
-    const l = document.createElement('link');
-    l.id='fa-cdn'; l.rel='stylesheet';
-    l.href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css';
-    document.head.appendChild(l);
-  }, []);
+
 
   /* Scroll progress + back-to-top */
   useEffect(() => {
@@ -409,8 +417,8 @@ export default function App() {
         <div className="what-we-do-grid" data-stagger>
           {whatWeDo.map(item => (
             <div key={item.title} className="category-card" data-reveal="fade-up">
-              <div className="category-card-icon" style={{ color:item.color }}>
-                <i className={item.icon} style={{ color:item.color }} />
+              <div className="category-card-icon" style={{ color:item.color }} aria-hidden="true">
+                <i className={item.icon} style={{ color:item.color }} aria-hidden="true" />
               </div>
               <div className="category-card-title">{item.title}</div>
               <div className="category-card-desc">{item.desc}</div>
@@ -419,7 +427,7 @@ export default function App() {
         </div>
         <div className="what-we-do-cta">
           <Link to="/services" className="btn-primary">
-            View All Services & Pricing <i className="fa-solid fa-arrow-right" />
+            View All Services & Pricing <i className="fa-solid fa-arrow-right" aria-hidden="true" />
           </Link>
         </div>
       </section>
@@ -430,7 +438,7 @@ export default function App() {
         <div className="process-map">
 
           {/* SVG string connecting the boxes directly */}
-          <svg className="pm-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
+          <svg className="pm-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             <path
               className="pm-path"
               d="M 12.5 25 
@@ -443,14 +451,14 @@ export default function App() {
           {/* TOP: steps 01 and 03 sit above the line */}
           <div className="pm-row pm-top">
             <div className="pm-card" data-reveal="scale-in">
-              <div className="pm-icon"><i className="fa-solid fa-comments" /></div>
+              <div className="pm-icon" aria-hidden="true"><i className="fa-solid fa-comments" aria-hidden="true" /></div>
               <div className="pm-num">01</div>
               <div className="pm-title">{process_steps[0].title}</div>
               <div className="pm-desc">{process_steps[0].desc}</div>
             </div>
             <div className="pm-spacer" />
             <div className="pm-card" data-reveal="scale-in">
-              <div className="pm-icon"><i className="fa-solid fa-code" /></div>
+              <div className="pm-icon" aria-hidden="true"><i className="fa-solid fa-code" aria-hidden="true" /></div>
               <div className="pm-num">03</div>
               <div className="pm-title">{process_steps[2].title}</div>
               <div className="pm-desc">{process_steps[2].desc}</div>
@@ -462,14 +470,14 @@ export default function App() {
           <div className="pm-row pm-bottom">
             <div className="pm-spacer" />
             <div className="pm-card" data-reveal="scale-in">
-              <div className="pm-icon"><i className="fa-solid fa-pen-ruler" /></div>
+              <div className="pm-icon" aria-hidden="true"><i className="fa-solid fa-pen-ruler" aria-hidden="true" /></div>
               <div className="pm-num">02</div>
               <div className="pm-title">{process_steps[1].title}</div>
               <div className="pm-desc">{process_steps[1].desc}</div>
             </div>
             <div className="pm-spacer" />
             <div className="pm-card" data-reveal="scale-in">
-              <div className="pm-icon"><i className="fa-solid fa-rocket" /></div>
+              <div className="pm-icon" aria-hidden="true"><i className="fa-solid fa-rocket" aria-hidden="true" /></div>
               <div className="pm-num">04</div>
               <div className="pm-title">{process_steps[3].title}</div>
               <div className="pm-desc">{process_steps[3].desc}</div>
@@ -487,7 +495,7 @@ export default function App() {
         <div className="whyus-grid" data-stagger>
           {whyUs.map(w => (
             <div key={w.title} className="whyus-card" data-reveal="fade-up">
-              <div className="whyus-card-icon"><i className={w.icon} /></div>
+              <div className="whyus-card-icon" aria-hidden="true"><i className={w.icon} aria-hidden="true" /></div>
               <div className="whyus-card-title">{w.title}</div>
               <div className="whyus-card-desc">{w.desc}</div>
             </div>
@@ -516,7 +524,7 @@ export default function App() {
             <div key={t.name} className="testimonial-card" data-reveal="fade-up">
               <p className="testimonial-text">"{t.text}"</p>
               <div className="testimonial-author">
-                <div className="author-avatar">{t.initials}</div>
+                <div className="author-avatar" aria-hidden="true">{t.initials}</div>
                 <div>
                   <div className="author-name">{t.name}</div>
                   <div className="author-title">{t.title}</div>
@@ -541,12 +549,12 @@ export default function App() {
               { href:'mailto:yonasmindaye04@gmail.com',  cls:'email-icon',    icon:'fa-solid fa-envelope',  label:'Email',    val:'yonasmindaye04@gmail.com', ext:false },
             ].map(c => (
               <a key={c.label} href={c.href} target={c.ext?'_blank':undefined} rel="noopener noreferrer" className="contact-detail">
-                <div className={`contact-detail-icon ${c.cls}`}><i className={c.icon} /></div>
+                <div className={`contact-detail-icon ${c.cls}`} aria-hidden="true"><i className={c.icon} aria-hidden="true" /></div>
                 <div className="contact-detail-text"><strong>{c.label}</strong><span>{c.val}</span></div>
               </a>
             ))}
             <div className="contact-detail no-link">
-              <div className="contact-detail-icon location-icon"><i className="fa-solid fa-location-dot" /></div>
+              <div className="contact-detail-icon location-icon" aria-hidden="true"><i className="fa-solid fa-location-dot" aria-hidden="true" /></div>
               <div className="contact-detail-text"><strong>Location</strong><span>Addis Ababa, Ethiopia</span></div>
             </div>
           </div>
@@ -557,12 +565,12 @@ export default function App() {
                 <div className={`form-group ${fieldErrors.name ? 'has-error' : ''}`}>
                   <label htmlFor="name">Full Name <span className="req">*</span></label>
                   <input id="name" type="text" name="name" placeholder="Nahom Eshetu" value={formData.name} onChange={handleChange} className={fieldErrors.name ? 'input-error' : ''} />
-                  {fieldErrors.name && <span className="field-error"><i className="fa-solid fa-triangle-exclamation" /> {fieldErrors.name}</span>}
+                  {fieldErrors.name && <span className="field-error"><i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> {fieldErrors.name}</span>}
                 </div>
                 <div className={`form-group ${fieldErrors.email ? 'has-error' : ''}`}>
                   <label htmlFor="email">Email <span className="req">*</span></label>
                   <input id="email" type="email" name="email" placeholder="you@example.com" value={formData.email} onChange={handleChange} className={fieldErrors.email ? 'input-error' : ''} />
-                  {fieldErrors.email && <span className="field-error"><i className="fa-solid fa-triangle-exclamation" /> {fieldErrors.email}</span>}
+                  {fieldErrors.email && <span className="field-error"><i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> {fieldErrors.email}</span>}
                 </div>
               </div>
               <div className="form-group">
@@ -572,7 +580,7 @@ export default function App() {
               <div className={`form-group ${fieldErrors.message ? 'has-error' : ''}`}>
                 <label htmlFor="message">What are you building? <span className="req">*</span></label>
                 <textarea id="message" name="message" rows={5} placeholder="Tell us about your project, goals, and timeline..." value={formData.message} onChange={handleChange} className={fieldErrors.message ? 'input-error' : ''} />
-                {fieldErrors.message && <span className="field-error"><i className="fa-solid fa-triangle-exclamation" /> {fieldErrors.message}</span>}
+                {fieldErrors.message && <span className="field-error"><i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> {fieldErrors.message}</span>}
               </div>
               <button type="submit" className="btn-primary btn-full" disabled={submitting} style={{ opacity:submitting?0.7:1 }}>
                 {submitting ? <>Sending…</> : <>Send Message</>}
@@ -587,7 +595,7 @@ export default function App() {
       {/* ── FOOTER ───────────────────────────────────────────── */}
       <footer data-reveal="fade-up" role="contentinfo">
         <div className="footer-brand">
-          <img src="/logo/Untitled_design-removebg-preview.png" alt="AFRO-TECH logo" className="logo-img" loading="lazy" />
+          <img src="/logo/Untitled_design-removebg-preview.png" alt="AFRO-TECH logo" className="logo-img" width="40" height="40" loading="lazy" />
           <span className="logo-text">AFRO<span>-TECH</span></span>
         </div>
         <div className="footer-copy">&copy; 2026 &middot; Made in Addis Ababa</div>
