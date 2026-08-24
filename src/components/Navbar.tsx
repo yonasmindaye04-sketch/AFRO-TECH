@@ -52,6 +52,13 @@ export default function Navbar() {
           >
             Services
           </Link>
+          <Link
+            to="/products"
+            className={location.pathname === '/products' ? 'active' : ''}
+            onClick={() => setMenuOpen(false)}
+          >
+            Products
+          </Link>
         </div>
 
         <div className="nav-right">

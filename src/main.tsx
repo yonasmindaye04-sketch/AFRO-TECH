@@ -1,9 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { ThemeProvider } from './context/ThemeContext'
-import App from './app.tsx'
-import ServicesPage from './pages/ServicesPage.tsx'
+import Router from './Router.tsx'
 import './index.css'
 
 const rootElement = document.getElementById('root')
@@ -13,13 +10,6 @@ if (!rootElement) {
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <ThemeProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<App />} />
-          <Route path="/services" element={<ServicesPage />} />
-        </Routes>
-      </BrowserRouter>
-    </ThemeProvider>
+    <Router />
   </React.StrictMode>
 )
