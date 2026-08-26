@@ -11,7 +11,14 @@ interface Product {
   sell_price: string
   cost_price: string
   low_stock_threshold: number
+  barcode?: string | null
+  sell_by_pill: boolean
+  pills_per_unit: number
+  default_margin: string
   stock: number
+  sellable_stock: number
+  expired_qty: number
+  display_stock: number
   expiring_soon: number
 }
 interface FormState {
@@ -22,9 +29,12 @@ interface FormState {
   cost_price: string
   low_stock_threshold: string
   barcode: string
+  sell_by_pill: boolean
+  pills_per_unit: string
+  default_margin: string
 }
 
-const EMPTY: FormState = { name: '', category: '', unit: 'pcs', sell_price: '', cost_price: '', low_stock_threshold: '10', barcode: '' }
+const EMPTY: FormState = { name: '', category: '', unit: 'pcs', sell_price: '', cost_price: '', low_stock_threshold: '10', barcode: '', sell_by_pill: false, pills_per_unit: '1', default_margin: '25' }
 
 export default function Products(): JSX.Element {
   const { data, loading, reload } = useApiData<{ products: Product[] }>('/retail/products')
@@ -47,7 +57,10 @@ export default function Products(): JSX.Element {
       sell_price: p.sell_price,
       cost_price: p.cost_price,
       low_stock_threshold: String(p.low_stock_threshold),
-      barcode: (p as unknown as { barcode?: string }).barcode ?? '',
+      barcode: p.barcode ?? '',
+      sell_by_pill: p.sell_by_pill,
+      pills_per_unit: String(p.pills_per_unit),
+      default_margin: String(Number(p.default_margin)),
     })
     setError(null)
     setModal({ open: true, editing: p })
@@ -65,6 +78,9 @@ export default function Products(): JSX.Element {
       cost_price: Number(form.cost_price) || 0,
       low_stock_threshold: Number(form.low_stock_threshold) || 0,
       barcode: form.barcode.trim() || null,
+      sell_by_pill: form.sell_by_pill,
+      pills_per_unit: Math.max(1, Number(form.pills_per_unit) || 1),
+      default_margin: Number(form.default_margin) || 25,
     }
     try {
       if (modal.editing) await api.patch(`/retail/products/${modal.editing.id}`, body)
@@ -124,14 +140,32 @@ export default function Products(): JSX.Element {
             {
               key: 'stock',
               header: 'Stock',
-              render: (p) =>
-                p.stock <= p.low_stock_threshold ? (
-                  <Badge tone="bad">{p.stock} left</Badge>
-                ) : (
+              render: (p) => {
+                const sellable = p.sell_by_pill ? p.display_stock : p.sellable_stock
+                return (
                   <span>
-                    {p.stock} {p.unit}
+                    {p.stock <= p.low_stock_threshold ? (
+                      <Badge tone="bad">
+                        {p.sell_by_pill ? `${sellable} pills` : `${sellable} ${p.unit}`} left
+                      </Badge>
+                    ) : (
+                      <>
+                        {p.sell_by_pill ? `${sellable} pills` : `${sellable} ${p.unit}`}
+                        {p.sell_by_pill && (
+                          <small style={{ display: 'block', color: 'var(--text-dim)' }}>
+                            ≈ {Math.floor(sellable / p.pills_per_unit)} {p.unit} + {sellable % p.pills_per_unit} pills
+                          </small>
+                        )}
+                      </>
+                    )}
+                    {p.expired_qty > 0 && (
+                      <small style={{ display: 'block', color: '#e07a7a' }} title="Expired stock cannot be sold — write it off from the Expiry page">
+                        +{p.expired_qty} expired (write off)
+                      </small>
+                    )}
                   </span>
-                ),
+                )
+              },
             },
             {
               key: 'exp',
@@ -161,6 +195,28 @@ export default function Products(): JSX.Element {
           </Field>
           <Field label="Barcode" hint="Scan it in the POS to add to cart instantly">
             <input className="pl-input" maxLength={60} value={form.barcode} onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))} placeholder="Scan or type…" />
+          </Field>
+          <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 14 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.9rem', fontWeight: 600, cursor: 'pointer' }}>
+              <input type="checkbox" checked={form.sell_by_pill} onChange={(e) => setForm((f) => ({ ...f, sell_by_pill: e.target.checked }))} />
+              Sell by pill / tablet
+            </label>
+            <p style={{ color: 'var(--text-dim)', fontSize: '.8rem', margin: '6px 0 12px' }}>
+              Lets cashiers sell loose pills out of a pack. Stock is counted in pills, and packs are broken automatically when needed.
+            </p>
+            {form.sell_by_pill && (
+              <div className="pl-grid-2">
+                <Field label={`Pills per ${form.unit || 'unit'}`} hint="e.g. 30 pills per pack">
+                  <input className="pl-input" type="number" min="1" required value={form.pills_per_unit} onChange={(e) => setForm((f) => ({ ...f, pills_per_unit: e.target.value }))} />
+                </Field>
+                <Field label="Price per pill (ETB)" hint={`From ${form.sell_price || 0} ÷ ${form.pills_per_unit || 1}`}>
+                  <input className="pl-input" value={((Number(form.sell_price) || 0) / Math.max(1, Number(form.pills_per_unit) || 1)).toFixed(2)} readOnly disabled />
+                </Field>
+              </div>
+            )}
+          </div>
+          <Field label="Default margin %" hint="Preselected margin in the POS — price = cost × (1 + margin)">
+            <input className="pl-input" type="number" min="0" step="0.5" value={form.default_margin} onChange={(e) => setForm((f) => ({ ...f, default_margin: e.target.value }))} />
           </Field>
           <div className="pl-grid-2">
             <Field label="Category">

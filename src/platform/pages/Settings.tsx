@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
-import { Card, Field, OkBox } from '../ui'
+import { Card, Field, OkBox, Spinner } from '../ui'
 
 interface TenantSettings {
   business_phone?: string
@@ -10,6 +10,13 @@ interface TenantSettings {
   currency?: string
   tax_rate?: number
   academic_year?: string
+  margin_presets?: string
+}
+interface TelegramConfig {
+  enabled: boolean
+  bot_username: string | null
+  linked: boolean
+  app_url: string
 }
 
 export default function Settings(): JSX.Element {
@@ -29,13 +36,50 @@ export default function Settings(): JSX.Element {
   const [pwError, setPwError] = useState<string | null>(null)
   const [pwOk, setPwOk] = useState(false)
 
+  // Telegram bot + Mini App linking
+  const [tgCfg, setTgCfg] = useState<TelegramConfig | null>(null)
+  const [tgCode, setTgCode] = useState<string | null>(null)
+  const [tgBusy, setTgBusy] = useState(false)
+  const [tgError, setTgError] = useState<string | null>(null)
+
   useEffect(() => {
     api
       .get<{ settings: TenantSettings }>('/tenant/settings')
       .then((r) => setSettings(r.settings))
       .catch(() => undefined)
       .finally(() => setLoaded(true))
+    api
+      .get<TelegramConfig>('/telegram/config')
+      .then(setTgCfg)
+      .catch(() => setTgCfg({ enabled: false, bot_username: null, linked: false, app_url: '' }))
   }, [])
+
+  const generateTgCode = async (): Promise<void> => {
+    setTgBusy(true)
+    setTgError(null)
+    try {
+      const r = await api.post<{ code: string; bot_username: string | null }>('/telegram/link-code')
+      setTgCode(r.code)
+      if (r.bot_username && !tgCfg?.bot_username) setTgCfg((c) => (c ? { ...c, bot_username: r.bot_username } : c))
+    } catch (err) {
+      setTgError(err instanceof Error ? err.message : 'Could not generate code')
+    } finally {
+      setTgBusy(false)
+    }
+  }
+
+  const unlinkTelegram = async (): Promise<void> => {
+    setTgBusy(true)
+    try {
+      await api.post('/telegram/unlink')
+      setTgCfg((c) => (c ? { ...c, linked: false } : c))
+      setTgCode(null)
+    } catch (err) {
+      setTgError(err instanceof Error ? err.message : 'Unlink failed')
+    } finally {
+      setTgBusy(false)
+    }
+  }
 
   const set = (key: keyof TenantSettings) => (e: { target: { value: string } }) =>
     setSettings((s) => ({ ...s, [key]: e.target.value }))
@@ -66,6 +110,7 @@ export default function Settings(): JSX.Element {
         currency: settings.currency || undefined,
         tax_rate: settings.tax_rate !== undefined && settings.tax_rate !== null ? Number(settings.tax_rate) : undefined,
         academic_year: isSchool ? settings.academic_year || undefined : undefined,
+        margin_presets: settings.margin_presets || undefined,
       }
       const r = await api.put<{ settings: TenantSettings }>('/tenant/settings', body)
       setSettings(r.settings)
@@ -132,6 +177,11 @@ export default function Settings(): JSX.Element {
               <Field label="Receipt footer message">
                 <input className="pl-input" value={settings.receipt_footer ?? ''} onChange={set('receipt_footer')} placeholder="Thank you for your business!" />
               </Field>
+              {!isSchool && (
+                <Field label="POS margin presets" hint="Comma-separated percentages shown in the New Sale screen (e.g. 20,25,30)">
+                  <input className="pl-input" value={settings.margin_presets ?? ''} onChange={set('margin_presets')} placeholder="20,25,30" />
+                </Field>
+              )}
               {msg && <OkBox message={msg} />}
               <div className="pl-form-actions">
                 <button type="submit" className="pl-btn pl-btn-primary" disabled={busy}>
@@ -182,6 +232,66 @@ export default function Settings(): JSX.Element {
           </Card>
         </div>
       </div>
+
+      <Card>
+        <h2>
+          <i className="fa-brands fa-telegram" aria-hidden="true" style={{ color: '#2AABEE', marginRight: 8 }} />
+          Telegram assistant
+        </h2>
+        {!tgCfg ? (
+          <Spinner label="Checking Telegram…" />
+        ) : !tgCfg.enabled ? (
+          <p style={{ color: 'var(--text-dim)', fontSize: '.9rem' }}>
+            The Telegram assistant is not configured on this server yet. Ask AFRO-TECH to enable it — it sends low-stock, expiry, fee and appointment alerts and
+            gives you a one-tap Mini App inside Telegram.
+          </p>
+        ) : tgCfg.linked ? (
+          <>
+            <p style={{ fontSize: '.9rem', lineHeight: 1.7 }}>
+              ✅ This account is linked. The bot sends you <strong>stock, expiry, fee and appointment alerts</strong> and answers <code>/today</code>,{' '}
+              <code>/lowstock</code>, <code>/expiring</code>, <code>/shift</code>.
+            </p>
+            <div className="pl-form-actions" style={{ justifyContent: 'flex-start' }}>
+              {tgCfg.bot_username && (
+                <a className="pl-btn pl-btn-primary" href={`https://t.me/${tgCfg.bot_username}`} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
+                  Open bot chat
+                </a>
+              )}
+              <button type="button" className="pl-btn pl-btn-ghost" disabled={tgBusy} onClick={() => unlinkTelegram()}>
+                Unlink
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: '.9rem', lineHeight: 1.7, marginBottom: 12 }}>
+              Link your account to get <strong>low-stock, expiry, fee and appointment alerts</strong> plus one-tap access to your workspace inside Telegram.
+            </p>
+            {tgCode ? (
+              <div style={{ background: 'var(--input)', border: '1px dashed var(--border2)', borderRadius: 10, padding: 14, marginBottom: 12 }}>
+                <p style={{ fontSize: '.85rem', color: 'var(--text-dim)', marginBottom: 6 }}>
+                  Send this to the bot in Telegram (valid 15 minutes):
+                </p>
+                <code style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--accent)' }}>/link {tgCode}</code>
+                {tgCfg.bot_username && (
+                  <p style={{ marginTop: 10 }}>
+                    <a className="pl-btn pl-btn-primary pl-btn-sm" href={`https://t.me/${tgCfg.bot_username}?start=${tgCode}`} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
+                      Open @{tgCfg.bot_username} →
+                    </a>
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="pl-form-actions" style={{ justifyContent: 'flex-start' }}>
+                <button type="button" className="pl-btn pl-btn-primary" disabled={tgBusy} onClick={() => generateTgCode()}>
+                  <i className="fa-solid fa-link" aria-hidden="true" /> {tgBusy ? 'Generating…' : 'Generate link code'}
+                </button>
+              </div>
+            )}
+            {tgError && <p role="alert" style={{ color: '#e07a7a', fontSize: '.87rem' }}>{tgError}</p>}
+          </>
+        )}
+      </Card>
 
       <Card>
         <h2>Subscription</h2>

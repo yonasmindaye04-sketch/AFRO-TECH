@@ -1,16 +1,33 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
-import { ApiError } from './api'
+import { ApiError, api } from './api'
 import { Field } from './ui'
+import { initTelegramUi, isTelegram } from './utils/telegram'
 
 export default function Login(): JSX.Element {
-  const { login } = useAuth()
+  const { login, persistFromTelegram } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [tgStatus, setTgStatus] = useState<'idle' | 'working' | 'failed'>('idle')
+
+  // Telegram Mini App: signed initData replaces the password entirely.
+  useEffect(() => {
+    if (!isTelegram()) return
+    initTelegramUi()
+    setTgStatus('working')
+    const initData = (window as unknown as { Telegram: { WebApp: { initData: string } } }).Telegram.WebApp.initData
+    api
+      .post<{ token: string; me: import('./api').Me }>('/telegram/verify', { initData })
+      .then((res) => {
+        persistFromTelegram(res.token, res.me)
+        navigate('/app', { replace: true })
+      })
+      .catch(() => setTgStatus('failed'))
+  }, [navigate, persistFromTelegram])
 
   const onSubmit = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
@@ -33,6 +50,13 @@ export default function Login(): JSX.Element {
           AFRO<span>SUITE</span>
         </div>
         <div className="pl-panel">
+          {tgStatus !== 'idle' && (
+            <p style={{ marginBottom: 16, fontSize: '.88rem', color: tgStatus === 'failed' ? '#e07a7a' : 'var(--text-dim)' }}>
+              {tgStatus === 'working'
+                ? 'Signing you in with Telegram…'
+                : 'This Telegram account is not linked yet — sign in once below and connect it from Settings → Telegram.'}
+            </p>
+          )}
           <h1>Welcome back</h1>
           <p className="pl-sub">Sign in to your company workspace.</p>
           <form onSubmit={onSubmit}>

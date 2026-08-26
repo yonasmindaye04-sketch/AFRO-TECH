@@ -18,6 +18,7 @@ const StockAdjustments = lazy(() => import('./retail/StockAdjustments'))
 const Expiry = lazy(() => import('./retail/Expiry'))
 const Credit = lazy(() => import('./retail/Credit'))
 const RetailReports = lazy(() => import('./retail/Reports'))
+const CashDrawer = lazy(() => import('./retail/CashDrawer'))
 
 const HospitalDashboard = lazy(() => import('./hospital/HospitalDashboard'))
 const Patients = lazy(() => import('./hospital/Patients'))
@@ -129,6 +130,7 @@ function Inner(): JSX.Element {
             <Route path="stock" element={<StockAdjustments />} />
             <Route path="expiry" element={<Expiry />} />
             <Route path="credit" element={<Credit />} />
+            <Route path="cashdrawer" element={<CashDrawer />} />
             <Route path="reports" element={<RetailReports />} />
             {/* hospital */}
             <Route path="queue" element={<Queue />} />

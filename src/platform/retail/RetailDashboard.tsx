@@ -5,6 +5,7 @@ import { Card, DataTable, EmptyState, PageHeader, StatCard } from '../ui'
 interface RetailDashboard {
   today: { sales: number; transactions: number }
   month: { revenue: number; profit: number; expenses: number }
+  comparison: { this_month: number; last_month: number; change_pct: number }
   low_stock: { name: string; stock: number; threshold: number }[]
   expiring_soon: { name: string; expiry_date: string; quantity: number }[]
   trend: { day: string; revenue: number }[]
@@ -31,6 +32,19 @@ export default function RetailDashboard(): JSX.Element {
         />
         <StatCard icon="fa-solid fa-receipt" label="Expenses this month" value={`${fmtMoney(data?.month.expenses)} ETB`} tone="#e07a7a" />
       </div>
+
+      {data && (
+        <div className="pl-trial-banner" style={{ marginBottom: 20 }}>
+          <i className="fa-solid fa-scale-balanced" aria-hidden="true" />
+          <span>
+            This month <strong>{fmtMoney(data.comparison.this_month)} ETB</strong> vs last month{' '}
+            {fmtMoney(data.comparison.last_month)} ETB —{' '}
+            <strong style={{ color: data.comparison.change_pct >= 0 ? '#34d399' : '#e07a7a' }}>
+              {data.comparison.change_pct >= 0 ? '▲' : '▼'} {Math.abs(data.comparison.change_pct)}%
+            </strong>
+          </span>
+        </div>
+      )}
 
       <div className="pl-cols-2">
         <Card>

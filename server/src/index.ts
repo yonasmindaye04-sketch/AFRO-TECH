@@ -16,6 +16,9 @@ import adminRoutes from './routes/admin.js'
 import retailRoutes from './routes/retail.js'
 import hospitalRoutes from './routes/hospital.js'
 import schoolRoutes from './routes/school.js'
+import telegramRoutes from './routes/telegram.js'
+import { startPolling, telegramEnabled } from './services/telegram.js'
+import { startAlertScheduler } from './services/alerts.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -60,6 +63,7 @@ app.use('/api/v1/admin', adminRoutes)
 app.use('/api/v1/retail', retailRoutes)
 app.use('/api/v1/hospital', hospitalRoutes)
 app.use('/api/v1/school', schoolRoutes)
+app.use('/api/v1/telegram', telegramRoutes)
 
 /* ── Contact form (works on VPS — no Vercel functions needed) */
 app.post('/api/contact', async (req, res) => {
@@ -107,6 +111,9 @@ app.use(errorHandler)
 const port = Number(process.env.PORT || 4000)
 app.listen(port, () => {
   console.log(`AFRO Suite API listening on :${port} (${process.env.NODE_ENV || 'development'})`)
+  // Telegram bot: long-polling for dev, webhook for production (see DEPLOY.md)
+  if (telegramEnabled() && !process.env.TELEGRAM_WEBHOOK_URL) startPolling()
+  startAlertScheduler()
 })
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

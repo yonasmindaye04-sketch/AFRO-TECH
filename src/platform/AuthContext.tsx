@@ -9,6 +9,7 @@ interface AuthState {
   register: (input: RegisterInput) => Promise<void>
   logout: () => void
   refreshMe: () => Promise<void>
+  persistFromTelegram: (token: string, me: Me) => void
 }
 
 export interface RegisterInput {
@@ -77,7 +78,10 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     setMe(null)
   }, [])
 
-  const value = useMemo(() => ({ me, ready, login, register, logout, refreshMe }), [me, ready, login, register, logout, refreshMe])
+  const value = useMemo(
+    () => ({ me, ready, login, register, logout, refreshMe, persistFromTelegram: persist }),
+    [me, ready, login, register, logout, refreshMe, persist]
+  )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

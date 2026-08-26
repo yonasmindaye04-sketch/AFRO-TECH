@@ -130,6 +130,17 @@ router.post(
     const d = req.body as z.infer<typeof apptSchema>
     const when = new Date(d.scheduled_at)
     if (Number.isNaN(when.getTime())) throw new AppError(400, 'Invalid appointment date/time', 'VALIDATION')
+
+    // Real-life guard: a doctor cannot be double-booked at the exact same time
+    if (d.doctor_id) {
+      const clash = await queryOne(
+        `SELECT id FROM appointments
+         WHERE tenant_id = $1 AND doctor_id = $2 AND scheduled_at = $3 AND status IN ('scheduled','in_service')`,
+        [t(req), d.doctor_id, when.toISOString()]
+      )
+      if (clash) throw new AppError(409, 'This doctor already has an appointment at that exact time', 'DOUBLE_BOOKED')
+    }
+
     const row = await queryOne(
       `INSERT INTO appointments (tenant_id, patient_id, doctor_id, scheduled_at, reason, notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
       [t(req), d.patient_id, d.doctor_id ?? null, when.toISOString(), d.reason ?? null, d.notes ?? null]

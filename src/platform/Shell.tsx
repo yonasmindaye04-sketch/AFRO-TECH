@@ -12,6 +12,7 @@ interface NavItem {
 const RETAIL_NAV: NavItem[] = [
   { to: '/app', icon: 'fa-solid fa-gauge-high', label: 'Dashboard', end: true },
   { to: '/app/pos', icon: 'fa-solid fa-cash-register', label: 'New Sale' },
+  { to: '/app/cashdrawer', icon: 'fa-solid fa-vault', label: 'Cash Drawer' },
   { to: '/app/sales', icon: 'fa-solid fa-receipt', label: 'Sales History' },
   { to: '/app/products', icon: 'fa-solid fa-boxes-stacked', label: 'Products' },
   { to: '/app/purchases', icon: 'fa-solid fa-truck-ramp-box', label: 'Purchases' },

@@ -83,6 +83,7 @@ const settingsSchema = z.object({
   currency: z.string().trim().max(10).optional(),
   tax_rate: z.number().min(0).max(100).optional(),
   academic_year: z.string().trim().max(20).optional(),
+  margin_presets: z.string().trim().max(50).optional(),
 })
 router.put(
   '/settings',

@@ -213,7 +213,7 @@ router.get(
 )
 
 /* ══════════════ GRADES ══════════════ */
-const gradeSchema = z.object({
+const gradeBase = z.object({
   student_id: z.string().uuid(),
   subject: z.string().trim().min(1).max(80),
   exam_type: z.enum(['test', 'assignment', 'mid', 'final']).default('test'),
@@ -221,6 +221,7 @@ const gradeSchema = z.object({
   score: z.number().min(0),
   max_score: z.number().min(1).default(100),
 })
+const gradeSchema = gradeBase.refine((g) => g.score <= g.max_score, { message: 'Score cannot be greater than the maximum score' })
 router.get(
   '/grades',
   asyncHandler(async (req, res) => {
@@ -250,7 +251,14 @@ router.get(
 /** POST /grades/bulk — record grades for a whole class at once */
 router.post(
   '/grades/bulk',
-  validateBody(z.object({ entries: z.array(gradeSchema.extend({ class_id: z.string().uuid().optional() })).min(1) })),
+  validateBody(
+    z.object({
+      entries: z
+        .array(gradeBase.extend({ class_id: z.string().uuid().optional() }))
+        .min(1)
+        .refine((entries) => entries.every((e) => e.score <= e.max_score), { message: 'A score exceeds its maximum' }),
+    })
+  ),
   asyncHandler(async (req, res) => {
     const { entries } = req.body as { entries: (z.infer<typeof gradeSchema> & { class_id?: string })[] }
     await withTransaction(pool, async (client) => {

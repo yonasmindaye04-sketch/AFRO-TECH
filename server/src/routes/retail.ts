@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { pool, query, queryOne } from '../config/db.js'
 import { asyncHandler, AppError, nextCode, parsePagination, withTransaction } from '../utils/helpers.js'
 import { logAudit } from '../utils/audit.js'
-import { authenticate, requireActiveTenant } from '../middleware/auth.js'
+import { authenticate, requireActiveTenant, requireRole } from '../middleware/auth.js'
 import { validateBody } from '../middleware/validate.js'
 
 const router = Router()
@@ -28,11 +28,15 @@ router.get(
     }
     const rows = await query(
       `SELECT p.*, COALESCE(b.stock, 0)::int AS stock,
+              COALESCE(b.sellable, 0)::int AS sellable_stock,
+              COALESCE(b.expired_qty, 0)::int AS expired_qty,
               b.expiring_soon::int AS expiring_soon,
-              CASE WHEN p.sell_by_pill THEN COALESCE(b.stock,0) * p.pills_per_unit + p.loose_pills ELSE COALESCE(b.stock,0) END::int AS display_stock
+              CASE WHEN p.sell_by_pill THEN COALESCE(b.sellable,0) * p.pills_per_unit + p.loose_pills ELSE COALESCE(b.sellable,0) END::int AS display_stock
        FROM products p
        LEFT JOIN (
          SELECT product_id, SUM(quantity) AS stock,
+                SUM(CASE WHEN expiry_date IS NULL OR expiry_date >= CURRENT_DATE THEN quantity ELSE 0 END) AS sellable,
+                SUM(CASE WHEN expiry_date < CURRENT_DATE AND quantity > 0 THEN quantity ELSE 0 END) AS expired_qty,
                 SUM(CASE WHEN expiry_date IS NOT NULL AND expiry_date <= CURRENT_DATE + 90 AND quantity > 0 THEN quantity ELSE 0 END) AS expiring_soon
          FROM product_batches WHERE tenant_id = $1 GROUP BY product_id
        ) b ON b.product_id = p.id
@@ -77,7 +81,7 @@ router.get(
   '/products/barcode/:code',
   asyncHandler(async (req, res) => {
     const row = await queryOne(
-      `SELECT p.*, COALESCE((SELECT SUM(quantity) FROM product_batches b WHERE b.product_id = p.id),0)::int AS stock
+      `SELECT p.*, COALESCE((SELECT SUM(quantity) FROM product_batches b WHERE b.product_id = p.id AND (b.expiry_date IS NULL OR b.expiry_date >= CURRENT_DATE)),0)::int AS stock
        FROM products p WHERE p.tenant_id = $1 AND p.barcode = $2 LIMIT 1`,
       [tenantId(req), req.params.code]
     )
@@ -286,9 +290,12 @@ router.post(
         const prod = prodMap.get(item.product_id)
         if (!prod) throw new AppError(404, `Product not found: ${item.product_id}`, 'PRODUCT_MISSING')
 
+        // Real-life compliance: expired batches are NEVER dispensed — they stay
+        // in stock for the Expiry page's write-off flow only.
         const { rows: batches } = await client.query<{ id: string; quantity: number; cost_price: string }>(
           `SELECT id, quantity, cost_price FROM product_batches
            WHERE tenant_id = $1 AND product_id = $2 AND quantity > 0
+             AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE)
            ORDER BY expiry_date NULLS LAST, created_at ASC FOR UPDATE`,
           [t, item.product_id]
         )
@@ -443,7 +450,7 @@ router.get(
     params.push(limit, offset)
     const rows = await query(
       `SELECT s.*, c.name AS customer_name, u.full_name AS cashier,
-              (SELECT json_agg(json_build_object('name', si.name, 'quantity', si.quantity, 'unit_price', si.unit_price))
+              (SELECT json_agg(json_build_object('product_id', si.product_id, 'name', si.name, 'quantity', si.quantity, 'unit_price', si.unit_price, 'sold_as_pills', si.sold_as_pills, 'margin_used', si.margin_used))
                FROM sale_items si WHERE si.sale_id = s.id) AS items
        FROM sales s
        LEFT JOIN customers c ON c.id = s.customer_id
@@ -972,7 +979,7 @@ router.get(
       `SELECT p.*, s.name AS supplier_name, u.full_name AS received_by,
               (SELECT count(*) FROM purchase_items pi WHERE pi.purchase_id = p.id)::int AS item_count
        FROM purchases p LEFT JOIN suppliers s ON s.id = p.supplier_id LEFT JOIN users u ON u.id = p.user_id
-       WHERE p.tenant_id = $1 ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`,
+       WHERE p.tenant_id = $1 AND p.record_status = 'Active' ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`,
       [tenantId(req), limit, offset]
     )
     res.json({ purchases: rows, page, limit })
@@ -1008,6 +1015,12 @@ router.post(
       `INSERT INTO expenses (tenant_id, category, description, amount, spent_at, user_id) VALUES ($1,$2,$3,$4,COALESCE($5::date, CURRENT_DATE),$6) RETURNING *`,
       [tenantId(req), d.category, d.description ?? null, d.amount, d.spent_at ?? null, req.user!.id]
     )
+    // Expenses count against the recorder's open cash drawer shift (PPR parity)
+    await query(`UPDATE cash_drawer_shifts SET expenses = expenses + $1 WHERE tenant_id = $2 AND user_id = $3 AND status = 'open'`, [
+      d.amount,
+      tenantId(req),
+      req.user!.id,
+    ])
     res.status(201).json({ expense: row })
   })
 )
@@ -1293,6 +1306,12 @@ router.get(
     const revenue = Number(pl?.revenue ?? 0)
     const cogs = Number(pl?.cogs ?? 0)
     const expenseTotal = expensesByCat.reduce((s, r) => s + Number(r.total), 0)
+    const otherIncome = await queryOne<{ total: string | null }>(
+      `SELECT COALESCE(SUM(amount),0) AS total FROM income
+       WHERE tenant_id = $1 AND income_date BETWEEN $2::date AND $3::date`,
+      [t, from, to]
+    )
+    const incomeTotal = Number(otherIncome?.total ?? 0)
     res.json({
       period: { from, to },
       pnl: {
@@ -1302,7 +1321,8 @@ router.get(
         discounts: Number(pl?.discounts ?? 0),
         expenses: expenseTotal,
         expenses_by_category: expensesByCat.map((r) => ({ category: r.category, total: Number(r.total) })),
-        net_profit: revenue - cogs - expenseTotal,
+        other_income: incomeTotal,
+        net_profit: revenue - cogs - expenseTotal + incomeTotal,
         transactions: Number(pl?.transactions ?? 0),
       },
       by_category: byCategory.map((r) => ({ category: r.category, revenue: Number(r.revenue), qty: Number(r.qty) })),
@@ -1375,6 +1395,17 @@ router.get(
        WHERE s.tenant_id = $1 ORDER BY s.created_at DESC LIMIT 6`,
       [t]
     )
+    // Period comparison (PPR dashboard parity): this month vs last month
+    const comparison = await queryOne<{ this_month: string; last_month: string }>(
+      `SELECT
+         COALESCE(SUM(total) FILTER (WHERE created_at >= date_trunc('month', CURRENT_DATE)),0)::text AS this_month,
+         COALESCE(SUM(total) FILTER (WHERE created_at >= date_trunc('month', CURRENT_DATE) - interval '1 month'
+                    AND created_at < date_trunc('month', CURRENT_DATE)),0)::text AS last_month
+       FROM sales WHERE tenant_id = $1 AND status = 'completed'`,
+      [t]
+    )
+    const thisMonth = Number(comparison?.this_month ?? 0)
+    const lastMonth = Number(comparison?.last_month ?? 0)
 
     res.json({
       today: { sales: Number(todaySales?.total ?? 0), transactions: Number(todaySales?.count ?? 0) },
@@ -1382,6 +1413,11 @@ router.get(
         revenue: Number(monthStats?.revenue ?? 0),
         profit: Number(monthStats?.profit ?? 0),
         expenses: Number(monthExpenses?.total ?? 0),
+      },
+      comparison: {
+        this_month: thisMonth,
+        last_month: lastMonth,
+        change_pct: lastMonth > 0 ? Math.round(((thisMonth - lastMonth) / lastMonth) * 100) : thisMonth > 0 ? 100 : 0,
       },
       low_stock: lowStock,
       expiring_soon: expiringSoon,

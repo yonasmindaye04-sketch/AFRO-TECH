@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api, fmtDate, fmtMoney } from '../api'
+import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
 import { DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
 
@@ -32,6 +33,7 @@ interface Line {
 const emptyLine: Line = { product_id: '', quantity: '', unit_cost: '', batch_no: '', expiry_date: '' }
 
 export default function Purchases(): JSX.Element {
+  const { me } = useAuth()
   const purchases = useApiData<{ purchases: Purchase[] }>('/retail/purchases?limit=50')
   const productsQ = useApiData<{ products: ProductOpt[] }>('/retail/products')
   const suppliersQ = useApiData<{ suppliers: SupplierOpt[] }>('/retail/suppliers')
@@ -40,11 +42,14 @@ export default function Purchases(): JSX.Element {
   const [supplierId, setSupplierId] = useState('')
   const [notes, setNotes] = useState('')
   const [paid, setPaid] = useState('')
+  const [discount, setDiscount] = useState('0')
+  const [tax, setTax] = useState('0')
   const [lines, setLines] = useState<Line[]>([{ ...emptyLine }])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const total = lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), 0)
+  const subtotal = lines.reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.unit_cost) || 0), 0)
+  const grandTotal = Math.max(0, subtotal - (Number(discount) || 0) + (Number(tax) || 0))
 
   const setLine = (i: number, patch: Partial<Line>): void =>
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
@@ -58,6 +63,8 @@ export default function Purchases(): JSX.Element {
         supplier_id: supplierId || null,
         notes: notes.trim() || null,
         paid_amount: Number(paid) || 0,
+        discount: Number(discount) || 0,
+        tax: Number(tax) || 0,
         items: lines.map((l) => ({
           product_id: l.product_id,
           quantity: Number(l.quantity),
@@ -71,11 +78,24 @@ export default function Purchases(): JSX.Element {
       setSupplierId('')
       setNotes('')
       setPaid('')
+      setDiscount('0')
+      setTax('0')
       purchases.reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not record purchase')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const deletePurchase = async (p: Purchase): Promise<void> => {
+    const reason = window.prompt(`Delete purchase from ${p.supplier_name ?? 'supplier'} (${fmtMoney(p.total)} ETB)?\nStock will be reversed. Reason required:`)
+    if (!reason || reason.trim().length < 3) return
+    try {
+      await api.del(`/retail/purchases/${p.id}?reason=${encodeURIComponent(reason.trim())}`)
+      purchases.reload()
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Delete failed')
     }
   }
 
@@ -112,6 +132,19 @@ export default function Purchases(): JSX.Element {
               },
             },
             { key: 'by', header: 'Received by', render: (p) => p.received_by ?? '—' },
+            {
+              key: 'act',
+              header: '',
+              width: '60px',
+              render: (p) =>
+                me?.role === 'owner' ? (
+                  <div className="pl-row-actions">
+                    <button type="button" className="pl-icon-btn danger" aria-label={`Delete purchase from ${fmtDate(p.created_at)}`} title="Delete & reverse stock (owner only)" onClick={() => deletePurchase(p)}>
+                      <i className="fa-solid fa-trash-can" aria-hidden="true" />
+                    </button>
+                  </div>
+                ) : null,
+            },
           ]}
         />
       )}
@@ -130,7 +163,15 @@ export default function Purchases(): JSX.Element {
               </select>
             </Field>
             <Field label="Amount paid now (ETB)">
-              <input className="pl-input" type="number" min="0" step="0.01" placeholder={total.toFixed(2)} value={paid} onChange={(e) => setPaid(e.target.value)} />
+              <input className="pl-input" type="number" min="0" step="0.01" placeholder={grandTotal.toFixed(2)} value={paid} onChange={(e) => setPaid(e.target.value)} />
+            </Field>
+          </div>
+          <div className="pl-grid-2">
+            <Field label="Discount (ETB)">
+              <input className="pl-input" type="number" min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+            </Field>
+            <Field label="Tax (ETB)">
+              <input className="pl-input" type="number" min="0" step="0.01" value={tax} onChange={(e) => setTax(e.target.value)} />
             </Field>
           </div>
 
@@ -180,8 +221,8 @@ export default function Purchases(): JSX.Element {
           </Field>
 
           <div className="pl-cart-total grand">
-            <span>Purchase total</span>
-            <span style={{ color: 'var(--accent)' }}>{fmtMoney(total)} ETB</span>
+            <span>Purchase total (after discount + tax)</span>
+            <span style={{ color: 'var(--accent)' }}>{fmtMoney(grandTotal)} ETB</span>
           </div>
           {error && <p role="alert" style={{ color: '#e07a7a', fontSize: '.87rem' }}>{error}</p>}
           <div className="pl-form-actions">
