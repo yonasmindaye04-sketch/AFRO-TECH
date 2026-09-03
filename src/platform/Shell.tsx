@@ -97,10 +97,13 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
               <>
                 <NavLink to="/app/users" onClick={() => setOpen(false)}>
                   <i className="fa-solid fa-users-gear" aria-hidden="true" /> Team
-                </NavLink>
+               </NavLink>
                 <NavLink to="/app/settings" onClick={() => setOpen(false)}>
                   <i className="fa-solid fa-gear" aria-hidden="true" /> Settings
-                </NavLink>
+               </NavLink>
+                <NavLink to="/app/subscription" onClick={() => setOpen(false)}>
+                  <i className="fa-solid fa-receipt" aria-hidden="true" /> Subscription
+               </NavLink>
               </>
             )}
           </nav>
@@ -132,11 +135,9 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
               <i className="fa-solid fa-hourglass-half" aria-hidden="true" />
               <span>
                 Free trial — <strong>{trialLeft} day{trialLeft === 1 ? '' : 's'} left</strong> for {tenant?.name}. Full access until then.
-              </span>
-              <a href="/" target="_blank" rel="noreferrer">
-                Subscribe with AFRO-TECH →
-              </a>
-            </div>
+             </span>
+              <a href="/app/subscription">Manage subscription →</a>
+           </div>
           )}
           {children}
         </main>

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { pool, query, queryOne } from '../config/db.js'
 import { asyncHandler, AppError, nextCode, withTransaction } from '../utils/helpers.js'
 import { logAudit } from '../utils/audit.js'
-import { authenticate, requireActiveTenant, requireRole } from '../middleware/auth.js'
+import { authenticate, requireActiveTenant, requireRole, requirePermission } from '../middleware/auth.js'
 import { validateBody } from '../middleware/validate.js'
 
 const router = Router()
@@ -31,12 +31,14 @@ const teacherSchema = z.object({
 })
 router.get(
   '/teachers',
+  requirePermission('teachers.view'),
   asyncHandler(async (req, res) => {
     res.json({ teachers: await query(`SELECT * FROM teachers WHERE tenant_id = $1 ORDER BY full_name ASC`, [t(req)]) })
   })
 )
 router.post(
   '/teachers',
+  requirePermission('teachers.manage'),
   validateBody(teacherSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof teacherSchema>
@@ -69,6 +71,7 @@ router.get(
 )
 router.post(
   '/classes',
+  requirePermission('classes.manage'),
   validateBody(classSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof classSchema>
@@ -99,6 +102,7 @@ const studentSchema = z.object({
 })
 router.get(
   '/students',
+  requirePermission('students.view'),
   asyncHandler(async (req, res) => {
     const params: unknown[] = [t(req)]
     let where = `WHERE s.tenant_id = $1`
@@ -120,6 +124,7 @@ router.get(
 )
 router.post(
   '/students',
+  requirePermission('students.manage'),
   validateBody(studentSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof studentSchema>
@@ -137,6 +142,7 @@ router.post(
 )
 router.patch(
   '/students/:id',
+  requirePermission('students.manage'),
   validateBody(studentSchema.partial()),
   asyncHandler(async (req, res) => {
     const cur = await queryOne(`SELECT * FROM students WHERE id = $1 AND tenant_id = $2`, [req.params.id, t(req)])
@@ -183,6 +189,7 @@ router.get(
 /** POST — upsert a full day's register for one class */
 router.post(
   '/attendance',
+  requirePermission('attendance.record'),
   validateBody(attendanceSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof attendanceSchema>
@@ -224,6 +231,7 @@ const gradeBase = z.object({
 const gradeSchema = gradeBase.refine((g) => g.score <= g.max_score, { message: 'Score cannot be greater than the maximum score' })
 router.get(
   '/grades',
+  requirePermission('grades.view'),
   asyncHandler(async (req, res) => {
     const params: unknown[] = [t(req)]
     let where = `WHERE g.tenant_id = $1`
@@ -251,6 +259,7 @@ router.get(
 /** POST /grades/bulk — record grades for a whole class at once */
 router.post(
   '/grades/bulk',
+  requirePermission('grades.record'),
   validateBody(
     z.object({
       entries: z
@@ -285,6 +294,7 @@ const feeSchema = z.object({
 })
 router.get(
   '/fees',
+  requirePermission('fees.view'),
   asyncHandler(async (req, res) => {
     const params: unknown[] = [t(req)]
     let where = `WHERE f.tenant_id = $1`
@@ -308,6 +318,7 @@ router.get(
 /** POST /fees — assign a fee to one or many students (e.g. whole class tuition) */
 router.post(
   '/fees',
+  requirePermission('fees.manage'),
   validateBody(feeSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof feeSchema>
@@ -329,6 +340,7 @@ router.post(
 )
 router.patch(
   '/fees/:id/pay',
+  requirePermission('fees.manage'),
   validateBody(z.object({ amount: z.number().min(0.01) })),
   asyncHandler(async (req, res) => {
     const row = await queryOne(
@@ -348,12 +360,14 @@ router.patch(
 
 router.get(
   '/subjects',
+  requirePermission('subjects.view'),
   asyncHandler(async (req, res) => {
     res.json({ subjects: await query(`SELECT * FROM subjects WHERE tenant_id = $1 ORDER BY name ASC`, [t(req)]) })
   })
 )
 router.post(
   '/subjects',
+  requirePermission('subjects.manage'),
   validateBody(z.object({ name: z.string().trim().min(1).max(80) })),
   asyncHandler(async (req, res) => {
     const row = await queryOne(`INSERT INTO subjects (tenant_id, name) VALUES ($1,$2) RETURNING *`, [t(req), (req.body as { name: string }).name])
@@ -362,6 +376,7 @@ router.post(
 )
 router.delete(
   '/subjects/:id',
+  requirePermission('subjects.manage'),
   asyncHandler(async (req, res) => {
     const row = await queryOne(`DELETE FROM subjects WHERE id = $1 AND tenant_id = $2 RETURNING id`, [req.params.id, t(req)])
     if (!row) throw new AppError(404, 'Subject not found', 'NOT_FOUND')
@@ -375,6 +390,7 @@ const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
 
 router.get(
   '/timetable',
+  requirePermission('timetable.view'),
   asyncHandler(async (req, res) => {
     const classId = String(req.query.class_id || '')
     if (!classId) throw new AppError(400, 'class_id is required', 'VALIDATION')
@@ -399,6 +415,7 @@ const slotSchema = z.object({
 })
 router.post(
   '/timetable',
+  requirePermission('timetable.manage'),
   validateBody(slotSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof slotSchema>
@@ -413,6 +430,7 @@ router.post(
 )
 router.delete(
   '/timetable/:id',
+  requirePermission('timetable.manage'),
   asyncHandler(async (req, res) => {
     const row = await queryOne(`DELETE FROM timetable_slots WHERE id = $1 AND tenant_id = $2 RETURNING id`, [req.params.id, t(req)])
     if (!row) throw new AppError(404, 'Slot not found', 'NOT_FOUND')
@@ -425,6 +443,7 @@ router.delete(
 /** GET /report-cards?class_id&term — computed per-student results with class rank */
 router.get(
   '/report-cards',
+  requirePermission('report_cards.generate'),
   asyncHandler(async (req, res) => {
     const classId = String(req.query.class_id || '')
     const term = String(req.query.term || 'Semester 1')
@@ -491,6 +510,7 @@ router.get(
 
 router.get(
   '/announcements',
+  requirePermission('announcements.view'),
   asyncHandler(async (req, res) => {
     const rows = await query(
       `SELECT a.*, u.full_name AS posted_by FROM announcements a LEFT JOIN users u ON u.id = a.created_by
@@ -502,6 +522,7 @@ router.get(
 )
 router.post(
   '/announcements',
+  requirePermission('announcements.create'),
   validateBody(z.object({ title: z.string().trim().min(2).max(160), body: z.string().trim().min(2).max(3000), pinned: z.boolean().default(false) })),
   asyncHandler(async (req, res) => {
     const d = req.body as { title: string; body: string; pinned: boolean }
@@ -514,6 +535,7 @@ router.post(
 )
 router.delete(
   '/announcements/:id',
+  requirePermission('announcements.create'),
   asyncHandler(async (req, res) => {
     const row = await queryOne(`DELETE FROM announcements WHERE id = $1 AND tenant_id = $2 RETURNING id`, [req.params.id, t(req)])
     if (!row) throw new AppError(404, 'Announcement not found', 'NOT_FOUND')
@@ -530,6 +552,7 @@ const promoteSchema = z.object({
 /** POST /students/promote — move a whole cohort at year end (or graduate them) */
 router.post(
   '/students/promote',
+  requirePermission('students.promote'),
   requireRole('owner'),
   validateBody(promoteSchema),
   asyncHandler(async (req, res) => {
@@ -557,6 +580,7 @@ router.post(
 
 router.get(
   '/reports',
+  requirePermission('reports.view'),
   asyncHandler(async (req, res) => {
     const tid = t(req)
     const from = String(req.query.from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10))
@@ -621,6 +645,7 @@ router.get(
 /* ══════════════ DASHBOARD ══════════════ */
 router.get(
   '/dashboard',
+  requirePermission('reports.view'),
   asyncHandler(async (req, res) => {
     const tid = t(req)
     const stats = await queryOne<{ students: string; classes: string; teachers: string; attendance_today: string | null; unpaid_fees: string | null; collected_month: string | null }>(

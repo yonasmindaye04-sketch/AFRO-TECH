@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { pool, query, queryOne } from '../config/db.js'
 import { asyncHandler, AppError, nextCode, parsePagination, withTransaction } from '../utils/helpers.js'
 import { logAudit } from '../utils/audit.js'
-import { authenticate, requireActiveTenant, requireRole } from '../middleware/auth.js'
+import { authenticate, requireActiveTenant, requireRole, requirePermission } from '../middleware/auth.js'
 import { validateBody } from '../middleware/validate.js'
 
 const router = Router()
@@ -17,6 +17,7 @@ function tenantId(req: { user?: { tenant_id: string | null } }): string {
 
 router.get(
   '/products',
+  requirePermission('inventory.view'),
   asyncHandler(async (req, res) => {
     const t = tenantId(req)
     const search = String(req.query.search || '').trim()
@@ -63,6 +64,7 @@ const productSchema = z.object({
 })
 router.post(
   '/products',
+  requirePermission('inventory.manage'),
   validateBody(productSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof productSchema>
@@ -92,6 +94,7 @@ router.get(
 
 router.patch(
   '/products/:id',
+  requirePermission('inventory.manage'),
   validateBody(productSchema.partial()),
   asyncHandler(async (req, res) => {
     const d = req.body as Partial<z.infer<typeof productSchema>>
@@ -159,30 +162,32 @@ const personSchema = z.object({
 
 /** Suppliers list with computed outstanding balance (purchases due − payments) + payment terms */
 router.get(
-  '/suppliers',
-  asyncHandler(async (req, res) => {
-    const rows = await query(
-      `SELECT s.*,
-              COALESCE(due.total - COALESCE(due.paid, 0), 0) - COALESCE(pay.paid, 0) AS balance
-       FROM suppliers s
-       LEFT JOIN (
-         SELECT supplier_id, SUM(total) AS total, SUM(paid_amount) AS paid
-         FROM purchases WHERE tenant_id = $1 AND record_status = 'Active' GROUP BY supplier_id
-       ) due ON due.supplier_id = s.id
-       LEFT JOIN (
-         SELECT supplier_id, SUM(amount) AS paid FROM supplier_payments WHERE tenant_id = $1 GROUP BY supplier_id
-       ) pay ON pay.supplier_id = s.id
-       WHERE s.tenant_id = $1
-       ORDER BY s.name ASC LIMIT 1000`,
-      [tenantId(req)]
-    )
-    res.json({ suppliers: rows })
-  })
+    '/suppliers',
+    requirePermission('inventory.view'),
+    asyncHandler(async (req, res) => {
+      const rows = await query(
+        `SELECT s.*,
+                COALESCE(due.total - COALESCE(due.paid, 0), 0) - COALESCE(pay.paid, 0) AS balance
+         FROM suppliers s
+         LEFT JOIN (
+           SELECT supplier_id, SUM(total) AS total, SUM(paid_amount) AS paid
+           FROM purchases WHERE tenant_id = $1 AND record_status = 'Active' GROUP BY supplier_id
+         ) due ON due.supplier_id = s.id
+         LEFT JOIN (
+           SELECT supplier_id, SUM(amount) AS paid FROM supplier_payments WHERE tenant_id = $1 GROUP BY supplier_id
+         ) pay ON pay.supplier_id = s.id
+         WHERE s.tenant_id = $1
+         ORDER BY s.name ASC LIMIT 1000`,
+        [tenantId(req)]
+      )
+      res.json({ suppliers: rows })
+    })
 )
-
 for (const [path, table] of [['suppliers', 'suppliers'], ['customers', 'customers']] as const) {
+  const canCreate = table === 'suppliers' ? 'inventory.manage' : 'sales.create'
   router.get(
     `/${path}`,
+    requirePermission(canCreate.replace('.manage', '.view').replace('.create', '.view')),
     asyncHandler(async (req, res) => {
       const rows = await query(`SELECT * FROM ${table} WHERE tenant_id = $1 ORDER BY name ASC LIMIT 1000`, [tenantId(req)])
       res.json({ [path]: rows })
@@ -190,6 +195,7 @@ for (const [path, table] of [['suppliers', 'suppliers'], ['customers', 'customer
   )
   router.post(
     `/${path}`,
+    requirePermission(canCreate),
     validateBody(personSchema),
     asyncHandler(async (req, res) => {
       const d = req.body as z.infer<typeof personSchema>
@@ -211,6 +217,7 @@ for (const [path, table] of [['suppliers', 'suppliers'], ['customers', 'customer
   )
   router.delete(
     `/${path}/:id`,
+    requirePermission(canCreate),
     asyncHandler(async (req, res) => {
       const n = await queryOne<{ n: string }>(`DELETE FROM ${table} WHERE id = $1 AND tenant_id = $2 RETURNING 1 AS n`, [
         req.params.id,
@@ -221,9 +228,6 @@ for (const [path, table] of [['suppliers', 'suppliers'], ['customers', 'customer
     })
   )
 }
-
-/* ══════════════════ SALES / POS ══════════════════ */
-
 const saleSchema = z.object({
   items: z
     .array(
@@ -250,6 +254,7 @@ const saleSchema = z.object({
  */
 router.post(
   '/sales',
+  requirePermission('sales.create'),
   validateBody(saleSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof saleSchema>
@@ -434,6 +439,7 @@ router.post(
 /** GET /api/v1/retail/sales — history with filters */
 router.get(
   '/sales',
+  requirePermission('sales.view'),
   asyncHandler(async (req, res) => {
     const t = tenantId(req)
     const { limit, offset, page } = parsePagination(req.query as Record<string, string>)
@@ -466,6 +472,7 @@ router.get(
 /** POST /api/v1/retail/sales/:id/refund — restore stock & mark refunded */
 router.post(
   '/sales/:id/refund',
+  requirePermission('sales.refund'),
   asyncHandler(async (req, res) => {
     const t = tenantId(req)
     const result = await withTransaction(pool, async (client) => {
@@ -554,6 +561,7 @@ const returnSchema = z.object({
 /** POST /sales/:id/returns — per-item return with reason; resalable stock goes back */
 router.post(
   '/sales/:id/returns',
+  requirePermission('sales.refund'),
   validateBody(returnSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof returnSchema>
@@ -855,6 +863,7 @@ const purchaseSchema = z.object({
 /** POST /api/v1/retail/purchases — receive stock (creates batches) atomically */
 router.post(
   '/purchases',
+  requirePermission('purchases.create'),
   validateBody(purchaseSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof purchaseSchema>
@@ -931,7 +940,7 @@ router.post(
 /** DELETE /api/v1/retail/purchases/:id — owner-only reversal with reason (PPR parity) */
 router.delete(
   '/purchases/:id',
-  requireRole('owner'),
+  requirePermission('purchases.delete'),
   asyncHandler(async (req, res) => {
     const reason = String(req.query.reason || '').trim()
     if (reason.length < 3) throw new AppError(400, 'A deletion reason is required', 'VALIDATION')
@@ -973,6 +982,7 @@ router.delete(
 
 router.get(
   '/purchases',
+  requirePermission('purchases.view'),
   asyncHandler(async (req, res) => {
     const { limit, offset, page } = parsePagination(req.query as Record<string, string>)
     const rows = await query(
@@ -996,6 +1006,7 @@ const expenseSchema = z.object({
 })
 router.get(
   '/expenses',
+  requirePermission('payments.view'),
   asyncHandler(async (req, res) => {
     const { limit, offset, page } = parsePagination(req.query as Record<string, string>)
     const rows = await query(
@@ -1008,6 +1019,7 @@ router.get(
 )
 router.post(
   '/expenses',
+  requirePermission('payments.create'),
   validateBody(expenseSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof expenseSchema>
@@ -1037,6 +1049,7 @@ router.delete(
 
 router.get(
   '/adjustments',
+  requirePermission('inventory.view'),
   asyncHandler(async (req, res) => {
     const rows = await query(
       `SELECT a.*, p.name AS product_name, u.full_name AS recorded_by
@@ -1059,6 +1072,7 @@ const adjustmentSchema = z.object({
 /** POST — manual stock correction (count, damage, theft, return to supplier…) */
 router.post(
   '/adjustments',
+  requirePermission('inventory.adjust'),
   validateBody(adjustmentSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof adjustmentSchema>
@@ -1107,6 +1121,7 @@ router.post(
 
 router.get(
   '/expiry',
+  requirePermission('inventory.view'),
   asyncHandler(async (req, res) => {
     const days = Math.min(365, Math.max(1, Number(req.query.days) || 90))
     const rows = await query(
@@ -1126,6 +1141,7 @@ router.get(
 /** POST /expiry/:batchId/write-off — zero out expired stock with an audit trail */
 router.post(
   '/expiry/:batchId/write-off',
+  requirePermission('inventory.adjust'),
   validateBody(z.object({ reason: z.string().trim().max(300).default('Expired — written off') })),
   asyncHandler(async (req, res) => {
     const t = tenantId(req)
@@ -1152,6 +1168,7 @@ router.post(
 /** GET /customers/:id/statement — credit sales, payments, running balance */
 router.get(
   '/customers/:id/statement',
+  requirePermission('sales.view'),
   asyncHandler(async (req, res) => {
     const t = tenantId(req)
     const customer = await queryOne(`SELECT id, name, phone FROM customers WHERE id = $1 AND tenant_id = $2`, [req.params.id, t])
@@ -1177,6 +1194,7 @@ const paymentSchema = z.object({ amount: z.number().min(0.01), note: z.string().
 /** POST /customers/:id/payments — settle credit (FIFO across unpaid credit sales) */
 router.post(
   '/customers/:id/payments',
+  requirePermission('payments.create'),
   validateBody(paymentSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof paymentSchema>
@@ -1210,6 +1228,7 @@ router.post(
 /** GET /credit — all customers with outstanding credit balances */
 router.get(
   '/credit',
+  requirePermission('sales.view'),
   asyncHandler(async (req, res) => {
     const rows = await query(
       `SELECT * FROM (
@@ -1234,6 +1253,7 @@ router.get(
 /** GET /reports?from&to — P&L, category mix, payment mix, stock valuation */
 router.get(
   '/reports',
+  requirePermission('reports.view'),
   asyncHandler(async (req, res) => {
     const t = tenantId(req)
     const from = String(req.query.from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10))
@@ -1343,6 +1363,7 @@ router.get(
 
 router.get(
   '/dashboard',
+  requirePermission('reports.view'),
   asyncHandler(async (req, res) => {
     const t = tenantId(req)
     const todaySales = await queryOne<{ total: string | null; count: string }>(

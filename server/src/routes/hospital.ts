@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { pool, query, queryOne } from '../config/db.js'
 import { asyncHandler, AppError, nextCode, withTransaction } from '../utils/helpers.js'
 import { logAudit } from '../utils/audit.js'
-import { authenticate, requireActiveTenant } from '../middleware/auth.js'
+import { authenticate, requireActiveTenant, requirePermission } from '../middleware/auth.js'
 import { validateBody } from '../middleware/validate.js'
 
 const router = Router()
@@ -24,6 +24,7 @@ const patientSchema = z.object({
 
 router.get(
   '/patients',
+  requirePermission('patients.view'),
   asyncHandler(async (req, res) => {
     const search = String(req.query.search || '').trim()
     const params: unknown[] = [t(req)]
@@ -39,6 +40,7 @@ router.get(
 
 router.post(
   '/patients',
+  requirePermission('patients.manage'),
   validateBody(patientSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof patientSchema>
@@ -57,6 +59,7 @@ router.post(
 
 router.get(
   '/patients/:id',
+  requirePermission('patients.view'),
   asyncHandler(async (req, res) => {
     const patient = await queryOne(`SELECT * FROM patients WHERE id = $1 AND tenant_id = $2`, [req.params.id, t(req)])
     if (!patient) throw new AppError(404, 'Patient not found', 'NOT_FOUND')
@@ -80,12 +83,14 @@ const doctorSchema = z.object({
 })
 router.get(
   '/doctors',
+  requirePermission('patients.view'),
   asyncHandler(async (req, res) => {
     res.json({ doctors: await query(`SELECT * FROM doctors WHERE tenant_id = $1 ORDER BY full_name ASC`, [t(req)]) })
   })
 )
 router.post(
   '/doctors',
+  requirePermission('patients.manage'),
   validateBody(doctorSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof doctorSchema>
@@ -108,6 +113,7 @@ const apptSchema = z.object({
 })
 router.get(
   '/appointments',
+  requirePermission('appointments.view'),
   asyncHandler(async (req, res) => {
     const scope = String(req.query.scope || 'upcoming')
     const params: unknown[] = [t(req)]
@@ -125,6 +131,7 @@ router.get(
 )
 router.post(
   '/appointments',
+  requirePermission('appointments.manage'),
   validateBody(apptSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof apptSchema>
@@ -150,6 +157,7 @@ router.post(
 )
 router.patch(
   '/appointments/:id',
+  requirePermission('appointments.manage'),
   validateBody(apptSchema.partial()),
   asyncHandler(async (req, res) => {
     const d = req.body as Partial<z.infer<typeof apptSchema>>
@@ -186,6 +194,7 @@ const recordSchema = z.object({
 })
 router.get(
   '/records',
+  requirePermission('records.view'),
   asyncHandler(async (req, res) => {
     const params: unknown[] = [t(req)]
     let where = `WHERE r.tenant_id = $1`
@@ -204,6 +213,7 @@ router.get(
 )
 router.post(
   '/records',
+  requirePermission('records.create'),
   validateBody(recordSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof recordSchema>
@@ -226,6 +236,7 @@ const invoiceSchema = z.object({
 })
 router.get(
   '/invoices',
+  requirePermission('billing.view'),
   asyncHandler(async (req, res) => {
     const params: unknown[] = [t(req)]
     let where = `WHERE i.tenant_id = $1`
@@ -243,6 +254,7 @@ router.get(
 )
 router.post(
   '/invoices',
+  requirePermission('billing.manage'),
   validateBody(invoiceSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof invoiceSchema>
@@ -261,6 +273,7 @@ router.post(
 )
 router.patch(
   '/invoices/:id/pay',
+  requirePermission('billing.manage'),
   validateBody(z.object({ amount: z.number().min(0.01) })),
   asyncHandler(async (req, res) => {
     const row = await queryOne<{ amount: string; paid_amount: string }>(
@@ -279,6 +292,7 @@ router.patch(
 
 router.get(
   '/queue',
+  requirePermission('appointments.view'),
   asyncHandler(async (req, res) => {
     const rows = await query(
       `SELECT a.id, a.status, a.scheduled_at, a.reason, a.notes,
@@ -296,6 +310,7 @@ router.get(
 /** POST /queue/walk-in — register an immediate walk-in consultation */
 router.post(
   '/queue/walk-in',
+  requirePermission('appointments.manage'),
   validateBody(z.object({ patient_id: z.string().uuid(), doctor_id: z.string().uuid().optional().nullable(), reason: z.string().trim().max(300).optional().nullable() })),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof apptSchema>
@@ -329,6 +344,7 @@ const LAB_CATALOG = [
 
 router.get(
   '/labs/catalog',
+  requirePermission('labs.view'),
   asyncHandler(async (_req, res) => {
     res.json({ catalog: LAB_CATALOG })
   })
@@ -336,6 +352,7 @@ router.get(
 
 router.get(
   '/labs',
+  requirePermission('labs.view'),
   asyncHandler(async (req, res) => {
     const params: unknown[] = [t(req)]
     let where = `WHERE l.tenant_id = $1`
@@ -366,6 +383,7 @@ const labSchema = z.object({
 })
 router.post(
   '/labs',
+  requirePermission('labs.manage'),
   validateBody(labSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof labSchema>
@@ -385,6 +403,7 @@ const labResultSchema = z.object({
 })
 router.patch(
   '/labs/:id',
+  requirePermission('labs.manage'),
   validateBody(labResultSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof labResultSchema>
@@ -404,6 +423,7 @@ router.patch(
 
 router.get(
   '/reports',
+  requirePermission('reports.view'),
   asyncHandler(async (req, res) => {
     const tid = t(req)
     const from = String(req.query.from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10))
@@ -473,6 +493,7 @@ router.get(
 /* ══════════════ DASHBOARD ══════════════ */
 router.get(
   '/dashboard',
+  requirePermission('reports.view'),
   asyncHandler(async (req, res) => {
     const tid = t(req)
     const stats = await queryOne<{ patients: string; today_appts: string; upcoming: string; unpaid: string | null; revenue_month: string | null }>(

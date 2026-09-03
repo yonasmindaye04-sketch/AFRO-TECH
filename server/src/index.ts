@@ -17,6 +17,7 @@ import retailRoutes from './routes/retail.js'
 import hospitalRoutes from './routes/hospital.js'
 import schoolRoutes from './routes/school.js'
 import telegramRoutes from './routes/telegram.js'
+import billingRoutes from './routes/billing.js'
 import { startPolling, telegramEnabled } from './services/telegram.js'
 import { startAlertScheduler } from './services/alerts.js'
 
@@ -26,7 +27,8 @@ app.set('trust proxy', 1)
 
 /* ── Middleware ─────────────────────────────────────────── */
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' } }))
-app.use(express.json({ limit: '1mb' }))
+// Capture raw body for payment webhooks (HMAC signature verification)
+app.use(express.json({ limit: '1mb', verify: (req, _res, buf) => { (req as unknown as { rawBody?: Buffer }).rawBody = Buffer.from(buf) } }))
 app.use(express.urlencoded({ extended: false }))
 
 // Brute-force protection on credential endpoints
@@ -64,6 +66,7 @@ app.use('/api/v1/retail', retailRoutes)
 app.use('/api/v1/hospital', hospitalRoutes)
 app.use('/api/v1/school', schoolRoutes)
 app.use('/api/v1/telegram', telegramRoutes)
+app.use('/api/v1/billing', billingRoutes)
 
 /* ── Contact form (works on VPS — no Vercel functions needed) */
 app.post('/api/contact', async (req, res) => {

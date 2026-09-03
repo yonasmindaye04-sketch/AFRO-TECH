@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { query, queryOne } from '../config/db.js'
+import { pool, query, queryOne } from '../config/db.js'
 import { asyncHandler, AppError, parsePagination } from '../utils/helpers.js'
 import { authenticate, requireAfrotechAdmin } from '../middleware/auth.js'
 
@@ -111,6 +111,84 @@ router.get(
       params
     )
     res.json({ logs: rows, page, limit })
+  })
+)
+
+/** GET /api/v1/admin/payments — all payment attempts across the platform */
+router.get(
+  '/payments',
+  asyncHandler(async (req, res) => {
+    const { limit, offset, page } = parsePagination(req.query as Record<string, string>)
+    const params: unknown[] = []
+    let where = ''
+    const tenantId = String(req.query.tenant_id || '').trim()
+    const status = String(req.query.status || '').trim()
+    if (tenantId) {
+      params.push(tenantId)
+      where = `WHERE pay.tenant_id = $${params.length}`
+    }
+    if (status) {
+      params.push(status)
+      where += (where ? ' AND ' : 'WHERE ') + `pay.status = $${params.length}`
+    }
+    params.push(limit, offset)
+    const rows = await query(
+      `SELECT pay.id, pay.tx_ref, pay.provider, pay.amount::text, pay.currency, pay.period_months,
+              pay.status, pay.paid_at, pay.created_at, pay.failure_reason,
+              pay.tenant_id, t.name AS tenant_name,
+              sp.name AS plan_name
+       FROM payments pay
+       LEFT JOIN tenants t ON t.id = pay.tenant_id
+       LEFT JOIN subscription_plans sp ON sp.id = pay.plan_id
+       ${where}
+       ORDER BY pay.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    )
+    res.json({ payments: rows, page, limit })
+  })
+)
+
+/** GET /api/v1/admin/subscriptions — active subscriptions + per-tenant access end */
+router.get(
+  '/subscriptions',
+  asyncHandler(async (_req, res) => {
+    const rows = await query<{
+      tenant_id: string
+      tenant_name: string
+      business_type: string
+      tenant_status: string
+      plan_code: string
+      plan_name: string
+      current_period_start: Date
+      current_period_end: Date
+    }>(
+      `SELECT s.tenant_id, t.name AS tenant_name, t.business_type, t.status AS tenant_status,
+              p.code AS plan_code, p.name AS plan_name,
+              s.current_period_start, s.current_period_end
+       FROM subscriptions s
+       JOIN tenants t ON t.id = s.tenant_id
+       JOIN subscription_plans p ON p.id = s.plan_id
+       ORDER BY s.current_period_end DESC NULLS LAST`
+    )
+    res.json({ subscriptions: rows })
+  })
+)
+
+/** POST /api/v1/admin/payments/:id/confirm — manually confirm a pending payment (cash / bank transfer) */
+router.post(
+  '/payments/:id/confirm',
+  asyncHandler(async (req, res) => {
+    const id = req.params.id
+    const payment = await queryOne<{ id: string; tenant_id: string; status: string }>(
+      `SELECT id, tenant_id, status FROM payments WHERE id = $1`,
+      [id]
+    )
+    if (!payment) throw new AppError(404, 'Payment not found', 'NOT_FOUND')
+    if (payment.status === 'success') return res.json({ ok: true, already_processed: true })
+    if (payment.status !== 'pending') throw new AppError(409, `Payment is ${payment.status}`, 'BAD_STATE')
+    const { settlePaymentSuccess } = await import('../services/billing.js')
+    const settled = await settlePaymentSuccess(pool, payment.id)
+    res.json({ ok: true, access_until: settled.periodEnd })
   })
 )
 

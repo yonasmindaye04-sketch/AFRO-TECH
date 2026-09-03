@@ -1,7 +1,8 @@
 import jwt from 'jsonwebtoken'
 import type { NextFunction, Request, Response } from 'express'
-import { queryOne } from '../config/db.js'
+import { queryOne, query } from '../config/db.js'
 import { AppError } from '../utils/helpers.js'
+
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me'
 
 export interface AuthUser {
@@ -27,6 +28,7 @@ declare global {
     interface Request {
       user?: AuthUser
       tenant?: TenantRow | null
+      permissions?: string[]
     }
   }
 }
@@ -42,7 +44,7 @@ export function signToken(user: AuthUser): string {
   return jwt.sign({ sub: user.id, tid: user.tenant_id, role: user.role }, JWT_SECRET, { expiresIn })
 }
 
-/** Verify JWT then load fresh user + tenant so suspensions/expiry apply immediately. */
+/** Verify JWT then load fresh user + tenant + permissions so changes apply immediately. */
 export async function authenticate(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     const header = req.headers.authorization || ''
@@ -66,6 +68,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
 
     if (user.role === 'afrotech_admin') {
       req.tenant = null
+      req.permissions = ['*'] // super admin has all permissions
     } else if (user.tenant_id) {
       const tenant = await queryOne<TenantRow>(`SELECT id, name, slug, business_type, status, trial_ends_at FROM tenants WHERE id = $1`, [
         user.tenant_id,
@@ -78,6 +81,22 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
         tenant.status = 'expired'
       }
       req.tenant = tenant
+
+      // Load permissions for tenant-scoped users
+      // Owner role has all permissions by default
+      if (user.role === 'owner') {
+        const allPerms = await query<{ name: string }>(`SELECT name FROM permissions`)
+        req.permissions = allPerms.map(p => p.name)
+      } else {
+        const perms = await query<{ name: string }>(
+          `SELECT p.name FROM permissions p
+           JOIN role_permissions rp ON rp.permission_id = p.id
+           JOIN user_roles ur ON ur.role_id = rp.role_id
+           WHERE ur.user_id = $1 AND ur.tenant_id = $2`,
+          [user.id, user.tenant_id]
+        )
+        req.permissions = perms.map(p => p.name)
+      }
     }
     next()
   } catch (err) {
@@ -104,6 +123,17 @@ export function requireRole(...roles: AuthUser['role'][]): (req: Request, res: R
   }
 }
 
+/** Middleware to check if user has a specific permission (resource.action format). */
+export function requirePermission(permission: string): (req: Request, _res: Response, next: NextFunction) => void {
+  return (req, _res, next) => {
+    if (req.user?.role === 'afrotech_admin') return next()
+    if (!req.permissions?.includes(permission)) {
+      return next(new AppError(403, `Permission denied: ${permission} required`, 'FORBIDDEN'))
+    }
+    next()
+  }
+}
+
 export function requireAfrotechAdmin(req: Request, _res: Response, next: NextFunction): void {
   if (req.user?.role !== 'afrotech_admin') return next(new AppError(403, 'AFRO-TECH admin access required', 'ADMIN_ONLY'))
   next()
@@ -112,4 +142,10 @@ export function requireAfrotechAdmin(req: Request, _res: Response, next: NextFun
 /** Ensures a tenant-scoped resource belongs to the caller's tenant before mutating it. */
 export async function assertOwnership(tenantId: string | null | undefined, rowTenantId: string): Promise<void> {
   if (!tenantId || rowTenantId !== tenantId) throw new AppError(404, 'Resource not found', 'NOT_FOUND')
+}
+
+export interface JwtPayload {
+  sub: string
+  tid: string | null
+  role: AuthUser['role']
 }

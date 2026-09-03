@@ -44,6 +44,7 @@ const SchoolReports = lazy(() => import('./school/SchoolReports'))
 const AdminPanel = lazy(() => import('./admin/AdminPanel'))
 const Team = lazy(() => import('./pages/Team'))
 const Settings = lazy(() => import('./pages/Settings'))
+const Subscription = lazy(() => import('./pages/Subscription'))
 
 function Blocked({ icon, title, body }: { icon: string; title: string; body: string }): JSX.Element {
   const { logout } = useAuth()
@@ -93,14 +94,8 @@ function Inner(): JSX.Element {
   const { me } = useAuth()
   const isAdminRoute = me?.role === 'afrotech_admin'
 
-  if (me && me.tenant && (me.tenant.status === 'expired' || me.tenant.status === 'suspended')) {
-    return me.tenant.status === 'expired' ? (
-      <Blocked
-        icon="fa-solid fa-hourglass-end"
-        title="Your free trial has ended"
-        body={`The 45-day trial for ${me.tenant.name} is complete. Your data is safe — contact AFRO-TECH to subscribe and pick up right where you left off.`}
-      />
-    ) : (
+  if (me && me.tenant && me.tenant.status === 'suspended') {
+    return (
       <Blocked
         icon="fa-solid fa-lock"
         title="Workspace suspended"
@@ -109,13 +104,21 @@ function Inner(): JSX.Element {
     )
   }
 
+  // Trial expired → owner still gets in, but only the billing screen is reachable.
+  const trialExpired = me?.tenant?.status === 'expired'
+
   return (
     <Shell>
       <Suspense fallback={<Spinner />}>
         {isAdminRoute ? (
           <Routes>
             <Route path="*" element={<AdminPanel />} />
-          </Routes>
+         </Routes>
+        ) : trialExpired ? (
+          <Routes>
+            <Route path="subscription" element={<Subscription />} />
+            <Route path="*" element={<Navigate to="/app/subscription" replace />} />
+         </Routes>
         ) : (
           <Routes>
             <Route index element={<TypeRouter me={me} />} />
@@ -154,11 +157,12 @@ function Inner(): JSX.Element {
             {/* shared */}
             <Route path="users" element={me?.role === 'owner' ? <Team /> : <Navigate to="/app" replace />} />
             <Route path="settings" element={me?.role === 'owner' ? <Settings /> : <Navigate to="/app" replace />} />
+            <Route path="subscription" element={me?.role === 'owner' ? <Subscription /> : <Navigate to="/app" replace />} />
             <Route path="*" element={<Navigate to="/app" replace />} />
-          </Routes>
+         </Routes>
         )}
-      </Suspense>
-    </Shell>
+     </Suspense>
+   </Shell>
   )
 }
 

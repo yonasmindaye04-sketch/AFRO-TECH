@@ -118,6 +118,9 @@
 .pl-form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
 .pl-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
 @media (max-width: 560px) { .pl-grid-2 { grid-template-columns: 1fr; } }
+.pl-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 900px) { .pl-grid-3 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .pl-grid-3 { grid-template-columns: 1fr; } }
 .pl-field-hint { color: var(--text-dim); font-size: .78rem; }
 
 /* ── Stats & cards ──────────────────────────────────────── */
@@ -177,6 +180,7 @@
 .pl-empty i { font-size: 1.7rem; opacity: .5; display: block; margin-bottom: 10px; }
 .pl-error-box { background: rgba(224,122,122,.1); border: 1px solid rgba(224,122,122,.35); color: #e88; padding: 10px 14px; border-radius: 10px; font-size: .87rem; margin: 10px 0; }
 .pl-ok-box { background: rgba(52,211,153,.09); border: 1px solid rgba(52,211,153,.3); color: #34d399; padding: 10px 14px; border-radius: 10px; font-size: .87rem; margin: 10px 0; }
+.pl-warn-box { background: rgba(212,168,67,.10); border: 1px solid rgba(212,168,67,.35); color: var(--accent); padding: 10px 14px; border-radius: 10px; font-size: .87rem; margin: 10px 0; }
 .pl-toolbar { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
 .pl-toolbar .pl-input, .pl-toolbar .pl-select { width: auto; min-width: 180px; }
 

@@ -43,13 +43,14 @@ export function saveAuth(auth: { token: string; me: Me } | null): void {
   else localStorage.removeItem(STORAGE_KEY)
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, extraHeaders?: Record<string, string>): Promise<T> {
   const auth = loadAuth()
   const res = await fetch(`/api/v1${path}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
       ...(auth ? { Authorization: `Bearer ${auth.token}` } : {}),
+      ...extraHeaders,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
@@ -70,7 +71,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
-  post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
+  post: <T>(path: string, body?: unknown, extraHeaders?: Record<string, string>) => request<T>('POST', path, body, extraHeaders),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   del: <T>(path: string) => request<T>('DELETE', path),
