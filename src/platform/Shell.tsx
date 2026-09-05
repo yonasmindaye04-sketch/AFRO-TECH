@@ -101,6 +101,9 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
                 <NavLink to="/app/settings" onClick={() => setOpen(false)}>
                   <i className="fa-solid fa-gear" aria-hidden="true" /> Settings
                </NavLink>
+                <NavLink to="/app/bot-studio" onClick={() => setOpen(false)}>
+                  <i className="fa-solid fa-robot" aria-hidden="true" /> My Telegram Bot
+               </NavLink>
                 <NavLink to="/app/subscription" onClick={() => setOpen(false)}>
                   <i className="fa-solid fa-receipt" aria-hidden="true" /> Subscription
                </NavLink>

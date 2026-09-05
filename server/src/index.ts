@@ -18,8 +18,10 @@ import hospitalRoutes from './routes/hospital.js'
 import schoolRoutes from './routes/school.js'
 import telegramRoutes from './routes/telegram.js'
 import billingRoutes from './routes/billing.js'
+import tenantBotRoutes from './routes/tenant-bots.js'
 import { startPolling, telegramEnabled } from './services/telegram.js'
 import { startAlertScheduler } from './services/alerts.js'
+import { startAllTenantBots } from './services/tenantBot.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -67,6 +69,7 @@ app.use('/api/v1/hospital', hospitalRoutes)
 app.use('/api/v1/school', schoolRoutes)
 app.use('/api/v1/telegram', telegramRoutes)
 app.use('/api/v1/billing', billingRoutes)
+app.use('/api/v1/tenant-bot', tenantBotRoutes)
 
 /* ── Contact form (works on VPS — no Vercel functions needed) */
 app.post('/api/contact', async (req, res) => {
@@ -117,6 +120,7 @@ app.listen(port, () => {
   // Telegram bot: long-polling for dev, webhook for production (see DEPLOY.md)
   if (telegramEnabled() && !process.env.TELEGRAM_WEBHOOK_URL) startPolling()
   startAlertScheduler()
+  void startAllTenantBots().catch((err) => console.warn('[tenant-bots] startup failed:', err instanceof Error ? err.message : err))
 })
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

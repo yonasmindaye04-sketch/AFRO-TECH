@@ -45,6 +45,7 @@ const AdminPanel = lazy(() => import('./admin/AdminPanel'))
 const Team = lazy(() => import('./pages/Team'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Subscription = lazy(() => import('./pages/Subscription'))
+const BotStudio = lazy(() => import('./pages/BotStudio'))
 
 function Blocked({ icon, title, body }: { icon: string; title: string; body: string }): JSX.Element {
   const { logout } = useAuth()
@@ -158,6 +159,7 @@ function Inner(): JSX.Element {
             <Route path="users" element={me?.role === 'owner' ? <Team /> : <Navigate to="/app" replace />} />
             <Route path="settings" element={me?.role === 'owner' ? <Settings /> : <Navigate to="/app" replace />} />
             <Route path="subscription" element={me?.role === 'owner' ? <Subscription /> : <Navigate to="/app" replace />} />
+            <Route path="bot-studio" element={me?.role === 'owner' ? <BotStudio /> : <Navigate to="/app" replace />} />
             <Route path="*" element={<Navigate to="/app" replace />} />
          </Routes>
         )}
