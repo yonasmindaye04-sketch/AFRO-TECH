@@ -264,6 +264,43 @@
 .pl-reportcard table { width: 100%; border-collapse: collapse; margin-top: 12px; }
 .pl-reportcard th, .pl-reportcard td { border: 1px solid #999; padding: 7px 10px; text-align: left; font-size: .9rem; color: #111; }
 
+/* ── 80mm Thermal Receipt ───────────────────────────────── */
+.pl-thermal-wrapper { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; }
+.pl-thermal-receipt {
+  width: 100%;
+  max-width: 320px;
+  background: #ffffff;
+  color: #111111;
+  font-family: 'Courier New', Courier, 'Lucida Console', Monaco, monospace;
+  font-size: .82rem;
+  line-height: 1.35;
+  padding: 20px 18px;
+  border-radius: 4px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.08);
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+.pl-thermal-receipt .text-center { text-align: center; }
+.pl-thermal-receipt .text-right { text-align: right; }
+.pl-thermal-receipt .text-left { text-align: left; }
+.pl-thermal-receipt .bold { font-weight: 700; }
+.pl-thermal-title { font-size: 1.02rem; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; margin: 0 0 3px; color: #000; }
+.pl-thermal-sub { font-size: .76rem; color: #333; margin: 1px 0; }
+.pl-thermal-tax-box { border-top: 1px dashed #222; border-bottom: 1px dashed #222; padding: 4px 0; margin: 6px 0; font-size: .78rem; text-align: center; color: #111; }
+.pl-thermal-divider { border-top: 1px dashed #333; margin: 7px 0; }
+.pl-thermal-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+.pl-thermal-table td { padding: 2px 0; color: #111; }
+.pl-thermal-items-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+.pl-thermal-items-table th { border-bottom: 1px dashed #333; padding: 3px 0; font-size: .72rem; text-transform: uppercase; color: #222; }
+.pl-thermal-item-row td { padding: 3px 0; }
+.pl-thermal-item-name { font-weight: 700; color: #000; }
+.pl-thermal-item-meta { font-size: .72rem; color: #444; padding-left: 6px; }
+.pl-thermal-totals td { padding: 2px 0; }
+.pl-thermal-grand-total td { font-size: 1.05rem; font-weight: 800; padding: 4px 0; color: #000; }
+.pl-thermal-footer { margin-top: 10px; font-size: .76rem; color: #333; line-height: 1.35; }
+.pl-thermal-brand { font-size: .68rem; color: #666; margin-top: 6px; letter-spacing: .5px; }
+.pl-thermal-actions { display: flex; gap: 10px; justify-content: center; width: 100%; flex-wrap: wrap; }
+
 @media print {
   body * { visibility: hidden !important; }
   .pl-print-area, .pl-print-area * { visibility: visible !important; }

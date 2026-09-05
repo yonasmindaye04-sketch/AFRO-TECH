@@ -1,7 +1,10 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { fmtMoney, api } from '../api'
+import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
 import { EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
+import ThermalReceipt from '../ui/ThermalReceipt'
+import type { ReceiptData } from '../utils/receipt'
 
 interface Product {
   id: string
@@ -28,11 +31,36 @@ interface CartLine {
   pills: number // loose pills (pill lines only)
 }
 interface SaleResult {
-  sale: { id: string; subtotal: string; discount: string; total: string; amount_paid: string; change_due: string; payment_method: string; created_at: string }
+  sale: {
+    id: string
+    subtotal: string
+    discount: string
+    total: string
+    amount_paid: string
+    change_due: string
+    payment_method: string
+    created_at: string
+    invoice_no?: string
+  }
   items: { name: string; quantity: number; unit_price: number; line_total: number; sold_as_pills?: boolean }[]
 }
 
+interface PosSettings {
+  business_name?: string
+  tin_number?: string
+  vat_number?: string
+  business_phone?: string
+  business_address?: string
+  receipt_header?: string
+  receipt_footer?: string
+  currency?: string
+  tax_rate?: number
+  margin_presets?: string
+  auto_print_receipt?: boolean
+}
+
 export default function POS(): JSX.Element {
+  const { me } = useAuth()
   const { data, loading, reload } = useApiData<{ products: Product[] }>('/retail/products')
   const [cart, setCart] = useState<CartLine[]>([])
   const [search, setSearch] = useState('')
@@ -49,7 +77,7 @@ export default function POS(): JSX.Element {
   }, [data, search])
 
   // Margin presets come from workspace settings (PPR parity), defaulting to 20/25/30
-  const settingsQ = useApiData<{ settings: { margin_presets?: string } }>('/tenant/settings')
+  const settingsQ = useApiData<{ settings: PosSettings }>('/tenant/settings')
   const marginPresets = useMemo(
     () =>
       (settingsQ.data?.settings.margin_presets ?? '20,25,30')
@@ -370,64 +398,37 @@ export default function POS(): JSX.Element {
       </div>
 
       <Modal open={receipt !== null} title="Sale completed" onClose={() => setReceipt(null)}>
-        {receipt && (
-          <div>
-            <div className="pl-receipt">
-              <p style={{ textAlign: 'center', fontWeight: 700 }}>{new Date(receipt.sale.created_at).toLocaleString()}</p>
-              <table>
-                <tbody>
-                  {receipt.items.map((it, i) => (
-                    <tr key={i}>
-                      <td>
-                        {it.name} × {it.quantity}
-                        {it.sold_as_pills ? ' pills' : ''}
-                      </td>
-                      <td style={{ textAlign: 'right' }}>{fmtMoney(it.line_total)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <hr style={{ border: 'none', borderTop: '1px dashed var(--border2)', margin: '8px 0' }} />
-              <table>
-                <tbody>
-                  <tr>
-                    <td>Subtotal</td>
-                    <td style={{ textAlign: 'right' }}>{fmtMoney(receipt.sale.subtotal)}</td>
-                  </tr>
-                  <tr>
-                    <td>Discount</td>
-                    <td style={{ textAlign: 'right' }}>-{fmtMoney(receipt.sale.discount)}</td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <strong>TOTAL (ETB)</strong>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <strong>{fmtMoney(receipt.sale.total)}</strong>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Paid ({receipt.sale.payment_method})</td>
-                    <td style={{ textAlign: 'right' }}>{fmtMoney(receipt.sale.amount_paid)}</td>
-                  </tr>
-                  <tr>
-                    <td>Change</td>
-                    <td style={{ textAlign: 'right' }}>{fmtMoney(receipt.sale.change_due)}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p style={{ textAlign: 'center', marginTop: 10, color: 'var(--text-dim)' }}>Thank you! Powered by AFRO-TECH</p>
-            </div>
-            <div className="pl-form-actions">
-              <button type="button" className="pl-btn pl-btn-ghost" onClick={() => window.print()}>
-                <i className="fa-solid fa-print" aria-hidden="true" /> Print
-              </button>
-              <button type="button" className="pl-btn pl-btn-primary" onClick={() => setReceipt(null)}>
-                New sale
-              </button>
-            </div>
-          </div>
-        )}
+        {receipt && (() => {
+          const cfg = settingsQ.data?.settings
+          const rData: ReceiptData = {
+            business_name: cfg?.business_name || me?.tenant?.name || 'AFRO SUITE STORE',
+            tin_number: cfg?.tin_number,
+            vat_number: cfg?.vat_number,
+            business_phone: cfg?.business_phone,
+            business_address: cfg?.business_address,
+            receipt_header: cfg?.receipt_header,
+            receipt_footer: cfg?.receipt_footer,
+            currency: cfg?.currency || 'ETB',
+            tax_rate: cfg?.tax_rate,
+            invoice_no: receipt.sale.invoice_no,
+            created_at: receipt.sale.created_at,
+            cashier_name: me?.full_name,
+            items: receipt.items,
+            subtotal: Number(receipt.sale.subtotal),
+            discount: Number(receipt.sale.discount),
+            total: Number(receipt.sale.total),
+            payment_method: receipt.sale.payment_method,
+            amount_paid: Number(receipt.sale.amount_paid),
+            change_due: Number(receipt.sale.change_due),
+          }
+          return (
+            <ThermalReceipt
+              data={rData}
+              autoPrint={!!cfg?.auto_print_receipt}
+              onDone={() => setReceipt(null)}
+            />
+          )
+        })()}
       </Modal>
     </div>
   )

@@ -77,13 +77,18 @@ router.get(
 )
 
 const settingsSchema = z.object({
+  business_name: z.string().trim().max(160).optional(),
+  tin_number: z.string().trim().max(50).optional(),
+  vat_number: z.string().trim().max(50).optional(),
   business_phone: z.string().trim().max(40).optional(),
   business_address: z.string().trim().max(300).optional(),
-  receipt_footer: z.string().trim().max(200).optional(),
+  receipt_header: z.string().trim().max(250).optional(),
+  receipt_footer: z.string().trim().max(300).optional(),
   currency: z.string().trim().max(10).optional(),
   tax_rate: z.number().min(0).max(100).optional(),
   academic_year: z.string().trim().max(20).optional(),
   margin_presets: z.string().trim().max(50).optional(),
+  auto_print_receipt: z.boolean().optional(),
 })
 router.put(
   '/settings',

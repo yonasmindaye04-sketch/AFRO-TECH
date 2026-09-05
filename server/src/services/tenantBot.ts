@@ -46,6 +46,8 @@ export interface TenantBotRow {
   broadcast_limit_per_day: number
   total_subscribers: number
   last_broadcast_at: Date | null
+  webhook_secret: string
+  transport: 'polling' | 'webhook'
 }
 
 export async function getTenantBotByTenant(tenantId: string): Promise<TenantBotRow | null> {
@@ -149,7 +151,53 @@ export async function sendBroadcast(tenantId: string, botId: string, message: st
   return { delivered, failed }
 }
 
-/* ── Runtime polling ──────────────────────────────────────── */
+/* ── Runtime: webhook (prod, free-tier friendly) OR polling (dev) ── */
+
+/** Public origin of this API (no trailing slash). Set RENDER_EXTERNAL_URL on Render. */
+function publicApiUrl(): string {
+  return (process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL || '').replace(/\/$/, '')
+}
+
+/** Use webhooks when a public URL is available (production). Falls back to polling locally. */
+export function useWebhooks(): boolean {
+  return publicApiUrl().startsWith('http') && !publicApiUrl().includes('localhost')
+}
+
+/** Webhook path for a specific tenant bot (mounted under /api/v1/tenant-bot). */
+export function tenantBotWebhookPath(bot: Pick<TenantBotRow, 'id' | 'webhook_secret'>): string {
+  return `/api/v1/tenant-bot/webhook/${bot.id}/${bot.webhook_secret}`
+}
+export function tenantBotWebhookUrl(bot: Pick<TenantBotRow, 'id' | 'webhook_secret'>): string {
+  return `${publicApiUrl()}${tenantBotWebhookPath(bot)}`
+}
+
+/** Register the bot's webhook with Telegram + set its menu button to the Mini App. */
+export async function registerBotWebhook(bot: TenantBotRow): Promise<void> {
+  const url = tenantBotWebhookUrl(bot)
+  await tgApi(bot.bot_token, 'setWebhook', {
+    url,
+    secret_token: bot.webhook_secret,
+    allowed_updates: ['message'],
+    drop_pending_updates: true,
+  })
+  // Menu button opens the tenant's workspace inside Telegram
+  const appUrl = (process.env.TELEGRAM_WEBAPP_URL || `${(process.env.PUBLIC_URL || '').replace(/\/$/, '')}/app`)
+  await tgApi(bot.bot_token, 'setChatMenuButton', {
+    menu_button: { type: 'web_app', text: bot.display_name || 'Open Workspace', web_app: { url: appUrl } },
+  }).catch(() => undefined) // not fatal — web_apps need HTTPS endpoints
+  await pool.query(`UPDATE tenant_bots SET transport = 'webhook', updated_at = now() WHERE id = $1`, [bot.id])
+}
+
+/** Remove the webhook (used when switching back to polling or on delete). */
+export async function clearBotWebhook(bot: TenantBotRow): Promise<void> {
+  await tgApi(bot.bot_token, 'deleteWebhook', { drop_pending_updates: false }).catch(() => undefined)
+  await pool.query(`UPDATE tenant_bots SET transport = 'polling', updated_at = now() WHERE id = $1`, [bot.id])
+}
+
+/** Handle one Telegram update for a tenant bot (called from webhook route or polling loop). */
+export async function handleTenantBotUpdate(botRow: TenantBotRow, update: { update_id: number; message?: { chat: { id: number }; text?: string; from?: { id: number; first_name?: string; username?: string } } }): Promise<void> {
+  return handleUpdate(botRow, update)
+}
 interface Runtime {
   tenantBotId: string
   token: string
@@ -239,6 +287,16 @@ export async function stopTenantBot(botId: string): Promise<void> {
 }
 
 export async function startAllTenantBots(): Promise<void> {
-  const rows = await query<{ id: string }>(`SELECT id FROM tenant_bots WHERE is_active = true`)
-  for (const row of rows) void startTenantBot(row.id)
+  const rows = await query<{ id: string; transport: 'polling' | 'webhook' }>(`SELECT id, transport FROM tenant_bots WHERE is_active = true`)
+  for (const row of rows) {
+    if (useWebhooks()) {
+      // Ensure webhook mode (idempotent — same-bot re-registration is a no-op)
+      if (row.transport !== 'webhook') {
+        const full = await getTenantBotByBotId(row.id)
+        if (full) await registerBotWebhook(full).catch((err) => console.warn(`[bot:${row.id}] webhook reg failed:`, err instanceof Error ? err.message : err))
+      }
+    } else {
+      void startTenantBot(row.id)
+    }
+  }
 }

@@ -1,7 +1,22 @@
 import { useState } from 'react'
 import { api, fmtDateTime, fmtMoney } from '../api'
+import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
+import ThermalReceipt from '../ui/ThermalReceipt'
+import type { ReceiptData } from '../utils/receipt'
+
+interface PosSettings {
+  business_name?: string
+  tin_number?: string
+  vat_number?: string
+  business_phone?: string
+  business_address?: string
+  receipt_header?: string
+  receipt_footer?: string
+  currency?: string
+  tax_rate?: number
+}
 
 interface SaleRow {
   id: string
@@ -33,6 +48,7 @@ interface ReturnRow {
 const REASONS = ['CustomerReturn', 'WrongItem', 'Damaged', 'Expired', 'Other'] as const
 
 export default function SalesHistory(): JSX.Element {
+  const { me } = useAuth()
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const qs = new URLSearchParams()
@@ -40,6 +56,7 @@ export default function SalesHistory(): JSX.Element {
   if (to) qs.set('to', to)
   const salesQ = useApiData<{ sales: SaleRow[]; total: number }>(`/retail/sales?${qs.toString()}`)
   const returnsQ = useApiData<{ returns: ReturnRow[] }>('/retail/returns')
+  const settingsQ = useApiData<{ settings: PosSettings }>('/tenant/settings')
 
   const [returnFor, setReturnFor] = useState<SaleRow | null>(null)
   const [returnQtys, setReturnQtys] = useState<Record<string, number>>({})
@@ -47,6 +64,7 @@ export default function SalesHistory(): JSX.Element {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showReturns, setShowReturns] = useState(false)
+  const [receiptFor, setReceiptFor] = useState<SaleRow | null>(null)
 
   const openReturn = (s: SaleRow): void => {
     setReturnFor(s)
@@ -135,10 +153,18 @@ export default function SalesHistory(): JSX.Element {
             {
               key: 'act',
               header: '',
-              width: '130px',
+              width: '210px',
               render: (s) =>
                 s.status === 'completed' ? (
                   <div className="pl-row-actions">
+                    <button
+                      type="button"
+                      className="pl-btn pl-btn-ghost pl-btn-sm"
+                      title="View & print 80mm thermal receipt"
+                      onClick={() => setReceiptFor(s)}
+                    >
+                      <i className="fa-solid fa-receipt" aria-hidden="true" /> Receipt
+                    </button>
                     <button type="button" className="pl-btn pl-btn-ghost pl-btn-sm" onClick={() => openReturn(s)}>
                       Return…
                     </button>
@@ -230,6 +256,42 @@ export default function SalesHistory(): JSX.Element {
             </div>
           </>
         )}
+      </Modal>
+
+      {/* Thermal receipt modal for historical reprints */}
+      <Modal open={receiptFor !== null} title={`Receipt ${receiptFor?.invoice_no ? '#' + receiptFor.invoice_no : ''}`} onClose={() => setReceiptFor(null)}>
+        {receiptFor && (() => {
+          const cfg = settingsQ.data?.settings
+          const rData: ReceiptData = {
+            business_name: cfg?.business_name || me?.tenant?.name || 'AFRO SUITE STORE',
+            tin_number: cfg?.tin_number,
+            vat_number: cfg?.vat_number,
+            business_phone: cfg?.business_phone,
+            business_address: cfg?.business_address,
+            receipt_header: cfg?.receipt_header,
+            receipt_footer: cfg?.receipt_footer,
+            currency: cfg?.currency || 'ETB',
+            tax_rate: cfg?.tax_rate,
+            invoice_no: receiptFor.invoice_no || undefined,
+            created_at: receiptFor.created_at,
+            cashier_name: receiptFor.cashier || undefined,
+            customer_name: receiptFor.customer_name || undefined,
+            items: (receiptFor.items || []).map((it) => ({
+              name: it.name,
+              quantity: it.quantity,
+              unit_price: Number(it.unit_price),
+              line_total: it.quantity * Number(it.unit_price),
+              sold_as_pills: it.sold_as_pills,
+            })),
+            subtotal: Number(receiptFor.subtotal),
+            discount: Number(receiptFor.discount),
+            total: Number(receiptFor.total),
+            payment_method: receiptFor.payment_method,
+            amount_paid: Number(receiptFor.total),
+            change_due: 0,
+          }
+          return <ThermalReceipt data={rData} onDone={() => setReceiptFor(null)} />
+        })()}
       </Modal>
     </div>
   )

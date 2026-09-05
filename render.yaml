@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: afro-suite-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: server
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false          # paste your Neon connection string in the Render dashboard
+      - key: JWT_SECRET
+        generateValue: true  # Render generates a strong secret for you
+      - key: TRIAL_DAYS
+        value: "45"
+      - key: PUBLIC_URL
+        sync: false          # https://afro-tech-et.vercel.app
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: TELEGRAM_WEBHOOK_URL
+        sync: false          # https://<render-app>.onrender.com/api/v1/telegram/webhook
+      - key: TELEGRAM_WEBHOOK_SECRET
+        generateValue: true
+      - key: TELEGRAM_WEBAPP_URL
+        sync: false          # https://afro-tech-et.vercel.app/app
+      - key: CHAPA_SECRET_KEY
+        sync: false
+      - key: CHAPA_WEBHOOK_SECRET
+        sync: false

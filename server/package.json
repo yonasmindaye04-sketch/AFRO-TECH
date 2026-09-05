@@ -5,6 +5,7 @@
   "description": "AFRO Suite multi-tenant platform API (pharmacy, store, hospital, school)",
   "type": "module",
   "main": "dist/index.js",
+  "engines": { "node": ">=20" },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",

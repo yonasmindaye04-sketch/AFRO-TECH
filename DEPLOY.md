@@ -1,10 +1,64 @@
-# AFRO Suite — Deployment Guide (VPS)
+# AFRO Suite — Deployment Guide
+
+## 0. Zero-cost deployment (Vercel frontend + Render backend + Neon Postgres)
+
+The whole stack can run **100% free**:
+
+| Layer | Provider | Why |
+|---|---|---|
+| **Frontend** | Vercel (this repo, auto-deployed) | Your existing portfolio on the same domain |
+| **Backend** | Render (free web service) | Node 20+, auto-scales, sleeps when idle, wakes fast |
+| **Database** | Neon (serverless Postgres) | Free tier, SSL, auto-backup, enough for early scale |
+
+### 1. Database (Neon)
+
+1. Create a free Neon project (no card required).
+2. Grab the connection string (e.g. `postgres://user:pass@host/dbname?sslmode=require`).
+3. In **Render → Environment → `DATABASE_URL`**, paste that string — the app auto-detects `DATABASE_URL` and enables SSL.
+
+> **Migrations** run automatically during the Render build (`npm run migrate` in the root `package.json`). No manual step needed.
+
+### 2. Backend (Render)
+
+1. Push the repo to GitHub and connect **Render** as a web service.
+2. Render detects `render.yaml` at the repo root automatically. Fill its `sync: false` env vars once in the dashboard:
+   - `DATABASE_URL` — Neon connection string (from step 1)
+   - `PUBLIC_URL` — `https://afro-tech-et.vercel.app` (your Vercel frontend)
+   - `RENDER_EXTERNAL_URL` — filled automatically by Render, no touch needed
+   - Telegram / Chapa credentials (see §7 for Telegram; Chapa is optional — server runs in mock mode without it)
+3. The **free plan sleeps after 15 min idle**. Two things keep it responsive:
+   - Vercel + Render + Neon is fast enough for a cold-start (<1 s)
+   - Register the Telegram bot via **webhook** (default when `RENDER_EXTERNAL_URL` is set): each tenant's bot gets a unique unguessable webhook URL. Telegram pings it on new messages → wakes the service.
+
+### 3. Telegram webhook (production)
+
+If `RENDER_EXTERNAL_URL` is set (it is, automatically, on Render), each tenant's bot registers a webhook:
+- `POST /api/v1/tenant-bot/webhook/<bot_id>/<bot_secret>` — unique per bot, validated server-side.
+- No manual `setWebhook` needed; the app registers it automatically when the tenant enables the bot or calls `/resume`.
+
+The platform's own alerts bot (for AFRO-TECH staff) uses the classic `TELEGRAM_WEBHOOK_URL` if you want to enable it too (see §7 below — optional; the per-tenant marketing bots are independent).
+
+### 4. Vercel proxy
+
+In `vercel.json`, the API is proxied to Render so the frontend can call it from any page:
+
+```json
+{ "source": "/api/v1/:path*", "destination": "https://<RENDER_APP>.onrender.com/api/v1/:path*" }
+```
+
+Replace `<RENDER_APP>` with your Render service name (e.g. `afro-suite-api.onrender.com`). No CORS mess, no cross-origin cookies.
+
+### 5. Telegram Mini App (production)
+
+The Mini App URL for every tenant bot is `RENDER_EXTERNAL_URL + '/app'` by default. To use your Vercel domain instead (better UX, same build), set `TELEGRAM_WEBAPP_URL=https://afro-tech-et.vercel.app/app` in Render env.
+
+## 1. VPS deployment (full control, one process)
 
 The whole product ships as **one Express app**: it serves both the marketing site + platform SPA (static files from `/dist`) and the JSON API (`/api/*`). Nginx sits in front as a reverse proxy with TLS.
 
 ```
-Internet → Nginx :443 ─┬→ static /dist files (SPA, all non-/api routes)
-                       └→ proxy /api → Node (pm2, port 4000) → PostgreSQL
+Internet → Nginx :443 → static /dist files (SPA, all non-/api routes)
+                       → proxy /api → Node (pm2, port 4000) → PostgreSQL
 ```
 
 ## 1. Server prerequisites

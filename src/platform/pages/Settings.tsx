@@ -3,14 +3,21 @@ import { api } from '../api'
 import { useAuth } from '../AuthContext'
 import { Card, Field, OkBox, Spinner } from '../ui'
 
+import ThermalReceipt from '../ui/ThermalReceipt'
+
 interface TenantSettings {
+  business_name?: string
+  tin_number?: string
+  vat_number?: string
   business_phone?: string
   business_address?: string
+  receipt_header?: string
   receipt_footer?: string
   currency?: string
   tax_rate?: number
   academic_year?: string
   margin_presets?: string
+  auto_print_receipt?: boolean
 }
 interface TelegramConfig {
   enabled: boolean
@@ -81,8 +88,10 @@ export default function Settings(): JSX.Element {
     }
   }
 
-  const set = (key: keyof TenantSettings) => (e: { target: { value: string } }) =>
-    setSettings((s) => ({ ...s, [key]: e.target.value }))
+  const set = (key: keyof TenantSettings) => (e: { target: { value: string; type?: string; checked?: boolean } }) => {
+    const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value
+    setSettings((s) => ({ ...s, [key]: val }))
+  }
 
   const saveCompany = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
@@ -104,13 +113,18 @@ export default function Settings(): JSX.Element {
     setMsg(null)
     try {
       const body: TenantSettings = {
-        business_phone: settings.business_phone || undefined,
-        business_address: settings.business_address || undefined,
-        receipt_footer: settings.receipt_footer || undefined,
-        currency: settings.currency || undefined,
+        business_name: settings.business_name?.trim() || undefined,
+        tin_number: settings.tin_number?.trim() || undefined,
+        vat_number: settings.vat_number?.trim() || undefined,
+        business_phone: settings.business_phone?.trim() || undefined,
+        business_address: settings.business_address?.trim() || undefined,
+        receipt_header: settings.receipt_header?.trim() || undefined,
+        receipt_footer: settings.receipt_footer?.trim() || undefined,
+        currency: settings.currency?.trim() || undefined,
         tax_rate: settings.tax_rate !== undefined && settings.tax_rate !== null ? Number(settings.tax_rate) : undefined,
         academic_year: isSchool ? settings.academic_year || undefined : undefined,
         margin_presets: settings.margin_presets || undefined,
+        auto_print_receipt: !!settings.auto_print_receipt,
       }
       const r = await api.put<{ settings: TenantSettings }>('/tenant/settings', body)
       setSettings(r.settings)
@@ -120,6 +134,32 @@ export default function Settings(): JSX.Element {
     } finally {
       setBusy(false)
     }
+  }
+
+  const previewReceiptData = {
+    business_name: settings.business_name || companyName || me?.tenant?.name || 'AFRO SUITE STORE',
+    tin_number: settings.tin_number || undefined,
+    vat_number: settings.vat_number || undefined,
+    business_phone: settings.business_phone || undefined,
+    business_address: settings.business_address || undefined,
+    receipt_header: settings.receipt_header || undefined,
+    receipt_footer: settings.receipt_footer || 'Thank you for your business!',
+    currency: settings.currency || 'ETB',
+    tax_rate: settings.tax_rate,
+    invoice_no: 'INV-TEST-001',
+    created_at: new Date().toISOString(),
+    cashier_name: me?.full_name || 'Cashier',
+    customer_name: 'Walk-in Customer',
+    items: [
+      { name: 'Sample Item 01', quantity: 2, unit_price: 150, line_total: 300 },
+      { name: 'Sample Medicine (pills)', quantity: 10, unit_price: 15, line_total: 150, sold_as_pills: true },
+    ],
+    subtotal: 450,
+    discount: 25,
+    total: 425,
+    payment_method: 'Cash',
+    amount_paid: 500,
+    change_due: 75,
   }
 
   const changePassword = async (e: FormEvent): Promise<void> => {
@@ -149,39 +189,104 @@ export default function Settings(): JSX.Element {
 
       <div className="pl-cols-2">
         <Card>
-          <h2>Business profile</h2>
+          <h2>Business profile & Receipt (80mm)</h2>
           <p style={{ color: 'var(--text-dim)', fontSize: '.84rem', marginBottom: 14 }}>
-            Shown on receipts, invoices and report cards.
+            Configure your business identity, tax numbers, and 80mm thermal receipt details.
           </p>
           {loaded && (
             <form onSubmit={saveSettings}>
-              <Field label="Phone">
-                <input className="pl-input" value={settings.business_phone ?? ''} onChange={set('business_phone')} placeholder="+251…" />
+              <Field label="Business / Trade Name" hint="Shown on receipts & invoices (leave blank for workspace name)">
+                <input
+                  className="pl-input"
+                  value={settings.business_name ?? ''}
+                  onChange={set('business_name')}
+                  placeholder={companyName || me?.tenant?.name || 'My Store'}
+                />
               </Field>
-              <Field label="Address">
-                <input className="pl-input" value={settings.business_address ?? ''} onChange={set('business_address')} placeholder="Bole, Addis Ababa" />
+
+              <div className="pl-grid-2">
+                <Field label="TIN Number" hint="Tax Identification Number on receipts">
+                  <input
+                    className="pl-input"
+                    value={settings.tin_number ?? ''}
+                    onChange={set('tin_number')}
+                    placeholder="e.g. 0012345678"
+                  />
+                </Field>
+                <Field label="VAT Reg Number" hint="Optional VAT registration ID">
+                  <input
+                    className="pl-input"
+                    value={settings.vat_number ?? ''}
+                    onChange={set('vat_number')}
+                    placeholder="e.g. VAT-987654"
+                  />
+                </Field>
+              </div>
+
+              <div className="pl-grid-2">
+                <Field label="Phone">
+                  <input className="pl-input" value={settings.business_phone ?? ''} onChange={set('business_phone')} placeholder="+251…" />
+                </Field>
+                <Field label="Address">
+                  <input className="pl-input" value={settings.business_address ?? ''} onChange={set('business_address')} placeholder="Bole, Addis Ababa" />
+                </Field>
+              </div>
+
+              <Field label="Receipt Header / Slogan" hint="Printed below business name (e.g. branch or greeting)">
+                <input
+                  className="pl-input"
+                  value={settings.receipt_header ?? ''}
+                  onChange={set('receipt_header')}
+                  placeholder="Bole Medhanialem Branch · Addis Ababa"
+                />
               </Field>
+
+              <Field label="Receipt Footer Note" hint="Printed at bottom (e.g. return policy or thank-you note)">
+                <input
+                  className="pl-input"
+                  value={settings.receipt_footer ?? ''}
+                  onChange={set('receipt_footer')}
+                  placeholder="Goods sold are not returnable. Thank you!"
+                />
+              </Field>
+
               <div className="pl-grid-2">
                 <Field label="Currency label" hint="Shown next to amounts">
                   <input className="pl-input" value={settings.currency ?? ''} onChange={set('currency')} placeholder="ETB" />
                 </Field>
-                <Field label="Tax / VAT rate %" hint="0 = no tax on receipts">
+                <Field label="Tax / VAT rate %" hint="0 = no tax calculation on receipts">
                   <input className="pl-input" type="number" min="0" max="100" step="0.01" value={settings.tax_rate ?? ''} onChange={set('tax_rate')} placeholder="15" />
                 </Field>
               </div>
+
+              {!isSchool && (
+                <div style={{ margin: '10px 0 14px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.88rem', fontWeight: 600, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!settings.auto_print_receipt}
+                      onChange={set('auto_print_receipt')}
+                    />
+                    Auto-print 80mm receipt immediately after POS checkout
+                  </label>
+                  <small style={{ color: 'var(--text-dim)', display: 'block', marginLeft: 24, marginTop: 3 }}>
+                    Automatically opens the thermal printer dialogue on each sale.
+                  </small>
+                </div>
+              )}
+
               {isSchool && (
                 <Field label="Current academic year">
                   <input className="pl-input" value={settings.academic_year ?? ''} onChange={set('academic_year')} placeholder="2025/2026" />
                 </Field>
               )}
-              <Field label="Receipt footer message">
-                <input className="pl-input" value={settings.receipt_footer ?? ''} onChange={set('receipt_footer')} placeholder="Thank you for your business!" />
-              </Field>
+
               {!isSchool && (
                 <Field label="POS margin presets" hint="Comma-separated percentages shown in the New Sale screen (e.g. 20,25,30)">
                   <input className="pl-input" value={settings.margin_presets ?? ''} onChange={set('margin_presets')} placeholder="20,25,30" />
                 </Field>
               )}
+
               {msg && <OkBox message={msg} />}
               <div className="pl-form-actions">
                 <button type="submit" className="pl-btn pl-btn-primary" disabled={busy}>
@@ -193,6 +298,17 @@ export default function Settings(): JSX.Element {
         </Card>
 
         <div>
+          <Card>
+            <h2>
+              <i className="fa-solid fa-receipt" style={{ marginRight: 8, color: 'var(--accent)' }} />
+              Live 80mm Receipt Preview
+            </h2>
+            <p style={{ color: 'var(--text-dim)', fontSize: '.84rem', marginBottom: 14 }}>
+              Preview how your 80mm continuous thermal roll receipt prints. Use <strong>Print 80mm Receipt</strong> to test on your printer.
+            </p>
+            <ThermalReceipt data={previewReceiptData} showActions={true} />
+          </Card>
+
           <Card>
             <h2>Company name</h2>
             <form onSubmit={saveCompany}>

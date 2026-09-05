@@ -7,14 +7,46 @@ import { validateBody } from '../middleware/validate.js'
 import {
   validateBotToken,
   getTenantBotByTenant,
+  getTenantBotByBotId,
   listSubscribers,
   listBroadcasts,
   sendBroadcast,
   startTenantBot,
   stopTenantBot,
+  handleTenantBotUpdate,
+  useWebhooks,
+  registerBotWebhook,
+  clearBotWebhook,
 } from '../services/tenantBot.js'
 
 const router = Router()
+
+/* ── Public webhook (no auth) — Telegram calls this for each bot.
+      Path carries the bot id + per-bot secret, making the URL itself unguessable. */
+router.post(
+  '/webhook/:botId/:secret',
+  asyncHandler(async (req, res) => {
+    const { botId, secret } = req.params
+    const bot = await getTargetBot(botId, secret)
+    if (!bot) return res.status(404).json({ error: 'Unknown bot' }) // don't leak which part was wrong
+    if (!bot.is_active) return res.json({ ok: true, ignored: 'inactive' })
+    await handleTenantBotUpdate(bot, req.body ?? {})
+    res.json({ ok: true })
+  })
+)
+
+async function getTargetBot(botId: string, secret: string) {
+  try {
+    return await queryOne<import('../services/tenantBot.js').TenantBotRow>(
+      `SELECT * FROM tenant_bots WHERE id = $1::uuid AND webhook_secret = $2`,
+      [botId, secret]
+    )
+  } catch {
+    return null
+  }
+}
+
+/* ── Authenticated tenant management ── */
 router.use(authenticate)
 
 /** GET /api/v1/tenant-bot — bot config + minimal status (owner) */
@@ -63,16 +95,22 @@ router.post(
     const tid = req.user!.tenant_id!
 
     const existing = await getTenantBotByTenant(tid)
-    const row = await queryOne<{ id: string; bot_username: string; is_active: boolean }>(
+    const row = await queryOne<{ id: string; bot_username: string; is_active: boolean; webhook_secret: string }>(
       existing
         ? `UPDATE tenant_bots SET bot_token=$2, bot_id=$3, bot_username=$4, is_active=true, updated_at=now()
-           WHERE tenant_id=$1 RETURNING id, bot_username, is_active`
+           WHERE tenant_id=$1 RETURNING id, bot_username, is_active, webhook_secret`
         : `INSERT INTO tenant_bots (tenant_id, bot_token, bot_id, bot_username) VALUES ($1, $2, $3, $4)
-           RETURNING id, bot_username, is_active`,
+           RETURNING id, bot_username, is_active, webhook_secret`,
       [tid, token, me.id, me.username]
     )
     if (!row) throw new AppError(500, 'Could not save the bot', 'INTERNAL')
-    await startTenantBot(row.id)
+    const bot = await queryOne<import('../services/tenantBot.js').TenantBotRow>(`SELECT * FROM tenant_bots WHERE id = $1`, [row.id])
+    if (!bot) throw new AppError(500, 'Could not load the bot', 'INTERNAL')
+
+    // Prefer webhook (production, works on free-tier apps) — fallback to local polling loop.
+    if (useWebhooks()) await registerBotWebhook(bot)
+    else await startTenantBot(row.id)
+
     res.json({ id: row.id, bot_username: row.bot_username, is_active: row.is_active, share_url: `https://t.me/${row.bot_username}` })
   })
 )
@@ -115,20 +153,21 @@ router.patch(
   })
 )
 
-/** POST /api/v1/tenant-bot/pause — pause polling (owner) */
+/** POST /api/v1/tenant-bot/pause — stop receiving messages (owner) */
 router.post(
   '/pause',
   requireRole('owner'),
   asyncHandler(async (req, res) => {
     const bot = await getTenantBotByTenant(req.user!.tenant_id!)
     if (!bot) throw new AppError(404, 'Register a bot first', 'NO_BOT')
-    await stopTenantBot(bot.id)
+    if (useWebhooks()) await clearBotWebhook(bot)
+    else await stopTenantBot(bot.id)
     await query(`UPDATE tenant_bots SET is_active = false, updated_at = now() WHERE id = $1`, [bot.id])
     res.json({ ok: true })
   })
 )
 
-/** POST /api/v1/tenant-bot/resume — resume polling (owner) */
+/** POST /api/v1/tenant-bot/resume — resume receiving messages (owner) */
 router.post(
   '/resume',
   requireRole('owner'),
@@ -136,7 +175,8 @@ router.post(
     const bot = await getTenantBotByTenant(req.user!.tenant_id!)
     if (!bot) throw new AppError(404, 'Register a bot first', 'NO_BOT')
     if (!bot.bot_token) throw new AppError(400, 'Bot has no token; re-register', 'NO_TOKEN')
-    await startTenantBot(bot.id)
+    if (useWebhooks()) await registerBotWebhook(bot)
+    else await startTenantBot(bot.id)
     await query(`UPDATE tenant_bots SET is_active = true, updated_at = now() WHERE id = $1`, [bot.id])
     res.json({ ok: true })
   })
