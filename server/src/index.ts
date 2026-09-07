@@ -102,14 +102,7 @@ app.post('/api/contact', async (req, res) => {
   }
 })
 
-/* ── Static SPA in production (single process behind Nginx) ── */
-if (process.env.NODE_ENV === 'production') {
-  const distDir = path.resolve(__dirname, '../../dist')
-  app.use(express.static(distDir, { maxAge: '1y', index: false }))
-  app.get(/^(?!\/api\/).*/, (_req, res) => {
-    res.sendFile(path.join(distDir, 'index.html'))
-  })
-}
+
 
 app.use(notFound)
 app.use(errorHandler)
