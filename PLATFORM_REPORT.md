@@ -281,15 +281,15 @@ Migrations live in `server/migrations/` and are applied with `npm run migrate` (
 
 All of the following were executed against the running system (not just compiled):
 
-- **Pill math:** buy 10 packs × 30 pills → sell 45 pills at 50 % margin → per-pill price 3.00 ETB, stock 255, 15 loose ✓
-- **Expired-batch guard:** 50 sellable + 30 expired pills → sell 50 OK, 51st **blocked** ✓
-- **Returns:** 15-pill resalable return → refund 45 ETB, loose stock restored ✓
-- **Cash drawer:** 500 opening + 135 sale − 45 refund = 590 expected; close with 600 → +10 difference recorded ✓
-- **Supplier ledger:** unpaid purchase raises balance; payment lowers it; purchase deletion reverses stock and balance ✓
-- **Hospital flow:** patient → appointment → **double-booking blocked** → queue walk-in → complete → record with vitals → lab order → result → invoice → part payment → paid ✓
-- **School flow:** class → students → attendance upsert → bulk grades → **overscore blocked** → report card with rank → fee assignment → payment → promotion ✓
-- **Telegram:** link code → `/link` → linked ✓ → `/today`, `/lowstock` handled ✓ → bad `initData` rejected ✓ → unlink ✓
-- **Platform:** tenant isolation (second company sees zero data), trial expiry → 402 + admin re-grant, rate limiting (429s), admin password reset with re-login ✓
+- **Pill math:** buy 10 packs × 30 pills → sell 45 pills at 50 % margin → per-pill price 3.00 ETB, stock 255, 15 loose
+- **Expired-batch guard:** 50 sellable + 30 expired pills → sell 50 OK, 51st **blocked**
+- **Returns:** 15-pill resalable return → refund 45 ETB, loose stock restored
+- **Cash drawer:** 500 opening + 135 sale − 45 refund = 590 expected; close with 600 → +10 difference recorded
+- **Supplier ledger:** unpaid purchase raises balance; payment lowers it; purchase deletion reverses stock and balance
+- **Hospital flow:** patient → appointment → **double-booking blocked** → queue walk-in → complete → record with vitals → lab order → result → invoice → part payment → paid
+- **School flow:** class → students → attendance upsert → bulk grades → **overscore blocked** → report card with rank → fee assignment → payment → promotion
+- **Telegram:** link code → `/link` → linked → `/today`, `/lowstock` handled → bad `initData` rejected → unlink
+- **Platform:** tenant isolation (second company sees zero data), trial expiry → 402 + admin re-grant, rate limiting (429s), admin password reset with re-login
 - Server TypeScript build, frontend build and ESLint: clean.
 
 ---

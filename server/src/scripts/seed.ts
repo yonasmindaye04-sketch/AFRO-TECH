@@ -14,7 +14,7 @@ async function seed(): Promise<void> {
   const fullName = process.env.ADMIN_NAME || 'AFRO-TECH Admin'
 
   if (!email || !password || password === 'ChangeMeNow!') {
-    console.error('\n⚠ Set ADMIN_EMAIL and a strong ADMIN_PASSWORD in server/.env first.\n')
+    console.error('\nSet ADMIN_EMAIL and a strong ADMIN_PASSWORD in server/.env first.\n')
     process.exit(1)
   }
 
@@ -25,14 +25,14 @@ async function seed(): Promise<void> {
       hash,
       existing.id,
     ])
-    console.log(`✓ AFRO-TECH admin updated: ${email}`)
+    console.log(`AFRO-TECH admin updated: ${email}`)
   } else {
     await pool.query(`INSERT INTO users (email, password_hash, full_name, role, tenant_id) VALUES ($1,$2,$3,'afrotech_admin',NULL)`, [
       email,
       hash,
       fullName,
     ])
-    console.log(`✓ AFRO-TECH admin created: ${email}`)
+    console.log(`AFRO-TECH admin created: ${email}`)
   }
   await pool.end()
 }

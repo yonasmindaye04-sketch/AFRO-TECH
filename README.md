@@ -2,7 +2,7 @@
 
 A modern, high-performance portfolio website for AFRO-TECH, a digital studio based in Addis Ababa, Ethiopia. Built with React, TypeScript, Vite, and modern CSS.
 
-## 🚀 Features
+##  Features
 
 ### Performance
 - **Lighthouse Score Target**: 95+ across all categories
@@ -28,7 +28,7 @@ A modern, high-performance portfolio website for AFRO-TECH, a digital studio bas
 - **CSS Custom Properties** for theming (dark/light mode)
 - **CSS Grid & Flexbox** for layouts
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 portfolio-main/
@@ -64,7 +64,7 @@ portfolio-main/
 └── vercel.json            # Vercel deployment config
 ```
 
-## 🎨 Design System
+## Design System
 
 ### Color Tokens (CSS Custom Properties)
 
@@ -97,7 +97,7 @@ portfolio-main/
 - Section padding: 70px vertical
 - Grid: CSS Grid + Flexbox
 
-## 🛠️ Development
+## Development
 
 ### Prerequisites
 - Node.js 18+
@@ -125,7 +125,7 @@ npm run lint
 ### Environment Variables
 None required for development.
 
-## 🚀 Deployment
+## Deployment
 
 ### Vercel (Recommended)
 1. Connect repository to Vercel
@@ -152,7 +152,7 @@ dist/
 └── ...
 ```
 
-## ♿ Accessibility Checklist
+## Accessibility Checklist
 
 - [x] Semantic HTML landmarks
 - [x] Skip to content link
@@ -165,7 +165,7 @@ dist/
 - [x] Skip link target exists
 - [x] Form field labels + aria-describedby for errors
 
-## 📊 Performance Optimizations
+## Performance Optimizations
 
 ### Implemented
 - Font preloading + font-display: swap
@@ -182,7 +182,7 @@ dist/
 - HTTP/2 or HTTP/3
 - Resource hints (prefetch, prerender)
 
-## 📝 Content Management
+## Content Management
 
 All content is in `src/data.ts`:
 - `services[]` - Service cards with pricing
@@ -192,7 +192,7 @@ All content is in `src/data.ts`:
 - `whatWeDo[]` - Service categories
 - `showcase[]` - Portfolio projects
 
-## 🔧 Configuration Files
+## Configuration Files
 
 | File | Purpose |
 |------|---------|
@@ -201,10 +201,10 @@ All content is in `src/data.ts`:
 | `vercel.json` | Deployment, headers, rewrites |
 | `eslint.config.js` | ESLint + Prettier |
 
-## 📄 License
+## License
 
 Proprietary - AFRO-TECH 2026
 
 ---
 
-Built with ❤️ in Addis Ababa, Ethiopia
+Built in Addis Ababa, Ethiopia

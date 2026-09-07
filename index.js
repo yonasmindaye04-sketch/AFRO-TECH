@@ -94,7 +94,7 @@ app.post('/api/contact', async (req, res) => {
     await transporter.sendMail({
       from:    `"AFRO-TECH" <${EMAIL}>`,
       to:      email,
-      subject: `We got your message, ${name.split(' ')[0]}! ✓`,
+      subject: `We got your message, ${name.split(' ')[0]}!`,
       html: `
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#09090b;color:#f4f0e8;border-radius:12px;overflow:hidden;">
           <div style="background:linear-gradient(135deg,#d4a853,#e8c06a);padding:28px 32px;">

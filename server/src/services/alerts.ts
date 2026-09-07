@@ -51,9 +51,9 @@ async function alertRetail(tenantId: string, name: string): Promise<void> {
   )
   if (!low.length && !expiring.length) return
 
-  const parts: string[] = [`📦 <b>${name} — stock report</b>`]
+  const parts: string[] = [`<b>${name} — stock report</b>`]
   if (low.length) {
-    parts.push(`\n⚠️ <b>Low stock:</b>\n${low.map((r) => `• ${r.name} — ${r.sellable} left (min ${r.threshold})`).join('\n')}`)
+    parts.push(`\n<b>Low stock:</b>\n${low.map((r) => `• ${r.name} — ${r.sellable} left (min ${r.threshold})`).join('\n')}`)
   }
   if (expiring.length) {
     parts.push(
@@ -75,7 +75,7 @@ async function alertSchool(tenantId: string, name: string): Promise<void> {
   if (Number(stats?.defaulters ?? 0) === 0) return
   await notifyTenant(
     tenantId,
-    `🎓 <b>${name} — fees reminder</b>\n${stats?.defaulters} fee${Number(stats?.defaulters) === 1 ? '' : 's'} due within 7 days\nOutstanding: <b>${Number(stats?.due ?? 0).toFixed(2)} ETB</b>\n\nSee the defaulters list in Reports.`
+    `<b>${name} — fees reminder</b>\n${stats?.defaulters} fee${Number(stats?.defaulters) === 1 ? '' : 's'} due within 7 days\nOutstanding: <b>${Number(stats?.due ?? 0).toFixed(2)} ETB</b>\n\nSee the defaulters list in Reports.`
   )
 }
 
@@ -92,7 +92,7 @@ async function alertHospital(tenantId: string, name: string): Promise<void> {
   if (!today.length) return
   await notifyTenant(
     tenantId,
-    `🏥 <b>${name} — today's schedule</b>\n${today
+    `<b>${name} — today's schedule</b>\n${today
       .map((a) => `• ${new Date(a.scheduled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} — ${a.patient_name}${a.doctor_name ? ` (${a.doctor_name})` : ''}`)
       .join('\n')}`
   )

@@ -25,9 +25,9 @@ async function run(): Promise<void> {
     try {
       await pool.query(sql)
       await pool.query(`INSERT INTO schema_migrations (name) VALUES ($1)`, [file])
-      console.log(`✓ applied ${file}`)
+      console.log(`Applied ${file}`)
     } catch (err) {
-      console.error(`✗ failed ${file}:`, err)
+      console.error(`Failed ${file}:`, err)
       process.exit(1)
     }
   }

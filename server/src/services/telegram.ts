@@ -128,10 +128,10 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
     await sendMessage(
       chatId,
       user
-        ? `👋 <b>${user.full_name}</b> — AFRO-TECH assistant for <b>${user.tenant_name ?? 'AFRO-TECH'}</b>.\n\n` +
+        ? `<b>${user.full_name}</b> — AFRO-TECH assistant for <b>${user.tenant_name ?? 'AFRO-TECH'}</b>.\n\n` +
             `Commands:\n/today — daily summary\n/lowstock — products to reorder\n/expiring — batches expiring soon\n/shift — your open cash drawer\n/unlink — disconnect this chat\n\n` +
             `Or open the app: ${MINI_APP_URL}`
-        : `👋 Welcome to the <b>AFRO-TECH Suite</b> assistant!\n\nTo link your work account:\n1. Open the web app → Settings → Telegram\n2. Generate a code and send it here as <code>/link CODE</code>\n\nThen I'll keep you posted on stock, fees and appointments.\nApp: ${MINI_APP_URL}`
+        : `Welcome to the <b>AFRO-TECH Suite</b> assistant!\n\nTo link your work account:\n1. Open the web app → Settings → Telegram\n2. Generate a code and send it here as <code>/link CODE</code>\n\nThen I'll keep you posted on stock, fees and appointments.\nApp: ${MINI_APP_URL}`
     )
     return
   }
@@ -154,7 +154,7 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
       [row.user_id]
     )
     logAudit({ userId: row.user_id, userName: user?.full_name, action: 'telegram.link', entity: 'user', entityId: row.user_id, details: { telegram: tgUser.id } })
-    await sendMessage(chatId, `✅ Linked! You'll receive alerts for <b>${user?.tenant_name ?? 'your workspace'}</b>.\nTry /today or open ${MINI_APP_URL}`)
+    await sendMessage(chatId, `Linked! You'll receive alerts for <b>${user?.tenant_name ?? 'your workspace'}</b>.\nTry /today or open ${MINI_APP_URL}`)
     return
   }
 
@@ -187,7 +187,7 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
               [user.tenant_id]
             )
       const label = user.business_type === 'hospital' ? 'appointments today' : 'attendance entries today'
-      await sendMessage(chatId, `📋 <b>${user.tenant_name}</b>\n${stats?.today ?? 0} ${label}.`)
+      await sendMessage(chatId, `<b>${user.tenant_name}</b>\n${stats?.today ?? 0} ${label}.`)
       return
     }
     const s = await queryOne<{ total: string; count: string }>(
@@ -195,7 +195,7 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
        WHERE tenant_id = $1 AND status = 'completed' AND created_at >= CURRENT_DATE`,
       [user.tenant_id]
     )
-    await sendMessage(chatId, `💰 <b>${user.tenant_name} — today</b>\n${s?.count ?? 0} sales · ${Number(s?.total ?? 0).toFixed(2)} ETB`)
+    await sendMessage(chatId, `<b>${user.tenant_name} — today</b>\n${s?.count ?? 0} sales · ${Number(s?.total ?? 0).toFixed(2)} ETB`)
     return
   }
 
@@ -215,10 +215,10 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
       [user.tenant_id]
     )
     if (!rows.length) {
-      await sendMessage(chatId, '✅ Stock levels look healthy — nothing to reorder.')
+      await sendMessage(chatId, 'Stock levels look healthy — nothing to reorder.')
       return
     }
-    await sendMessage(chatId, `⚠️ <b>Low stock — reorder these:</b>\n${rows.map((r) => `• ${r.name} — ${r.sellable} left (min ${r.threshold})`).join('\n')}`)
+    await sendMessage(chatId, `<b>Low stock — reorder these:</b>\n${rows.map((r) => `• ${r.name} — ${r.sellable} left (min ${r.threshold})`).join('\n')}`)
     return
   }
 
@@ -231,7 +231,7 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
       [user.tenant_id]
     )
     if (!rows.length) {
-      await sendMessage(chatId, '✅ Nothing expiring in the next 60 days.')
+      await sendMessage(chatId, 'Nothing expiring in the next 60 days.')
       return
     }
     await sendMessage(
@@ -251,7 +251,7 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
       return
     }
     const expected = Number(shift.opening_balance) + Number(shift.cash_sales) - Number(shift.expenses)
-    await sendMessage(chatId, `🧾 <b>Open shift</b>\nCash sales: ${Number(shift.cash_sales).toFixed(2)} ETB\nExpected in drawer: ${expected.toFixed(2)} ETB`)
+    await sendMessage(chatId, `<b>Open shift</b>\nCash sales: ${Number(shift.cash_sales).toFixed(2)} ETB\nExpected in drawer: ${expected.toFixed(2)} ETB`)
     return
   }
 

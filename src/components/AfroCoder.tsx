@@ -194,7 +194,6 @@ export function AfroCoder() {
           <text x="400" y="280" className="afro-float-sym afro-float-4">{"</>"}</text>
           <circle cx="75" cy="210" r="4" fill="var(--accent, #2f4d78)" opacity="0.5" className="afro-float-5" />
           <circle cx="420" cy="200" r="3" fill="var(--accent, #2f4d78)" opacity="0.4" className="afro-float-6" />
-          <text x="390" y="380" className="afro-float-sym afro-float-7">{"⚙"}</text>
         </g>
       </svg>
     </div>

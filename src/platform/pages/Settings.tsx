@@ -99,7 +99,7 @@ export default function Settings(): JSX.Element {
     setCompanyMsg(null)
     try {
       await api.patch('/tenant', { name: companyName.trim() })
-      setCompanyMsg('Company name updated ✓')
+      setCompanyMsg('Company name updated')
     } catch (err) {
       setCompanyMsg(err instanceof Error ? err.message : 'Update failed')
     } finally {
@@ -128,7 +128,7 @@ export default function Settings(): JSX.Element {
       }
       const r = await api.put<{ settings: TenantSettings }>('/tenant/settings', body)
       setSettings(r.settings)
-      setMsg('Settings saved ✓')
+      setMsg('Settings saved')
     } catch (err) {
       setMsg(err instanceof Error ? err.message : 'Save failed')
     } finally {
@@ -338,7 +338,7 @@ export default function Settings(): JSX.Element {
                   {pwError}
                 </p>
               )}
-              {pwOk && <OkBox message="Password changed ✓" />}
+              {pwOk && <OkBox message="Password changed" />}
               <div className="pl-form-actions">
                 <button type="submit" className="pl-btn pl-btn-primary" disabled={pwBusy}>
                   {pwBusy ? 'Saving…' : 'Change password'}
@@ -364,7 +364,7 @@ export default function Settings(): JSX.Element {
         ) : tgCfg.linked ? (
           <>
             <p style={{ fontSize: '.9rem', lineHeight: 1.7 }}>
-              ✅ This account is linked. The bot sends you <strong>stock, expiry, fee and appointment alerts</strong> and answers <code>/today</code>,{' '}
+              This account is linked. The bot sends you <strong>stock, expiry, fee and appointment alerts</strong> and answers <code>/today</code>,{' '}
               <code>/lowstock</code>, <code>/expiring</code>, <code>/shift</code>.
             </p>
             <div className="pl-form-actions" style={{ justifyContent: 'flex-start' }}>

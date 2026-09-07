@@ -66,7 +66,7 @@ export default function Classes(): JSX.Element {
         from_class_id: promo.from_class_id,
         to_class_id: promo.to_class_id || null,
       })
-      setPromoMsg(`${r.moved} student${r.moved === 1 ? '' : 's'} ${promo.to_class_id ? 'promoted ✓' : 'graduated ✓'}`)
+      setPromoMsg(`${r.moved} student${r.moved === 1 ? '' : 's'} ${promo.to_class_id ? 'promoted' : 'graduated'}`)
       classesQ.reload()
     } catch (err) {
       setPromoMsg(err instanceof Error ? err.message : 'Promotion failed')
@@ -278,7 +278,7 @@ export default function Classes(): JSX.Element {
               ))}
           </select>
         </Field>
-        {promoMsg && <p style={{ fontSize: '.87rem', color: promoMsg.includes('✓') ? '#34d399' : '#e07a7a' }}>{promoMsg}</p>}
+        {promoMsg && <p style={{ fontSize: '.87rem', color: '#34d399' }}>{promoMsg}</p>}
         <div className="pl-form-actions">
           <button
             type="button"

@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing! This document outlines the process and standards for contributing to the AFRO-TECH portfolio website.
 
-## 📋 Table of Contents
+##  Table of Contents
 
 - [Code of Conduct](#code-of-conduct)
 - [Getting Started](#getting-started)
@@ -14,11 +14,11 @@ Thank you for your interest in contributing! This document outlines the process 
 - [Accessibility Requirements](#accessibility-requirements)
 - [Performance Requirements](#performance-requirements)
 
-## 🤝 Code of Conduct
+##  Code of Conduct
 
 This project follows the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/). By participating, you agree to uphold this code.
 
-## 🚀 Getting Started
+##  Getting Started
 
 ### Prerequisites
 - Node.js 18+ (use `nvm` or `fnm` for version management)
@@ -68,7 +68,7 @@ Enable format on save:
 }
 ```
 
-## 🔄 Development Workflow
+## Development Workflow
 
 ### Branch Strategy
 
@@ -113,12 +113,12 @@ npm run typecheck
 npm run lint
 ```
 
-## 📝 Code Standards
+## Code Standards
 
 ### TypeScript
 
 ```typescript
-// ✅ DO: Explicit types for props and state
+// DO: Explicit types for props and state
 interface ServiceCardProps {
   service: Service;
   tierColor: string;
@@ -130,14 +130,14 @@ export function ServiceCard({ service, tierColor, onSelect }: ServiceCardProps) 
   // ...
 }
 
-// ❌ DON'T: Use any, implicit any, or missing types
-function BadComponent({ data }: any) { } // ❌
+// DON'T: Use any, implicit any, or missing types
+function BadComponent({ data }: any) { } // DON'T
 ```
 
 ### React Patterns
 
 ```typescript
-// ✅ DO: Functional components with hooks
+// DO: Functional components with hooks
 export function ServiceCard({ service }: ServiceCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   
@@ -148,21 +148,21 @@ export function ServiceCard({ service }: ServiceCardProps) {
   );
 }
 
-// ✅ DO: Early returns for guards
+// DO: Early returns for guards
 function ContactForm() {
   if (!formData.name) return <ErrorMessage />;
   
   return <form>...</form>;
 }
 
-// ❌ DON'T: Class components (unless absolutely necessary)
-class BadComponent extends React.Component { } // ❌
+// DON'T: Class components (unless absolutely necessary)
+class BadComponent extends React.Component { } // DON'T
 ```
 
 ### CSS/Styling
 
 ```css
-/* ✅ DO: Use CSS custom properties */
+/* DO: Use CSS custom properties */
 .card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -170,7 +170,7 @@ class BadComponent extends React.Component { } // ❌
   padding: var(--spacing-lg);
 }
 
-/* ✅ DO: Mobile-first responsive */
+/* DO: Mobile-first responsive */
 .container {
   padding: 16px;
 }
@@ -178,20 +178,20 @@ class BadComponent extends React.Component { } // ❌
   .container { padding: 24px; }
 }
 
-/* ✅ DO: Logical properties */
+/* DO: Logical properties */
 .element {
   margin-inline-start: 16px;
   padding-block: 16px;
 }
 
-/* ❌ DON'T: Hardcoded values, !important */
-.bad { color: #c8963c !important; } /* ❌ */
+/* DON'T: Hardcoded values, !important */
+.bad { color: #c8963c !important; } /* DON'T */
 ```
 
 ### Accessibility
 
 ```tsx
-// ✅ DO: Semantic HTML + ARIA
+// DO: Semantic HTML + ARIA
 <button 
   className="btn-primary"
   aria-label="Start a project"
@@ -200,7 +200,7 @@ class BadComponent extends React.Component { } // ❌
   Start Project <i className="fa-solid fa-arrow-right" aria-hidden="true" />
 </button>
 
-// ✅ DO: Form labels + error association
+// DO: Form labels + error association
 <label htmlFor="email">Email <span className="req">*</span></label>
 <input 
   id="email" 
@@ -214,13 +214,13 @@ class BadComponent extends React.Component { } // ❌
   </span>
 )}
 
-// ✅ DO: Focus management
+// DO: Focus management
 <div className="skip-to-content">
   <a href="#main-content">Skip to main content</a>
 </div>
 
-// ❌ DON'T: Remove focus styles
-*:focus { outline: none; } /* ❌ */
+// DON'T: Remove focus styles
+*:focus { outline: none; } /* DON'T */
 ```
 
 ### File Naming
@@ -245,7 +245,7 @@ data.ts                  # Data files: lowercase
 types.ts                 # Type definitions
 ```
 
-## 📋 Commit Guidelines
+## Commit Guidelines
 
 ### Conventional Commits
 
@@ -303,7 +303,7 @@ git commit -m "docs(readme): add architecture documentation
 - Add performance optimization section"
 ```
 
-## 🔍 Pull Request Process
+## Pull Request Process
 
 ### PR Checklist
 
@@ -360,7 +360,7 @@ Brief summary of changes
 3. **Manual Testing**: Reviewer tests locally
 4. **Merge**: Squash and merge to main
 
-## 🧪 Testing
+## Testing
 
 ### Test Types
 
@@ -423,7 +423,7 @@ describe('ServiceCard', () => {
 });
 ```
 
-## ♿ Accessibility Requirements
+## Accessibility Requirements
 
 ### Must Pass (Automated)
 - [ ] axe-core: 0 violations
@@ -460,7 +460,7 @@ npx @axe-core/playwright test:e2e
 # Android: TalkBack
 ```
 
-## ⚡ Performance Requirements
+## Performance Requirements
 
 ### Budgets (Enforced in CI)
 
@@ -483,7 +483,7 @@ npx @axe-core/playwright test:e2e
 - [ ] Third-party: Minimal, async, preconnect
 - [ ] Caching: Immutable assets, long max-age
 
-## 📚 Resources
+## Resources
 
 ### Documentation
 - [React Docs](https://react.dev/)
@@ -500,4 +500,4 @@ npx @axe-core/playwright test:e2e
 
 ---
 
-Thank you for contributing! 🎉
+Thank you for contributing!

@@ -7,11 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.0] - 2026-08-08
 
-### 🎉 Major Release - Complete Rebuild
+### Major Release - Complete Rebuild
 
 Complete rewrite of the AFRO-TECH portfolio website with modern architecture, accessibility compliance, and performance optimization.
 
-### ✨ Added
+### Added
 
 #### Architecture & Foundation
 - **React 18 + TypeScript + Vite** - Modern build tooling with fast HMR
@@ -68,7 +68,7 @@ Complete rewrite of the AFRO-TECH portfolio website with modern architecture, ac
 - Semantic HTML hierarchy
 - Sitemap.xml, robots.txt, webmanifest
 
-### 🔧 Changed
+### Changed
 
 #### Design System
 - **New color palette** - Gold accent (`#c8963c`) with dark/light variants
@@ -83,27 +83,27 @@ Complete rewrite of the AFRO-TECH portfolio website with modern architecture, ac
 - **Forms** - Inline validation with accessible error messages
 - **Tables** - Striped rows, sticky headers, sortable (future)
 
-### 🐛 Fixed
+### Fixed
 
 #### Accessibility Issues (from Lighthouse audit)
-- ✅ Color contrast: Updated gold buttons (`#c8963c` on white) to meet 4.5:1
-- ✅ Alt text: Added descriptive alt to logo images
-- ✅ ARIA: Removed invalid `aria-pressed` on non-button elements
-- ✅ Form labels: Added explicit `htmlFor` + `aria-describedby`
-- ✅ Link names: Added `aria-label` to footer social icons
-- ✅ Main landmark: Added `<main id="main-content">`
-- ✅ Skip link: Fixed target to `#main-content`
-- ✅ Button names: Added `aria-label` to icon-only buttons
-- ✅ Heading order: Ensured h1→h2→h3 hierarchy
+- Color contrast: Updated gold buttons (`#c8963c` on white) to meet 4.5:1
+- Alt text: Added descriptive alt to logo images
+- ARIA: Removed invalid `aria-pressed` on non-button elements
+- Form labels: Added explicit `htmlFor` + `aria-describedby`
+- Link names: Added `aria-label` to footer social icons
+- Main landmark: Added `<main id="main-content">`
+- Skip link: Fixed target to `#main-content`
+- Button names: Added `aria-label` to icon-only buttons
+- Heading order: Ensured h1→h2→h3 hierarchy
 
 #### Performance Issues
-- ✅ Unused JavaScript: Removed duplicate Lenis init, Font Awesome loaded once
-- ✅ Render-blocking: Google Fonts loaded async with `media="print" onload`
-- ✅ Image dimensions: Added explicit width/height to all images
-- ✅ Font display: Added `font-display: swap` to Google Fonts
-- ✅ Server response: Optimized Vercel edge configuration
+- Unused JavaScript: Removed duplicate Lenis init, Font Awesome loaded once
+- Render-blocking: Google Fonts loaded async with `media="print" onload`
+- Image dimensions: Added explicit width/height to all images
+- Font display: Added `font-display: swap` to Google Fonts
+- Server response: Optimized Vercel edge configuration
 
-### 🗑️ Removed
+### Removed
 
 #### Legacy Code
 - Old jQuery-based scripts

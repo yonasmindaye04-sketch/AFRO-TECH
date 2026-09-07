@@ -110,7 +110,7 @@ export default function Attendance(): JSX.Element {
               </div>
             ))}
             <div className="pl-form-actions">
-              {saved && <span style={{ color: '#34d399', fontSize: '.87rem', marginRight: 'auto' }}>Register saved for {fmtDate(date)} ✓</span>}
+              {saved && <span style={{ color: '#34d399', fontSize: '.87rem', marginRight: 'auto' }}>Register saved for {fmtDate(date)}</span>}
               <span style={{ marginRight: 12, color: 'var(--text-dim)', fontSize: '.87rem' }}>
                 {pct}% present · {counts.find((c) => c.s === 'absent')?.n ?? 0} absent
               </span>
