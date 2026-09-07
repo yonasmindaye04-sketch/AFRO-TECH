@@ -19,7 +19,7 @@ import schoolRoutes from './routes/school.js'
 import telegramRoutes from './routes/telegram.js'
 import billingRoutes from './routes/billing.js'
 import tenantBotRoutes from './routes/tenant-bots.js'
-import { startPolling, telegramEnabled } from './services/telegram.js'
+import { startPolling, telegramEnabled, setWebhook } from './services/telegram.js'
 import { startAlertScheduler } from './services/alerts.js'
 import { startAllTenantBots } from './services/tenantBot.js'
 
@@ -117,8 +117,17 @@ app.use(errorHandler)
 const port = Number(process.env.PORT || 4000)
 app.listen(port, () => {
   console.log(`AFRO Suite API listening on :${port} (${process.env.NODE_ENV || 'development'})`)
-  // Telegram bot: long-polling for dev, webhook for production (see DEPLOY.md)
-  if (telegramEnabled() && !process.env.TELEGRAM_WEBHOOK_URL) startPolling()
+  // Platform bot: webhook in production, long-polling in dev. Auto-register the
+  // webhook on boot so deploys "just work" without a manual curl.
+  if (telegramEnabled()) {
+    if (process.env.TELEGRAM_WEBHOOK_URL) {
+      void setWebhook(process.env.TELEGRAM_WEBHOOK_URL).catch((err) =>
+        console.warn('[telegram] auto setWebhook failed:', err instanceof Error ? err.message : err)
+      )
+    } else {
+      startPolling()
+    }
+  }
   startAlertScheduler()
   void startAllTenantBots().catch((err) => console.warn('[tenant-bots] startup failed:', err instanceof Error ? err.message : err))
 })
