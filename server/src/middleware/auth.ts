@@ -39,6 +39,12 @@ export interface JwtPayload {
   role: AuthUser['role']
 }
 
+export type AuthRequest = Request & {
+  user?: AuthUser
+  tenant?: TenantRow | null
+  permissions?: string[]
+}
+
 export function signToken(user: AuthUser): string {
   const expiresIn = (process.env.JWT_EXPIRES_IN || '7d') as jwt.SignOptions['expiresIn']
   return jwt.sign({ sub: user.id, tid: user.tenant_id, role: user.role }, JWT_SECRET, { expiresIn })
@@ -126,7 +132,7 @@ export function requireRole(...roles: AuthUser['role'][]): (req: Request, res: R
 /** Middleware to check if user has a specific permission (resource.action format). */
 export function requirePermission(permission: string): (req: Request, _res: Response, next: NextFunction) => void {
   return (req, _res, next) => {
-    if (req.user?.role === 'afrotech_admin') return next()
+    if (req.user?.role === 'afrotech_admin' || req.user?.role === 'owner') return next()
     if (!req.permissions?.includes(permission)) {
       return next(new AppError(403, `Permission denied: ${permission} required`, 'FORBIDDEN'))
     }

@@ -7,7 +7,7 @@ CREATE TABLE marketing_messages (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   campaign_id     UUID REFERENCES marketing_campaigns(id) ON DELETE SET NULL,
-  automation_id   UUID REFERENCES marketing_automations(id) ON DELETE SET NULL,
+  automation_id   UUID,
   contact_id      UUID NOT NULL REFERENCES marketing_contacts(id) ON DELETE CASCADE,
   channel         TEXT NOT NULL CHECK (channel IN ('sms','email','whatsapp','push')),
   template_id     UUID REFERENCES marketing_templates(id) ON DELETE SET NULL,

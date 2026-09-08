@@ -33,3 +33,22 @@ services:
         sync: false
       - key: CHAPA_WEBHOOK_SECRET
         sync: false
+      # ── Marketing / Campaigns ──
+      - key: UPSTASH_REDIS_URL
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
+      - key: ETHIOTELECOM_SMPP_HOST
+        value: smpp.ethiotelecom.et
+      - key: ETHIOTELECOM_SMPP_PORT
+        value: "2775"
+      - key: ETHIOTELECOM_SMPP_USERNAME
+        sync: false
+      - key: ETHIOTELECOM_SMPP_PASSWORD
+        sync: false
+      - key: ETHIOTELECOM_SENDER_ID
+        value: AFROTECH
+      - key: ETHIOTELECOM_MOCK
+        value: "false"

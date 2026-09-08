@@ -16,13 +16,11 @@ CREATE TABLE marketing_contacts (
   status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','unsubscribed','bounced','complained')),
   metadata        JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE(tenant_id, email) WHERE email IS NOT NULL,
-  UNIQUE(tenant_id, phone) WHERE phone IS NOT NULL
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_marketing_contacts_tenant ON marketing_contacts(tenant_id);
-CREATE INDEX idx_marketing_contacts_email ON marketing_contacts(tenant_id, email) WHERE email IS NOT NULL;
-CREATE INDEX idx_marketing_contacts_phone ON marketing_contacts(tenant_id, phone) WHERE phone IS NOT NULL;
+CREATE UNIQUE INDEX idx_marketing_contacts_tenant_email ON marketing_contacts(tenant_id, email) WHERE email IS NOT NULL;
+CREATE UNIQUE INDEX idx_marketing_contacts_tenant_phone ON marketing_contacts(tenant_id, phone) WHERE phone IS NOT NULL;
 CREATE INDEX idx_marketing_contacts_status ON marketing_contacts(tenant_id, status);
 
 -- Channel preferences per contact

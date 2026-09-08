@@ -19,9 +19,12 @@ import schoolRoutes from './routes/school.js'
 import telegramRoutes from './routes/telegram.js'
 import billingRoutes from './routes/billing.js'
 import tenantBotRoutes from './routes/tenant-bots.js'
+import marketingRoutes from './routes/marketing/index.js'
 import { startPolling, telegramEnabled, setWebhook } from './services/telegram.js'
 import { startAlertScheduler } from './services/alerts.js'
 import { startAllTenantBots } from './services/tenantBot.js'
+import { startWorkers, stopWorkers } from './workers/index.js'
+import { closeQueues } from './config/queue.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -70,6 +73,7 @@ app.use('/api/v1/school', schoolRoutes)
 app.use('/api/v1/telegram', telegramRoutes)
 app.use('/api/v1/billing', billingRoutes)
 app.use('/api/v1/tenant-bot', tenantBotRoutes)
+app.use('/api/v1/marketing', marketingRoutes)
 
 /* ── Contact form (works on VPS — no Vercel functions needed) */
 app.post('/api/contact', async (req, res) => {
@@ -108,7 +112,7 @@ app.use(notFound)
 app.use(errorHandler)
 
 const port = Number(process.env.PORT || 4000)
-app.listen(port, () => {
+app.listen(port, async () => {
   console.log(`AFRO Suite API listening on :${port} (${process.env.NODE_ENV || 'development'})`)
   // Platform bot: webhook in production, long-polling in development.
   if (telegramEnabled()) {
@@ -128,10 +132,13 @@ app.listen(port, () => {
   }
   startAlertScheduler()
   void startAllTenantBots().catch((err) => console.warn('[tenant-bots] startup failed:', err instanceof Error ? err.message : err))
+  await startWorkers()
 })
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, async () => {
+    await stopWorkers()
+    await closeQueues()
     await pool.end().catch(() => undefined)
     process.exit(0)
   })
