@@ -438,15 +438,15 @@ export default function BotStudio(): JSX.Element {
           onChange={(e) => setWelcomeMessage(e.target.value)}
         />
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
-          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <label className="pl-checkbox-label">
             <input
               type="checkbox"
               checked={autoReply}
               onChange={(e) => setAutoReply(e.target.checked)}
             />
-            <span>Always reply (otherwise unknown messages are ignored</span>
-         </label>
-       </div>
+            <span>Always reply (otherwise unknown messages are ignored)</span>
+          </label>
+        </div>
         <Field label="Daily broadcast limit" hint="Max broadcasts per day to your subscribers">
           <input
             className="pl-input"

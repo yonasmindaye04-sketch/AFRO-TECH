@@ -2,9 +2,10 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
-import { Card, Field, OkBox, Spinner } from '../ui'
+import { Card, Field, OkBox, Spinner, Badge } from '../ui'
 
 import ThermalReceipt from '../ui/ThermalReceipt'
+import type { ReceiptData } from '../utils/receipt'
 
 interface TenantSettings {
   business_name?: string
@@ -51,6 +52,9 @@ export default function Settings(): JSX.Element {
   const [tgBusy, setTgBusy] = useState(false)
   const [tgError, setTgError] = useState<string | null>(null)
 
+  const firmType = me?.tenant?.business_type || 'store'
+  const [liveTransaction, setLiveTransaction] = useState<ReceiptData | null>(null)
+
   useEffect(() => {
     api
       .get<{ settings: TenantSettings }>('/tenant/settings')
@@ -61,7 +65,119 @@ export default function Settings(): JSX.Element {
       .get<TelegramConfig>('/telegram/config')
       .then(setTgCfg)
       .catch(() => setTgCfg({ enabled: false, bot_username: null, linked: false, app_url: '' }))
-  }, [])
+
+    // Load latest real transaction from the platform to populate receipt with actual company data
+    if (firmType === 'school') {
+      api
+        .get<{ fees: any[] }>('/school/fees')
+        .then((r) => {
+          const f = r.fees?.find((x) => x.status === 'paid') || r.fees?.[0]
+          if (f) {
+            const amt = Number(f.paid_amount || f.amount || 0)
+            setLiveTransaction({
+              invoice_no: `FEE-${f.id.slice(0, 8).toUpperCase()}`,
+              customer_name: `${f.student_name} (${f.class_name || 'Student'})`,
+              cashier_name: me?.full_name || 'Bursar / Cashier',
+              created_at: f.paid_at || f.created_at,
+              items: [{ name: f.title || 'Tuition Fee', quantity: 1, unit_price: amt, line_total: amt }],
+              subtotal: amt,
+              discount: 0,
+              total: amt,
+              payment_method: 'Bank Transfer / Cash',
+              amount_paid: amt,
+              change_due: 0,
+            })
+          }
+        })
+        .catch(() => undefined)
+    } else if (firmType === 'hospital') {
+      api
+        .get<{ invoices: any[] }>('/hospital/invoices')
+        .then((r) => {
+          const inv = r.invoices?.[0]
+          if (inv) {
+            const amt = Number(inv.amount || 0)
+            const paid = Number(inv.paid_amount || amt)
+            setLiveTransaction({
+              invoice_no: inv.number || `MED-${inv.id.slice(0, 8).toUpperCase()}`,
+              customer_name: inv.patient_name || 'Patient',
+              cashier_name: me?.full_name || 'Cashier',
+              created_at: inv.issued_on,
+              items: [{ name: inv.description || 'Medical Consultation & Service', quantity: 1, unit_price: amt, line_total: amt }],
+              subtotal: amt,
+              discount: 0,
+              total: amt,
+              payment_method: 'Cash',
+              amount_paid: paid,
+              change_due: Math.max(0, paid - amt),
+            })
+          }
+        })
+        .catch(() => undefined)
+    } else {
+      // Store / Pharmacy
+      api
+        .get<{ sales: any[] }>('/retail/sales?limit=1')
+        .then((r) => {
+          const s = r.sales?.[0]
+          if (s && s.items && s.items.length > 0) {
+            const sub = Number(s.subtotal || s.total || 0)
+            const disc = Number(s.discount || 0)
+            const tot = Number(s.total || 0)
+            setLiveTransaction({
+              invoice_no: s.invoice_no || `INV-${s.id.slice(0, 8).toUpperCase()}`,
+              customer_name: s.customer_name || 'Walk-in Customer',
+              cashier_name: s.cashier || me?.full_name || 'Cashier',
+              created_at: s.created_at,
+              items: s.items.map((it: any) => ({
+                name: it.name,
+                quantity: it.quantity,
+                unit_price: Number(it.unit_price),
+                line_total: it.quantity * Number(it.unit_price),
+                sold_as_pills: it.sold_as_pills,
+              })),
+              subtotal: sub,
+              discount: disc,
+              total: tot,
+              payment_method: s.payment_method || 'Cash',
+              amount_paid: tot,
+              change_due: 0,
+            })
+          } else {
+            api
+              .get<{ products: any[] }>('/retail/products')
+              .then((pr) => {
+                if (pr.products && pr.products.length > 0) {
+                  const p1 = pr.products[0]
+                  const p2 = pr.products[1]
+                  const itms = [
+                    { name: p1.name, quantity: 1, unit_price: Number(p1.sell_price), line_total: Number(p1.sell_price), sold_as_pills: p1.sell_by_pill },
+                  ]
+                  if (p2) {
+                    itms.push({ name: p2.name, quantity: 2, unit_price: Number(p2.sell_price), line_total: 2 * Number(p2.sell_price), sold_as_pills: p2.sell_by_pill })
+                  }
+                  const tot = itms.reduce((acc, x) => acc + x.line_total, 0)
+                  setLiveTransaction({
+                    invoice_no: 'INV-CAT-001',
+                    customer_name: 'Walk-in Customer',
+                    cashier_name: me?.full_name || 'Cashier',
+                    created_at: new Date().toISOString(),
+                    items: itms,
+                    subtotal: tot,
+                    discount: 0,
+                    total: tot,
+                    payment_method: 'Cash',
+                    amount_paid: tot,
+                    change_due: 0,
+                  })
+                }
+              })
+              .catch(() => undefined)
+          }
+        })
+        .catch(() => undefined)
+    }
+  }, [firmType, me?.full_name])
 
   const generateTgCode = async (): Promise<void> => {
     setTgBusy(true)
@@ -138,30 +254,102 @@ export default function Settings(): JSX.Element {
     }
   }
 
-  const previewReceiptData = {
-    business_name: settings.business_name || companyName || me?.tenant?.name || 'AFRO SUITE STORE',
+  const fallbackItems: Record<
+    string,
+    {
+      header?: string
+      footer: string
+      customer: string
+      items: ReceiptData['items']
+      subtotal: number
+      total: number
+      amount_paid: number
+      change_due: number
+    }
+  > = {
+    school: {
+      header: settings.academic_year ? `Academic Year: ${settings.academic_year}` : 'Student Fee Receipt',
+      footer: 'Thank you! Education is the key to success.',
+      customer: 'Student Parent / Guardian',
+      items: [
+        { name: 'Tuition Fee — Semester 1', quantity: 1, unit_price: 2500, line_total: 2500 },
+        { name: 'Registration & Books', quantity: 1, unit_price: 450, line_total: 450 },
+      ],
+      subtotal: 2950,
+      total: 2950,
+      amount_paid: 3000,
+      change_due: 50,
+    },
+    hospital: {
+      header: 'Medical Billing & Services',
+      footer: 'Wishing you a speedy recovery!',
+      customer: 'Patient (Outpatient)',
+      items: [
+        { name: 'Doctor Consultation', quantity: 1, unit_price: 350, line_total: 350 },
+        { name: 'Laboratory Diagnostics', quantity: 1, unit_price: 450, line_total: 450 },
+      ],
+      subtotal: 800,
+      total: 800,
+      amount_paid: 800,
+      change_due: 0,
+    },
+    pharmacy: {
+      footer: 'Thank you! Get well soon.',
+      customer: 'Walk-in Customer',
+      items: [
+        { name: 'Amoxicillin 500mg (caps)', quantity: 2, unit_price: 120, line_total: 240 },
+        { name: 'Paracetamol 500mg (pills)', quantity: 10, unit_price: 5, line_total: 50, sold_as_pills: true },
+      ],
+      subtotal: 290,
+      total: 290,
+      amount_paid: 300,
+      change_due: 10,
+    },
+    store: {
+      footer: 'Thank you for shopping with us!',
+      customer: 'Walk-in Customer',
+      items: [
+        { name: 'Store Merchandise 01', quantity: 2, unit_price: 150, line_total: 300 },
+        { name: 'Store Merchandise 02', quantity: 1, unit_price: 220, line_total: 220 },
+      ],
+      subtotal: 520,
+      total: 520,
+      amount_paid: 600,
+      change_due: 80,
+    },
+  }
+
+  const defaultMeta = fallbackItems[firmType] || fallbackItems.store
+
+  const previewReceiptData: ReceiptData = {
+    business_name:
+      settings.business_name ||
+      companyName ||
+      me?.tenant?.name ||
+      (firmType === 'school'
+        ? 'AFRO SUITE ACADEMY'
+        : firmType === 'hospital'
+        ? 'AFRO SUITE CLINIC'
+        : 'AFRO SUITE STORE'),
     tin_number: settings.tin_number || undefined,
     vat_number: settings.vat_number || undefined,
     business_phone: settings.business_phone || undefined,
     business_address: settings.business_address || undefined,
-    receipt_header: settings.receipt_header || undefined,
-    receipt_footer: settings.receipt_footer || 'Thank you for your business!',
+    receipt_header: settings.receipt_header || (liveTransaction ? undefined : defaultMeta.header),
+    receipt_footer: settings.receipt_footer || defaultMeta.footer,
     currency: settings.currency || 'ETB',
     tax_rate: settings.tax_rate,
-    invoice_no: 'INV-TEST-001',
-    created_at: new Date().toISOString(),
-    cashier_name: me?.full_name || 'Cashier',
-    customer_name: 'Walk-in Customer',
-    items: [
-      { name: 'Sample Item 01', quantity: 2, unit_price: 150, line_total: 300 },
-      { name: 'Sample Medicine (pills)', quantity: 10, unit_price: 15, line_total: 150, sold_as_pills: true },
-    ],
-    subtotal: 450,
-    discount: 25,
-    total: 425,
-    payment_method: 'Cash',
-    amount_paid: 500,
-    change_due: 75,
+    invoice_no: liveTransaction?.invoice_no || `REC-${firmType.slice(0, 3).toUpperCase()}-001`,
+    created_at: liveTransaction?.created_at || new Date().toISOString(),
+    cashier_name: liveTransaction?.cashier_name || me?.full_name || 'Cashier',
+    customer_name: liveTransaction?.customer_name || defaultMeta.customer,
+    items: liveTransaction?.items || defaultMeta.items,
+    subtotal: liveTransaction ? liveTransaction.subtotal : defaultMeta.subtotal,
+    discount: liveTransaction ? liveTransaction.discount : 0,
+    total: liveTransaction ? liveTransaction.total : defaultMeta.total,
+    payment_method: liveTransaction?.payment_method || 'Cash',
+    amount_paid: liveTransaction ? (liveTransaction.amount_paid ?? liveTransaction.total) : defaultMeta.amount_paid,
+    change_due: liveTransaction ? (liveTransaction.change_due ?? 0) : defaultMeta.change_due,
   }
 
   const changePassword = async (e: FormEvent): Promise<void> => {
@@ -263,13 +451,13 @@ export default function Settings(): JSX.Element {
 
               {!isSchool && (
                 <div style={{ margin: '10px 0 14px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.88rem', fontWeight: 600, cursor: 'pointer' }}>
+                  <label className="pl-checkbox-label" style={{ fontWeight: 600 }}>
                     <input
                       type="checkbox"
                       checked={!!settings.auto_print_receipt}
                       onChange={set('auto_print_receipt')}
                     />
-                    Auto-print 80mm receipt immediately after POS checkout
+                    <span>Auto-print 80mm receipt immediately after POS checkout</span>
                   </label>
                   <small style={{ color: 'var(--text-dim)', display: 'block', marginLeft: 24, marginTop: 3 }}>
                     Automatically opens the thermal printer dialogue on each sale.
@@ -301,12 +489,21 @@ export default function Settings(): JSX.Element {
 
         <div>
           <Card>
-            <h2>
-              <i className="fa-solid fa-receipt" style={{ marginRight: 8, color: 'var(--accent)' }} />
-              Live 80mm Receipt Preview
-            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+              <h2 style={{ margin: 0 }}>
+                <i className="fa-solid fa-receipt" style={{ marginRight: 8, color: 'var(--accent)' }} />
+                80mm Thermal Receipt Preview
+              </h2>
+              {liveTransaction ? (
+                <Badge tone="good">Latest Live Transaction</Badge>
+              ) : (
+                <Badge tone="neutral">Firm Preview</Badge>
+              )}
+            </div>
             <p style={{ color: 'var(--text-dim)', fontSize: '.84rem', marginBottom: 14 }}>
-              Preview how your 80mm continuous thermal roll receipt prints. Use <strong>Print 80mm Receipt</strong> to test on your printer.
+              {liveTransaction
+                ? 'Showing your company’s latest live transaction. Changes to business details, tax numbers, and footer update here in real time.'
+                : 'Formatted for your firm with real company details. When transactions are recorded, your latest receipt displays here automatically.'}
             </p>
             <ThermalReceipt data={previewReceiptData} showActions={true} />
           </Card>

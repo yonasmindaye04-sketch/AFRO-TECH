@@ -1,13 +1,13 @@
-import { Router, type Response } from 'express'
+import { Router, type Request, type Response } from 'express'
 import { pool } from '../../config/db.js'
-import { authenticate, requirePermission, AuthRequest } from '../../middleware/auth.js'
+import { authenticate, requirePermission } from '../../middleware/auth.js'
 import { AppError } from '../../utils/helpers.js'
 
 const router = Router()
 
 router.use(authenticate)
 
-router.get('/overview', requirePermission('marketing.analytics.view'), async (req: AuthRequest, res: Response) => {
+router.get('/overview', requirePermission('marketing.analytics.view'), async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -48,7 +48,7 @@ router.get('/overview', requirePermission('marketing.analytics.view'), async (re
   res.json({ contacts: contacts[0], campaigns: campaigns[0], messages: messages[0], recent })
 })
 
-router.get('/campaigns/:id', requirePermission('marketing.analytics.view'), async (req: AuthRequest, res: Response) => {
+router.get('/campaigns/:id', requirePermission('marketing.analytics.view'), async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -89,7 +89,7 @@ router.get('/campaigns/:id', requirePermission('marketing.analytics.view'), asyn
   res.json({ campaign: campaign[0], byChannel, timeline })
 })
 
-router.get('/channels', requirePermission('marketing.analytics.view'), async (req: AuthRequest, res: Response) => {
+router.get('/channels', requirePermission('marketing.analytics.view'), async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 

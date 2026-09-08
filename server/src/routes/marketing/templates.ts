@@ -1,6 +1,6 @@
-import { Router, type Response } from 'express'
+import { Router, type Request, type Response } from 'express'
 import { pool } from '../../config/db.js'
-import { authenticate, requirePermission, AuthRequest } from '../../middleware/auth.js'
+import { authenticate, requirePermission } from '../../middleware/auth.js'
 import { AppError } from '../../utils/helpers.js'
 import { extractVariables } from '../../services/marketing/templateEngine.js'
 
@@ -8,7 +8,7 @@ const router = Router()
 
 router.use(authenticate)
 
-router.get('/', async (req: AuthRequest, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   const { page = '1', limit = '20', channel, status } = req.query
   const offset = (parseInt(page as string) - 1) * parseInt(limit as string)
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
@@ -44,7 +44,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   res.json({ templates, total: parseInt(count[0].count, 10), page: parseInt(page as string), limit: parseInt(limit as string) })
 })
 
-router.post('/', requirePermission('marketing.templates.create'), async (req: AuthRequest, res: Response) => {
+router.post('/', requirePermission('marketing.templates.create'), async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.body.tenant_id : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -63,7 +63,7 @@ router.post('/', requirePermission('marketing.templates.create'), async (req: Au
   res.status(201).json(rows[0])
 })
 
-router.get('/:id', async (req: AuthRequest, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -84,7 +84,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
   res.json({ ...rows[0], versions })
 })
 
-router.put('/:id', requirePermission('marketing.templates.update'), async (req: AuthRequest, res: Response) => {
+router.put('/:id', requirePermission('marketing.templates.update'), async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.body.tenant_id : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -125,7 +125,7 @@ router.put('/:id', requirePermission('marketing.templates.update'), async (req: 
   }
 })
 
-router.delete('/:id', requirePermission('marketing.templates.delete'), async (req: AuthRequest, res: Response) => {
+router.delete('/:id', requirePermission('marketing.templates.delete'), async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 

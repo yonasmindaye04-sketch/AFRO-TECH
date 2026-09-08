@@ -1,7 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { api, fmtDate, fmtMoney } from '../api'
+import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
+import ThermalReceipt from '../ui/ThermalReceipt'
+import type { ReceiptData } from '../utils/receipt'
 
 interface Invoice {
   id: string
@@ -65,8 +68,10 @@ export default function Billing(): JSX.Element {
     }
   }
 
+  const { me } = useAuth()
   const [printData, setPrintData] = useState<Invoice | null>(null)
-  const settingsQ = useApiData<{ settings: { business_phone?: string; business_address?: string; receipt_footer?: string } }>('/tenant/settings')
+  const [thermalInv, setThermalInv] = useState<Invoice | null>(null)
+  const settingsQ = useApiData<{ settings: { business_name?: string; tin_number?: string; vat_number?: string; business_phone?: string; business_address?: string; receipt_header?: string; receipt_footer?: string; currency?: string; tax_rate?: number } }>('/tenant/settings')
 
   const printInvoice = (inv: Invoice): void => {
     setPrintData(inv)
@@ -119,8 +124,11 @@ export default function Billing(): JSX.Element {
                       Receive
                     </button>
                   )}
-                  <button type="button" className="pl-icon-btn" aria-label={`Print invoice ${i.number}`} onClick={() => printInvoice(i)}>
+                  <button type="button" className="pl-icon-btn" aria-label={`Print invoice ${i.number}`} title="Print standard invoice" onClick={() => printInvoice(i)}>
                     <i className="fa-solid fa-print" aria-hidden="true" />
+                  </button>
+                  <button type="button" className="pl-icon-btn" aria-label={`Print 80mm thermal receipt for ${i.number}`} title="Print 80mm Thermal Receipt" onClick={() => setThermalInv(i)}>
+                    <i className="fa-solid fa-receipt" aria-hidden="true" />
                   </button>
                 </div>
               ),
@@ -187,6 +195,46 @@ export default function Billing(): JSX.Element {
           </div>
         </div>
       )}
+
+      {thermalInv && (() => {
+        const cfg = settingsQ.data?.settings
+        const amt = Number(thermalInv.amount || 0)
+        const paid = Number(thermalInv.paid_amount || amt)
+        const rData: ReceiptData = {
+          business_name: cfg?.business_name || me?.tenant?.name || 'AFRO SUITE HOSPITAL',
+          tin_number: cfg?.tin_number,
+          vat_number: cfg?.vat_number,
+          business_phone: cfg?.business_phone,
+          business_address: cfg?.business_address,
+          receipt_header: cfg?.receipt_header || 'Medical Billing & Services',
+          receipt_footer: cfg?.receipt_footer || 'Wishing you a speedy recovery!',
+          currency: cfg?.currency || 'ETB',
+          tax_rate: cfg?.tax_rate,
+          invoice_no: thermalInv.number || `MED-${thermalInv.id.slice(0, 8).toUpperCase()}`,
+          created_at: thermalInv.issued_on || new Date().toISOString(),
+          cashier_name: me?.full_name || 'Cashier',
+          customer_name: thermalInv.patient_name || 'Patient (Outpatient)',
+          items: [
+            {
+              name: thermalInv.description || 'Medical Consultation & Service',
+              quantity: 1,
+              unit_price: amt,
+              line_total: amt,
+            },
+          ],
+          subtotal: amt,
+          discount: 0,
+          total: amt,
+          payment_method: 'Cash',
+          amount_paid: paid,
+          change_due: Math.max(0, paid - amt),
+        }
+        return (
+          <Modal open={true} title={`Receipt — ${thermalInv.number}`} onClose={() => setThermalInv(null)}>
+            <ThermalReceipt data={rData} onDone={() => setThermalInv(null)} />
+          </Modal>
+        )
+      })()}
     </div>
   )
 }

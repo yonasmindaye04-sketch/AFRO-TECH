@@ -55,10 +55,12 @@ export default function Announcements(): JSX.Element {
             <Field label="Message">
               <textarea className="pl-textarea" required minLength={2} maxLength={3000} value={form.body} onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))} />
             </Field>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.88rem', marginBottom: 12, cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.pinned} onChange={(e) => setForm((f) => ({ ...f, pinned: e.target.checked }))} />
-              Pin to top
-            </label>
+            <div style={{ marginBottom: 14 }}>
+              <label className="pl-checkbox-label">
+                <input type="checkbox" checked={form.pinned} onChange={(e) => setForm((f) => ({ ...f, pinned: e.target.checked }))} />
+                <span>Pin to top</span>
+              </label>
+            </div>
             {error && <p role="alert" style={{ color: '#e07a7a', fontSize: '.87rem' }}>{error}</p>}
             <div className="pl-form-actions">
               <button type="submit" className="pl-btn pl-btn-primary" disabled={busy}>

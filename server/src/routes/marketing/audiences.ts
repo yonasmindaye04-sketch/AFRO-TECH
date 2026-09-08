@@ -8,7 +8,7 @@ const router = Router()
 
 router.use(authenticate)
 
-router.get('/', async (req: AuthRequest, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   const { page = '1', limit = '20' } = req.query
   const offset = (parseInt(page as string) - 1) * parseInt(limit as string)
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
@@ -31,7 +31,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   res.json({ audiences, total: parseInt(count[0].count, 10), page: parseInt(page as string), limit: parseInt(limit as string) })
 })
 
-router.post('/', requirePermission('marketing.audiences.create'), async (req: AuthRequest, res: Response) => {
+router.post('/', requirePermission('marketing.audiences.create'), async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.body.tenant_id : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -78,7 +78,7 @@ router.post('/', requirePermission('marketing.audiences.create'), async (req: Au
   }
 })
 
-router.get('/:id', async (req: AuthRequest, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -112,7 +112,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
   res.json(audience)
 })
 
-router.put('/:id', requirePermission('marketing.audiences.update'), async (req: AuthRequest, res: Response) => {
+router.put('/:id', requirePermission('marketing.audiences.update'), async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.body.tenant_id : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -160,7 +160,7 @@ router.put('/:id', requirePermission('marketing.audiences.update'), async (req: 
   }
 })
 
-router.delete('/:id', requirePermission('marketing.audiences.delete'), async (req: AuthRequest, res: Response) => {
+router.delete('/:id', requirePermission('marketing.audiences.delete'), async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -168,7 +168,7 @@ router.delete('/:id', requirePermission('marketing.audiences.delete'), async (re
   res.json({ success: true })
 })
 
-router.get('/:id/members', async (req: AuthRequest, res: Response) => {
+router.get('/:id/members', async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -199,7 +199,7 @@ router.get('/:id/members', async (req: AuthRequest, res: Response) => {
   res.json({ contacts, total, page: parseInt(page as string), limit: parseInt(limit as string) })
 })
 
-router.get('/:id/count', async (req: AuthRequest, res: Response) => {
+router.get('/:id/count', async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 

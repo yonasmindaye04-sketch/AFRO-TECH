@@ -46,6 +46,12 @@ const Team = lazy(() => import('./pages/Team'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Subscription = lazy(() => import('./pages/Subscription'))
 const BotStudio = lazy(() => import('./pages/BotStudio'))
+const MarketingDashboard = lazy(() => import('./marketing/MarketingDashboard'))
+const Contacts = lazy(() => import('./marketing/Contacts'))
+const Audiences = lazy(() => import('./marketing/Audiences'))
+const Templates = lazy(() => import('./marketing/Templates'))
+const Campaigns = lazy(() => import('./marketing/Campaigns'))
+const Analytics = lazy(() => import('./marketing/Analytics'))
 
 function Blocked({ icon, title, body }: { icon: string; title: string; body: string }): JSX.Element {
   const { logout } = useAuth()
@@ -160,6 +166,13 @@ function Inner(): JSX.Element {
             <Route path="settings" element={me?.role === 'owner' ? <Settings /> : <Navigate to="/app" replace />} />
             <Route path="subscription" element={me?.role === 'owner' ? <Subscription /> : <Navigate to="/app" replace />} />
             <Route path="bot-studio" element={me?.role === 'owner' ? <BotStudio /> : <Navigate to="/app" replace />} />
+            {/* marketing */}
+            <Route path="marketing" element={<MarketingDashboard />} />
+            <Route path="marketing/contacts" element={<Contacts />} />
+            <Route path="marketing/audiences" element={<Audiences />} />
+            <Route path="marketing/templates" element={<Templates />} />
+            <Route path="marketing/campaigns" element={<Campaigns />} />
+            <Route path="marketing/analytics" element={<Analytics />} />
             <Route path="*" element={<Navigate to="/app" replace />} />
          </Routes>
         )}

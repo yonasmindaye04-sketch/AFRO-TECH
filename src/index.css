@@ -811,15 +811,15 @@ nav {
 [data-theme="light"] .form-group label { color:var(--text-dim); }
 .form-group label i { color:var(--accent); font-size:.8rem; }
 
-input, textarea {
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]), textarea {
   background:var(--input); border:1px solid var(--border); border-radius:8px;
   padding:16px 20px; color:var(--text); font-size:.95rem;
   font-family:'DM Sans',sans-serif; outline:none; width:100%;
   transition:border-color .2s, box-shadow .2s;
 }
-[data-theme="light"] input, [data-theme="light"] textarea { color:var(--text); background:rgba(0,0,0,.03); }
-input::placeholder, textarea::placeholder { color:var(--text-dim); }
-input:focus, textarea:focus { border-color:var(--accent); box-shadow:0 0 0 2px rgba(var(--accent-rgb),.1); }
+[data-theme="light"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]), [data-theme="light"] textarea { color:var(--text); background:rgba(0,0,0,.03); }
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"])::placeholder, textarea::placeholder { color:var(--text-dim); }
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):focus, textarea:focus { border-color:var(--accent); box-shadow:0 0 0 2px rgba(var(--accent-rgb),.1); }
 textarea { resize:none; min-height:122px; }
 
 /* ══════════════════════════════════════════════════════════════

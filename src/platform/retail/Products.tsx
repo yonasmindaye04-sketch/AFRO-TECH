@@ -197,9 +197,9 @@ export default function Products(): JSX.Element {
             <input className="pl-input" maxLength={60} value={form.barcode} onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))} placeholder="Scan or type…" />
           </Field>
           <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 14 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.9rem', fontWeight: 600, cursor: 'pointer' }}>
+            <label className="pl-checkbox-label" style={{ fontWeight: 600 }}>
               <input type="checkbox" checked={form.sell_by_pill} onChange={(e) => setForm((f) => ({ ...f, sell_by_pill: e.target.checked }))} />
-              Sell by pill / tablet
+              <span>Sell by pill / tablet</span>
             </label>
             <p style={{ color: 'var(--text-dim)', fontSize: '.8rem', margin: '6px 0 12px' }}>
               Lets cashiers sell loose pills out of a pack. Stock is counted in pills, and packs are broken automatically when needed.

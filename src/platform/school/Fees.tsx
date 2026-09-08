@@ -1,7 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { api, fmtDate, fmtMoney } from '../api'
+import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
+import ThermalReceipt from '../ui/ThermalReceipt'
+import type { ReceiptData } from '../utils/receipt'
 
 interface FeeRow {
   id: string
@@ -27,6 +30,9 @@ interface StudentOpt {
 const tone = (s: FeeRow['status']): 'good' | 'warn' | 'bad' => (s === 'paid' ? 'good' : s === 'partial' ? 'warn' : 'bad')
 
 export default function Fees(): JSX.Element {
+  const { me } = useAuth()
+  const settingsQ = useApiData<{ settings: Record<string, any> }>('/tenant/settings')
+  const [receiptFee, setReceiptFee] = useState<FeeRow | null>(null)
   const [statusFilter, setStatusFilter] = useState('')
   const feesQ = useApiData<{ fees: FeeRow[] }>(`/school/fees${statusFilter ? `?status=${statusFilter}` : ''}`)
   const classesQ = useApiData<{ classes: ClassRow[] }>('/school/classes')
@@ -147,17 +153,27 @@ export default function Fees(): JSX.Element {
             {
               key: 'act',
               header: '',
-              width: '150px',
-              render: (f) =>
-                f.status !== 'paid' ? (
-                  <div className="pl-row-actions">
+              width: '180px',
+              render: (f) => (
+                <div className="pl-row-actions">
+                  {f.status !== 'paid' ? (
                     <button type="button" className="pl-btn pl-btn-ghost pl-btn-sm" onClick={() => recordPayment(f)}>
                       Receive payment
                     </button>
-                  </div>
-                ) : (
-                  <small style={{ color: 'var(--text-dim)' }}>{fmtDate(f.paid_at)}</small>
-                ),
+                  ) : (
+                    <small style={{ color: 'var(--text-dim)' }}>{fmtDate(f.paid_at)}</small>
+                  )}
+                  <button
+                    type="button"
+                    className="pl-icon-btn"
+                    aria-label={`Print 80mm receipt for ${f.student_name}`}
+                    title="Print 80mm Thermal Receipt"
+                    onClick={() => setReceiptFee(f)}
+                  >
+                    <i className="fa-solid fa-receipt" aria-hidden="true" />
+                  </button>
+                </div>
+              ),
             },
           ]}
         />
@@ -200,7 +216,7 @@ export default function Fees(): JSX.Element {
               {classId && studentsQ.data && (
                 <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 10, padding: 10, marginBottom: 12 }}>
                   {(studentsQ.data.students as { id: string; first_name: string; last_name: string }[]).map((s) => (
-                    <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 4px', cursor: 'pointer' }}>
+                    <label key={s.id} className="pl-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 4px', width: '100%' }}>
                       <input
                         type="checkbox"
                         checked={selected.has(s.id)}
@@ -213,7 +229,7 @@ export default function Fees(): JSX.Element {
                           })
                         }
                       />
-                      {s.first_name} {s.last_name}
+                      <span>{s.first_name} {s.last_name}</span>
                     </label>
                   ))}
                   <small style={{ color: 'var(--text-dim)' }}>Leave all unchecked to charge the entire class.</small>
@@ -229,6 +245,43 @@ export default function Fees(): JSX.Element {
             </button>
           </div>
         </form>
+      </Modal>
+
+      <Modal open={receiptFee !== null} title={receiptFee ? `Receipt — ${receiptFee.student_name}` : ''} onClose={() => setReceiptFee(null)}>
+        {receiptFee && (() => {
+          const cfg = settingsQ.data?.settings
+          const paid = Number(receiptFee.paid_amount || receiptFee.amount || 0)
+          const rData: ReceiptData = {
+            business_name: cfg?.business_name || me?.tenant?.name || 'AFRO SUITE SCHOOL',
+            tin_number: cfg?.tin_number,
+            vat_number: cfg?.vat_number,
+            business_phone: cfg?.business_phone,
+            business_address: cfg?.business_address,
+            receipt_header: cfg?.receipt_header || (cfg?.academic_year ? `Academic Year: ${cfg.academic_year}` : 'Student Fee Receipt'),
+            receipt_footer: cfg?.receipt_footer || 'Thank you! Education is the foundation of the future.',
+            currency: cfg?.currency || 'ETB',
+            tax_rate: cfg?.tax_rate,
+            invoice_no: `FEE-${receiptFee.id.slice(0, 8).toUpperCase()}`,
+            created_at: receiptFee.paid_at || new Date().toISOString(),
+            cashier_name: me?.full_name || 'Bursar / Cashier',
+            customer_name: `${receiptFee.student_name} (${receiptFee.class_name || receiptFee.student_code || 'Student'})`,
+            items: [
+              {
+                name: receiptFee.title,
+                quantity: 1,
+                unit_price: paid,
+                line_total: paid,
+              },
+            ],
+            subtotal: paid,
+            discount: 0,
+            total: paid,
+            payment_method: 'Bank Transfer / Cash',
+            amount_paid: paid,
+            change_due: 0,
+          }
+          return <ThermalReceipt data={rData} onDone={() => setReceiptFee(null)} />
+        })()}
       </Modal>
     </div>
   )

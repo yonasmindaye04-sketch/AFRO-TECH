@@ -1,5 +1,5 @@
 import { pool } from '../../config/db.js'
-import { marketingQueues } from '../../config/queue.js'
+import { getMarketingQueues, marketingQueues, redisEnabled } from '../../config/queue.js'
 import type { MarketingJobData } from '../../config/queue.js'
 import { renderTemplate, validateVariables } from './templateEngine.js'
 
@@ -104,8 +104,11 @@ export async function queueCampaign(
         templateId: tmpl.id,
       }
 
-      await marketingQueues[channel.channel].add('send', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } })
-      totalQueued++
+      const q = (marketingQueues as Record<string, any>)[channel.channel]
+      if (q) {
+        await q.add('send', jobData, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } })
+        totalQueued++
+      }
     }
   }
 
