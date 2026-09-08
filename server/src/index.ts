@@ -110,14 +110,19 @@ app.use(errorHandler)
 const port = Number(process.env.PORT || 4000)
 app.listen(port, () => {
   console.log(`AFRO Suite API listening on :${port} (${process.env.NODE_ENV || 'development'})`)
-  // Platform bot: webhook in production, long-polling in dev. Auto-register the
-  // webhook on boot so deploys "just work" without a manual curl.
+  // Platform bot: webhook in production, long-polling in development.
   if (telegramEnabled()) {
-    if (process.env.TELEGRAM_WEBHOOK_URL) {
-      void setWebhook(process.env.TELEGRAM_WEBHOOK_URL).catch((err) =>
+    const isProduction = process.env.NODE_ENV === 'production'
+    const publicUrl = (process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL || '').replace(/\/$/, '')
+    const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL || (publicUrl.startsWith('https://') ? `${publicUrl}/api/v1/telegram/webhook` : '')
+
+    if (isProduction && webhookUrl) {
+      console.log(`[telegram] registering webhook: ${webhookUrl}`)
+      void setWebhook(webhookUrl).catch((err) =>
         console.warn('[telegram] auto setWebhook failed:', err instanceof Error ? err.message : err)
       )
     } else {
+      console.log('[telegram] starting long-polling')
       startPolling()
     }
   }

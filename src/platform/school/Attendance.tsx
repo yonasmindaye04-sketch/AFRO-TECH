@@ -136,7 +136,7 @@ export default function Attendance(): JSX.Element {
                     }
                     label={`${s} (30 days)`}
                     value={summaryQ.data?.summary[s] ?? 0}
-                    tone={s === 'present' ? '#34d399' : s === 'absent' ? '#e07a7a' : undefined}
+                    tone={s === 'present' ? '#059669' : s === 'late' ? '#d97706' : s === 'absent' ? '#dc2626' : '#0284c7'}
                   />
                 ))
               : null}

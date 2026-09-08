@@ -180,10 +180,14 @@ export async function registerBotWebhook(bot: TenantBotRow): Promise<void> {
     allowed_updates: ['message'],
     drop_pending_updates: true,
   })
-  // Menu button opens the tenant's workspace inside Telegram
-  const appUrl = (process.env.TELEGRAM_WEBAPP_URL || `${(process.env.PUBLIC_URL || '').replace(/\/$/, '')}/app`)
+  // Menu button opens the tenant's workspace inside Telegram with company context
+  const baseAppUrl = (process.env.TELEGRAM_WEBAPP_URL || `${(process.env.PUBLIC_URL || '').replace(/\/$/, '')}/app`)
+  const appUrl = `${baseAppUrl}${baseAppUrl.includes('?') ? '&' : '?'}tenant_id=${bot.tenant_id}&bot_id=${bot.id}`
+  const tenant = await queryOne<{ name: string }>(`SELECT name FROM tenants WHERE id = $1`, [bot.tenant_id])
+  const buttonText = bot.display_name || (tenant?.name ? `Open ${tenant.name}` : 'Open Workspace')
+
   await tgApi(bot.bot_token, 'setChatMenuButton', {
-    menu_button: { type: 'web_app', text: bot.display_name || 'Open Workspace', web_app: { url: appUrl } },
+    menu_button: { type: 'web_app', text: buttonText, web_app: { url: appUrl } },
   }).catch(() => undefined) // not fatal — web_apps need HTTPS endpoints
   await pool.query(`UPDATE tenant_bots SET transport = 'webhook', updated_at = now() WHERE id = $1`, [bot.id])
 }
@@ -212,30 +216,330 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
   const msg = update.message
   if (!msg?.text || !msg.from || !msg.chat) return
   const chatId = msg.chat.id
-  const text = msg.text.trim().toLowerCase()
+  const fullText = msg.text.trim()
+  const [rawCmd, ...args] = fullText.split(/\s+/)
+  const cmd = rawCmd.toLowerCase().replace(/@.*$/, '')
   const firstName = msg.from.first_name || 'there'
   const username = msg.from.username || undefined
 
   // Upsert the subscriber on every contact (handles re-subscribe too)
   await upsertSubscriber(botRow.id, botRow.tenant_id, chatId, firstName, username)
 
-  const custom = (botRow.commands ?? []).find((c) => text === c.trigger.trim().toLowerCase())
-  if (custom) {
-    await tgApi(botRow.bot_token, 'sendMessage', { chat_id: chatId, text: custom.response, disable_web_page_preview: true })
+  // Fetch company info
+  const tenant = await queryOne<{ name: string; business_type: string }>(
+    `SELECT name, business_type FROM tenants WHERE id = $1`,
+    [botRow.tenant_id]
+  )
+  const tenantName = tenant?.name ?? 'Workspace'
+  const businessType = tenant?.business_type ?? 'store'
+
+  // Check if sender is a linked staff member / owner of THIS specific company
+  const linkedUser = await queryOne<{
+    id: string
+    full_name: string
+    role: string
+    tenant_id: string
+  }>(
+    `SELECT id, full_name, role, tenant_id FROM users
+     WHERE telegram_chat_id = $1 AND tenant_id = $2 AND is_active = true
+     LIMIT 1`,
+    [chatId, botRow.tenant_id]
+  )
+
+  /* ── 1. Account linking (/link CODE) ── */
+  if (cmd === '/link') {
+    const code = (args[0] || '').toUpperCase()
+    if (!code) {
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: `To link your account, send: <code>/link CODE</code>\n\nGenerate your 6-character code in your <b>${tenantName}</b> web app under Settings → Telegram.`,
+        parse_mode: 'HTML',
+      })
+      return
+    }
+
+    const row = await queryOne<{ user_id: string; expires_at: Date }>(
+      `SELECT user_id, expires_at FROM telegram_link_codes WHERE code = $1`,
+      [code]
+    )
+    if (!row || new Date(row.expires_at).getTime() < Date.now()) {
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: 'That code is invalid or expired. Please generate a fresh one in Settings → Telegram.',
+      })
+      return
+    }
+
+    const user = await queryOne<{ id: string; full_name: string; role: string; tenant_id: string }>(
+      `SELECT id, full_name, role, tenant_id FROM users WHERE id = $1 AND tenant_id = $2 AND is_active = true`,
+      [row.user_id, botRow.tenant_id]
+    )
+    if (!user) {
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: `This link code belongs to another workspace. This bot is exclusively for <b>${tenantName}</b>.`,
+        parse_mode: 'HTML',
+      })
+      return
+    }
+
+    await query(`UPDATE users SET telegram_chat_id = $1, telegram_linked_at = now() WHERE id = $2`, [chatId, user.id])
+    await query(`DELETE FROM telegram_link_codes WHERE code = $1`, [code])
+    logAudit({
+      userId: user.id,
+      userName: user.full_name,
+      action: 'telegram.link',
+      entity: 'tenant_bot',
+      entityId: botRow.id,
+      details: { telegram: msg.from.id, company: tenantName },
+    })
+
+    await tgApi(botRow.bot_token, 'sendMessage', {
+      chat_id: chatId,
+      text: `✅ <b>Linked!</b>\n\nWelcome, <b>${user.full_name}</b> (${user.role}). You are now connected to <b>${tenantName}</b>.\n\n` +
+        `Available staff commands:\n` +
+        `/today — Daily sales & activity summary\n` +
+        `/lowstock — Items needing reorder\n` +
+        `/expiring — Inventory expiring soon\n` +
+        `/shift — Current cash drawer shift\n` +
+        `/unlink — Disconnect this account\n\n` +
+        `Tap the menu button at the bottom to launch your company Mini App!`,
+      parse_mode: 'HTML',
+    })
     return
   }
 
-  if (text === '/stop' || text === '/unsubscribe') {
+  /* ── 2. Account unlinking (/unlink) ── */
+  if (cmd === '/unlink') {
+    if (linkedUser) {
+      await query(`UPDATE users SET telegram_chat_id = NULL, telegram_linked_at = NULL WHERE id = $1`, [linkedUser.id])
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: `Unlinked. You will no longer receive staff alerts or summaries for <b>${tenantName}</b>.`,
+        parse_mode: 'HTML',
+      })
+      return
+    }
+  }
+
+  /* ── 3. Start & Help (/start, /help) ── */
+  if (cmd === '/start' || cmd === '/help') {
+    // If the user sent a deeplink like /start D09806 (Telegram start parameter)
+    if (args[0] && args[0].length >= 6) {
+      const linkCodeArg = args[0].trim().toUpperCase()
+      const row = await queryOne<{ user_id: string; expires_at: Date }>(
+        `SELECT user_id, expires_at FROM telegram_link_codes WHERE code = $1`,
+        [linkCodeArg]
+      )
+      if (row && new Date(row.expires_at).getTime() >= Date.now()) {
+        const user = await queryOne<{ id: string; full_name: string; role: string; tenant_id: string }>(
+          `SELECT id, full_name, role, tenant_id FROM users WHERE id = $1 AND tenant_id = $2 AND is_active = true`,
+          [row.user_id, botRow.tenant_id]
+        )
+        if (user) {
+          await query(`UPDATE users SET telegram_chat_id = $1, telegram_linked_at = now() WHERE id = $2`, [chatId, user.id])
+          await query(`DELETE FROM telegram_link_codes WHERE code = $1`, [linkCodeArg])
+          await tgApi(botRow.bot_token, 'sendMessage', {
+            chat_id: chatId,
+            text: `✅ <b>Linked!</b>\n\nWelcome, <b>${user.full_name}</b> (${user.role}) to <b>${tenantName}</b>.\n\nTry /today, /lowstock, or tap the menu button below to open your workspace.`,
+            parse_mode: 'HTML',
+          })
+          return
+        }
+      }
+    }
+
+    if (linkedUser) {
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: `<b>${linkedUser.full_name}</b> — <b>${tenantName}</b> Assistant\n\n` +
+          `Staff Commands:\n` +
+          `/today — daily summary\n` +
+          `/lowstock — items to reorder\n` +
+          `/expiring — batches expiring in 60 days\n` +
+          `/shift — active cash drawer shift\n` +
+          `/unlink — disconnect account\n\n` +
+          `Or tap the menu button to open <b>${tenantName}</b> Mini App.`,
+        parse_mode: 'HTML',
+      })
+      return
+    }
+
+    // Customer or unlinked visitor: send welcome message + custom commands hint
+    const welcome = botRow.welcome_message
+      .replace(/\\n/g, '\n')
+      .replace('{name}', firstName)
+      .replace('{company}', tenantName)
+
+    await tgApi(botRow.bot_token, 'sendMessage', {
+      chat_id: chatId,
+      text: `${welcome}\n\n<i>Are you a staff member of ${tenantName}? Open Settings → Telegram to generate a code, then send /link CODE here.</i>`,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    })
+    return
+  }
+
+  /* ── 4. Staff operational commands (/today, /lowstock, /expiring, /shift) ── */
+  if (cmd === '/today') {
+    if (!linkedUser) {
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: `This command is for <b>${tenantName}</b> staff. Send <code>/link CODE</code> to link your work account.`,
+        parse_mode: 'HTML',
+      })
+      return
+    }
+
+    if (businessType === 'hospital' || businessType === 'school') {
+      const stats =
+        businessType === 'hospital'
+          ? await queryOne<{ today: string }>(
+              `SELECT count(*)::text AS today FROM appointments WHERE tenant_id = $1 AND scheduled_at >= CURRENT_DATE AND scheduled_at < CURRENT_DATE + interval '1 day'`,
+              [botRow.tenant_id]
+            )
+          : await queryOne<{ today: string }>(
+              `SELECT count(*)::text AS today FROM attendance WHERE tenant_id = $1 AND att_date = CURRENT_DATE`,
+              [botRow.tenant_id]
+            )
+      const label = businessType === 'hospital' ? 'appointments scheduled today' : 'attendance entries recorded today'
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: `<b>${tenantName} — Today</b>\n\n📅 ${stats?.today ?? 0} ${label}.`,
+        parse_mode: 'HTML',
+      })
+      return
+    }
+
+    // Retail / Pharmacy / Store
+    const s = await queryOne<{ total: string; count: string }>(
+      `SELECT COALESCE(SUM(total),0)::text AS total, count(*)::text AS count FROM sales
+       WHERE tenant_id = $1 AND status = 'completed' AND created_at >= CURRENT_DATE`,
+      [botRow.tenant_id]
+    )
+    await tgApi(botRow.bot_token, 'sendMessage', {
+      chat_id: chatId,
+      text: `<b>${tenantName} — Today's Sales</b>\n\n💰 Total: <b>${Number(s?.total ?? 0).toFixed(2)} ETB</b>\n🧾 Receipts: <b>${s?.count ?? 0}</b>`,
+      parse_mode: 'HTML',
+    })
+    return
+  }
+
+  if (cmd === '/lowstock') {
+    if (!linkedUser) {
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: `This command is for <b>${tenantName}</b> staff. Send <code>/link CODE</code> to link your account.`,
+        parse_mode: 'HTML',
+      })
+      return
+    }
+
+    const { rows } = await pool.query<{ name: string; sellable: string; threshold: number }>(
+      `SELECT p.name, COALESCE(SUM(b.quantity) FILTER (WHERE b.expiry_date IS NULL OR b.expiry_date >= CURRENT_DATE), 0)::text AS sellable,
+              p.low_stock_threshold AS threshold
+       FROM products p LEFT JOIN product_batches b ON b.product_id = p.id
+       WHERE p.tenant_id = $1 AND p.is_active = true
+       GROUP BY p.id, p.name, p.low_stock_threshold
+       HAVING COALESCE(SUM(b.quantity) FILTER (WHERE b.expiry_date IS NULL OR b.expiry_date >= CURRENT_DATE), 0) <= p.low_stock_threshold
+       ORDER BY sellable ASC LIMIT 10`,
+      [botRow.tenant_id]
+    )
+    if (!rows.length) {
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: `✅ <b>${tenantName} Stock:</b>\n\nAll inventory levels look healthy! Nothing currently below threshold.`,
+        parse_mode: 'HTML',
+      })
+      return
+    }
+    await tgApi(botRow.bot_token, 'sendMessage', {
+      chat_id: chatId,
+      text: `⚠️ <b>Low Stock Items for ${tenantName}:</b>\n\n${rows.map((r) => `• <b>${r.name}</b> — ${r.sellable} left (min: ${r.threshold})`).join('\n')}`,
+      parse_mode: 'HTML',
+    })
+    return
+  }
+
+  if (cmd === '/expiring') {
+    if (!linkedUser) return
+    const { rows } = await pool.query<{ name: string; expiry_date: string; quantity: number }>(
+      `SELECT p.name, b.expiry_date, b.quantity FROM product_batches b JOIN products p ON p.id = b.product_id
+       WHERE b.tenant_id = $1 AND b.quantity > 0 AND b.expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 60
+       ORDER BY b.expiry_date ASC LIMIT 10`,
+      [botRow.tenant_id]
+    )
+    if (!rows.length) {
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: `✅ <b>${tenantName}:</b> No products expiring within the next 60 days.`,
+        parse_mode: 'HTML',
+      })
+      return
+    }
+    await tgApi(botRow.bot_token, 'sendMessage', {
+      chat_id: chatId,
+      text: `⏳ <b>Expiring within 60 days (${tenantName}):</b>\n\n${rows.map((r) => `• <b>${r.name}</b> — ${r.quantity} units (expires ${new Date(r.expiry_date).toLocaleDateString('en-GB')})`).join('\n')}`,
+      parse_mode: 'HTML',
+    })
+    return
+  }
+
+  if (cmd === '/shift') {
+    if (!linkedUser) return
+    const shift = await queryOne<{ opening_balance: string; cash_sales: string; expenses: string }>(
+      `SELECT opening_balance, cash_sales, expenses FROM cash_drawer_shifts WHERE tenant_id = $1 AND user_id = $2 AND status = 'open'`,
+      [botRow.tenant_id, linkedUser.id]
+    )
+    if (!shift) {
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: `No open drawer shift found for you at <b>${tenantName}</b>. Start a shift from the Cash Drawer page.`,
+        parse_mode: 'HTML',
+      })
+      return
+    }
+    const expected = Number(shift.opening_balance) + Number(shift.cash_sales) - Number(shift.expenses)
+    await tgApi(botRow.bot_token, 'sendMessage', {
+      chat_id: chatId,
+      text: `💼 <b>Open Shift — ${tenantName}</b>\n\nCash sales: <b>${Number(shift.cash_sales).toFixed(2)} ETB</b>\nExpenses: <b>${Number(shift.expenses).toFixed(2)} ETB</b>\nExpected in drawer: <b>${expected.toFixed(2)} ETB</b>`,
+      parse_mode: 'HTML',
+    })
+    return
+  }
+
+  /* ── 5. Custom tenant commands (/offers, /hours, /services, etc.) ── */
+  const custom = (botRow.commands ?? []).find((c) => cmd === c.trigger.trim().toLowerCase())
+  if (custom) {
+    await tgApi(botRow.bot_token, 'sendMessage', {
+      chat_id: chatId,
+      text: custom.response,
+      disable_web_page_preview: true,
+      parse_mode: 'HTML',
+    })
+    return
+  }
+
+  /* ── 6. Unsubscribe ── */
+  if (cmd === '/stop' || cmd === '/unsubscribe') {
     await deactivateSubscriber(botRow.id, chatId)
-    await tgApi(botRow.bot_token, 'sendMessage', { chat_id: chatId, text: 'You have been unsubscribed. Send /start any time to re-join.' })
+    await tgApi(botRow.bot_token, 'sendMessage', {
+      chat_id: chatId,
+      text: `You have unsubscribed from ${tenantName}. Send /start at any time to rejoin.`,
+    })
     await query(`UPDATE tenant_bots SET total_subscribers = (SELECT count(*) FROM bot_subscribers WHERE bot_id = $1 AND is_active = true) WHERE id = $1`, [botRow.id])
     return
   }
 
-  // Default: send the welcome message
+  /* ── 7. Default fallback: welcome / help message ── */
+  const fallback = botRow.welcome_message
+    .replace(/\\n/g, '\n')
+    .replace('{name}', firstName)
+    .replace('{company}', tenantName)
+
   await tgApi(botRow.bot_token, 'sendMessage', {
     chat_id: chatId,
-    text: botRow.welcome_message.replace(/\\n/g, '\n').replace('{name}', firstName),
+    text: fallback,
     disable_web_page_preview: true,
   })
   await query(`UPDATE tenant_bots SET total_subscribers = (SELECT count(*) FROM bot_subscribers WHERE bot_id = $1 AND is_active = true) WHERE id = $1`, [botRow.id])

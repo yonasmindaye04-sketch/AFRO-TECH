@@ -57,13 +57,13 @@ export async function setWebhook(url: string): Promise<boolean> {
 }
 
 /**
- * Validates Telegram Mini App initData (official algorithm):
+ * Validates Telegram Mini App initData against a specific bot token:
  *   secret = HMAC_SHA256(key="WebAppData", data=bot_token)
  *   hash   = HMAC_SHA256(key=secret, data=sorted key=value lines joined by \n)
  * Also enforces freshness (auth_date within 24h) and constant-time compare.
  */
-export function verifyInitData(initData: string): { userId: number; firstName: string; username?: string } | null {
-  if (!BOT_TOKEN || !initData) return null
+export function verifyInitDataWithToken(initData: string, botToken: string): { userId: number; firstName: string; username?: string } | null {
+  if (!botToken || !initData) return null
   try {
     const params = new URLSearchParams(initData)
     const hash = params.get('hash')
@@ -75,7 +75,7 @@ export function verifyInitData(initData: string): { userId: number; firstName: s
       .sort()
       .join('\n')
 
-    const secret = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest()
+    const secret = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest()
     const computed = crypto.createHmac('sha256', secret).update(dataCheckString).digest('hex')
     const a = Buffer.from(computed, 'hex')
     const b = Buffer.from(hash, 'hex')
@@ -93,6 +93,10 @@ export function verifyInitData(initData: string): { userId: number; firstName: s
   } catch {
     return null
   }
+}
+
+export function verifyInitData(initData: string): { userId: number; firstName: string; username?: string } | null {
+  return verifyInitDataWithToken(initData, BOT_TOKEN)
 }
 
 /* ── Link codes ─────────────────────────────────────────── */

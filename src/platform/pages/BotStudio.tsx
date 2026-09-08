@@ -194,31 +194,63 @@ export default function BotStudio(): JSX.Element {
     return (
       <div className="pl-page">
         <PageHeader
-          title="Telegram Bot Studio"
-          subtitle="Connect your own Telegram bot to message customers and broadcast offers."
+          title="Company Telegram Bot Studio"
+          subtitle="Connect your company's own Telegram bot. Each company has its own bot and Mini App."
         />
         {error && <ErrorBox message={error} />}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18 }}>
+            <h3 style={{ margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: 8, fontSize: '1rem', color: '#2AABEE' }}>
+              <i className="fa-solid fa-users-gear" /> 1. Staff Assistant & Reports
+            </h3>
+            <p style={{ margin: 0, fontSize: '.88rem', color: 'var(--text-dim)', lineHeight: 1.6 }}>
+              Your staff can link to your bot via <code>/link CODE</code> to check daily sales (<code>/today</code>), low-stock alerts (<code>/lowstock</code>), expiring items, and active shifts.
+            </p>
+          </div>
+
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18 }}>
+            <h3 style={{ margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: 8, fontSize: '1rem', color: '#2ECC71' }}>
+              <i className="fa-solid fa-mobile-screen" /> 2. Company Mini App
+            </h3>
+            <p style={{ margin: 0, fontSize: '.88rem', color: 'var(--text-dim)', lineHeight: 1.6 }}>
+              The bot automatically attaches a menu button to launch your company's workspace directly inside Telegram without asking for password logins.
+            </p>
+          </div>
+
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18 }}>
+            <h3 style={{ margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: 8, fontSize: '1rem', color: '#F39C12' }}>
+              <i className="fa-solid fa-bullhorn" /> 3. Customer Broadcasts
+            </h3>
+            <p style={{ margin: 0, fontSize: '.88rem', color: 'var(--text-dim)', lineHeight: 1.6 }}>
+              Customers who message your bot subscribe to your updates. Send promotional broadcasts and auto-replies for your hours, menu, or services.
+            </p>
+          </div>
+        </div>
+
         <Card>
-          <h2 style={{ marginTop: 0 }}>How to set this up (5 minutes</h2>
-          <ol style={{ lineHeight: 1.7 }}>
+          <h2 style={{ marginTop: 0 }}>How to create your bot (takes 2 minutes)</h2>
+          <ol style={{ lineHeight: 1.8, fontSize: '.92rem' }}>
             <li>
-              Open Telegram and message <strong>@BotFather</strong>.
-           </li>
+              Open Telegram on your phone or desktop and search for <strong>@BotFather</strong>.
+            </li>
             <li>
-              Send <code>/newbot</code> and follow the prompts (give your bot a name like{' '}
-              <em>Bole Pharmacy Assistant</em> and a unique username).
-           </li>
+              Send <code>/newbot</code> and follow the prompts:
+              <ul style={{ margin: '4px 0 8px', color: 'var(--text-dim)' }}>
+                <li>Enter a display name (e.g. <em>Bole Pharmacy Assistant</em>).</li>
+                <li>Enter a username ending in <code>bot</code> (e.g. <code>bole_pharmacy_bot</code>).</li>
+              </ul>
+            </li>
             <li>
-              BotFather will reply with an HTTP API token — it looks like{' '}
-              <code>123456789:AAHx_your_long_token_here</code>.
-           </li>
+              BotFather will reply with your API token (e.g. <code>123456789:AAHx_your_token_here</code>).
+            </li>
             <li>
-              Paste that token below. AFRO Suite will verify it and start running it for you.
-           </li>
-         </ol>
-          <p style={{ color: 'var(--text-dim)' }}>
-            Your token is stored securely and never shared. You can disconnect and re-register any time.
-         </p>
+              Paste the token below. AFRO Suite will configure your bot, attach your company Mini App, and start handling commands!
+            </li>
+          </ol>
+          <p style={{ color: 'var(--text-dim)', fontSize: '.85rem' }}>
+            🔒 Your token is securely stored and exclusively used for your company workspace. You can pause or replace it at any time.
+          </p>
           <form onSubmit={handleRegister}>
             <Field label="BotFather API token">
               <input
@@ -230,18 +262,18 @@ export default function BotStudio(): JSX.Element {
                 autoComplete="off"
                 required
               />
-           </Field>
+            </Field>
             <div className="pl-form-actions">
               <button
                 className="pl-btn pl-btn-primary"
                 disabled={registering || token.length < 20}
               >
-                {registering ? 'Verifying…' : 'Connect my bot'}
-             </button>
-           </div>
-         </form>
-       </Card>
-     </div>
+                {registering ? 'Connecting & setting up Mini App…' : 'Connect My Company Bot'}
+              </button>
+            </div>
+          </form>
+        </Card>
+      </div>
     )
   }
 
@@ -350,7 +382,51 @@ export default function BotStudio(): JSX.Element {
      </div>
 
       <Card>
-        <h2 style={{ marginTop: 0 }}>Welcome message</h2>
+        <h2 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <i className="fa-solid fa-mobile-screen-button" style={{ color: '#2AABEE' }} />
+          Company Mini App & Staff Hub
+        </h2>
+        <p style={{ color: 'var(--text-dim)', fontSize: '.9rem', lineHeight: 1.6 }}>
+          Your Telegram bot is deeply integrated with your company workspace. It serves two key roles:
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14, margin: '14px 0' }}>
+          <div style={{ background: 'var(--input)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14 }}>
+            <h4 style={{ margin: '0 0 6px', color: 'var(--text)', fontSize: '.95rem' }}>
+              <i className="fa-solid fa-id-card-clip" style={{ color: 'var(--accent)', marginRight: 6 }} />
+              Staff Linking & Commands
+            </h4>
+            <p style={{ fontSize: '.84rem', color: 'var(--text-dim)', margin: '0 0 8px', lineHeight: 1.5 }}>
+              Staff members can generate a link code in <strong>Settings → Telegram</strong> and send it to <strong>@{bot.bot_username}</strong> as:
+            </p>
+            <code style={{ fontSize: '.88rem', color: 'var(--accent)' }}>/link CODE</code>
+            <ul style={{ fontSize: '.82rem', color: 'var(--text-dim)', margin: '8px 0 0', paddingLeft: 18, lineHeight: 1.6 }}>
+              <li><code>/today</code> — Daily sales & operational summary</li>
+              <li><code>/lowstock</code> — Items below reorder threshold</li>
+              <li><code>/expiring</code> — Batches expiring in 60 days</li>
+              <li><code>/shift</code> — Open cash drawer balance</li>
+            </ul>
+          </div>
+
+          <div style={{ background: 'var(--input)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14 }}>
+            <h4 style={{ margin: '0 0 6px', color: 'var(--text)', fontSize: '.95rem' }}>
+              <i className="fa-solid fa-arrow-pointer" style={{ color: '#2ECC71', marginRight: 6 }} />
+              Telegram Menu Button (Mini App)
+            </h4>
+            <p style={{ fontSize: '.84rem', color: 'var(--text-dim)', margin: '0 0 8px', lineHeight: 1.5 }}>
+              When users open a chat with <strong>@{bot.bot_username}</strong>, they see a menu button at the bottom:
+            </p>
+            <div style={{ padding: '6px 12px', background: 'var(--card)', borderRadius: 6, display: 'inline-block', fontSize: '.88rem', fontWeight: 600, border: '1px solid var(--border)' }}>
+              📱 Open {bot.display_name || 'Workspace'}
+            </div>
+            <p style={{ fontSize: '.8rem', color: 'var(--text-dim)', marginTop: 8 }}>
+              Tapping it launches your company's full web application inside Telegram, auto-authenticating linked users.
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <h2 style={{ marginTop: 0 }}>Customer welcome message</h2>
         <p style={{ color: 'var(--text-dim)' }}>
           Sent automatically when someone messages your bot. Use <code>{'{name}'}</code> for the
           customer's first name.

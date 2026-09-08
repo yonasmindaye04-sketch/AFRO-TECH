@@ -20,8 +20,12 @@ export default function Login(): JSX.Element {
     initTelegramUi()
     setTgStatus('working')
     const initData = (window as unknown as { Telegram: { WebApp: { initData: string } } }).Telegram.WebApp.initData
+    const params = new URLSearchParams(window.location.search)
+    const tenantId = params.get('tenant_id') || undefined
+    const botId = params.get('bot_id') || undefined
+
     api
-      .post<{ token: string; me: import('./api').Me }>('/telegram/verify', { initData })
+      .post<{ token: string; me: import('./api').Me }>('/telegram/verify', { initData, tenantId, botId })
       .then((res) => {
         persistFromTelegram(res.token, res.me)
         navigate('/app', { replace: true })

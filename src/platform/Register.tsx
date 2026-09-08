@@ -48,7 +48,7 @@ export default function Register(): JSX.Element {
   }
 
   return (
-    <div className="pl-auth">
+    <div className={`pl-auth pl-firm-${form.business_type}`} data-firm={form.business_type}>
       <div className="pl-auth-card wide">
         <div className="pl-auth-brand">
           AFRO<span>SUITE</span>
@@ -66,7 +66,7 @@ export default function Register(): JSX.Element {
                     type="button"
                     role="radio"
                     aria-checked={form.business_type === t.value}
-                    className={`pl-type-opt ${form.business_type === t.value ? 'active' : ''}`}
+                    className={`pl-type-opt ${t.value} ${form.business_type === t.value ? 'active' : ''}`}
                     onClick={() => setForm((f) => ({ ...f, business_type: t.value }))}
                   >
                     <i className={t.icon} aria-hidden="true" />

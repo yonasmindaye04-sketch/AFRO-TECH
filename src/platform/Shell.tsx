@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 
@@ -7,6 +7,13 @@ interface NavItem {
   icon: string
   label: string
   end?: boolean
+}
+
+const FIRM_ICONS: Record<string, string> = {
+  hospital: 'fa-solid fa-hospital',
+  pharmacy: 'fa-solid fa-prescription-bottle-medical',
+  school: 'fa-solid fa-graduation-cap',
+  store: 'fa-solid fa-store',
 }
 
 const RETAIL_NAV: NavItem[] = [
@@ -61,6 +68,7 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const tenant = me?.tenant
+  const firmType = tenant?.business_type || 'store'
   const items = tenant ? navFor(tenant.business_type) : []
   const initials = (me?.full_name ?? '?')
     .split(' ')
@@ -71,8 +79,15 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
 
   const trialLeft = tenant?.status === 'trial' ? (tenant.trial_days_left ?? 0) : null
 
+  useEffect(() => {
+    document.documentElement.setAttribute('data-firm', firmType)
+    return () => {
+      document.documentElement.removeAttribute('data-firm')
+    }
+  }, [firmType])
+
   return (
-    <div className="pl-root">
+    <div className={`pl-root pl-firm-${firmType}`} data-firm={firmType}>
       <button type="button" className="pl-menu-toggle" onClick={() => setOpen(true)} aria-label="Open menu">
         <i className="fa-solid fa-bars" aria-hidden="true" />
       </button>
@@ -80,7 +95,13 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
       <div className={`pl-shell ${open ? 'sidebar-open' : ''}`}>
         <aside className={`pl-sidebar ${open ? 'open' : ''}`}>
           <div className="pl-side-brand">
-            AFRO<span>SUITE</span>
+            <div>AFRO<span>SUITE</span></div>
+            {tenant && (
+              <span className={`pl-firm-pill ${firmType}`}>
+                <i className={FIRM_ICONS[firmType] || 'fa-solid fa-building'} aria-hidden="true" />
+                {firmType}
+              </span>
+            )}
           </div>
           <nav className="pl-nav" aria-label="Main">
             {items.map((item) => (

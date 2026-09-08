@@ -17,17 +17,17 @@ export default function SchoolDashboard(): JSX.Element {
     <div>
       <PageHeader title="School Dashboard" subtitle="Overview of your academy" />
       <div className="pl-stats">
-        <StatCard icon="fa-solid fa-user-graduate" label="Active students" value={data?.stats.students ?? '—'} />
-        <StatCard icon="fa-solid fa-chalkboard" label="Classes" value={data?.stats.classes ?? '—'} />
-        <StatCard icon="fa-solid fa-person-chalkboard" label="Teachers" value={data?.stats.teachers ?? '—'} />
+        <StatCard icon="fa-solid fa-user-graduate" label="Active students" value={data?.stats.students ?? '—'} tone="#4338ca" />
+        <StatCard icon="fa-solid fa-chalkboard" label="Classes" value={data?.stats.classes ?? '—'} tone="#7c3aed" />
+        <StatCard icon="fa-solid fa-person-chalkboard" label="Teachers" value={data?.stats.teachers ?? '—'} tone="#0284c7" />
         <StatCard
           icon="fa-solid fa-clipboard-check"
           label="Attendance today"
           value={trend.length ? `${Math.round(trend[trend.length - 1]?.pct ?? 0)}%` : '—'}
-          tone="#34d399"
+          tone="#059669"
         />
-        <StatCard icon="fa-solid fa-money-bill-trend-up" label="Fees collected (month)" value={`${fmtMoney(data?.stats.collected_this_month)} ETB`} />
-        <StatCard icon="fa-solid fa-file-invoice" label="Outstanding fees" value={`${fmtMoney(data?.stats.unpaid_fees)} ETB`} tone="#e07a7a" />
+        <StatCard icon="fa-solid fa-money-bill-trend-up" label="Fees collected (month)" value={`${fmtMoney(data?.stats.collected_this_month)} ETB`} tone="#059669" />
+        <StatCard icon="fa-solid fa-file-invoice" label="Outstanding fees" value={`${fmtMoney(data?.stats.unpaid_fees)} ETB`} tone="#dc2626" />
       </div>
 
       <div className="pl-cols-2">
@@ -40,7 +40,7 @@ export default function SchoolDashboard(): JSX.Element {
                   <div
                     style={{
                       height: `${Math.max(3, (t.pct / 100) * 120)}px`,
-                      background: t.pct >= 80 ? '#34d399' : t.pct > 0 ? 'var(--accent)' : 'var(--border2)',
+                      background: t.pct >= 80 ? '#059669' : t.pct >= 60 ? '#d97706' : t.pct > 0 ? '#dc2626' : 'var(--border2)',
                       borderRadius: 4,
                     }}
                   />
