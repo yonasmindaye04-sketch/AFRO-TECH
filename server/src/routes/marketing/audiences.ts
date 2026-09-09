@@ -1,14 +1,14 @@
 import { Router, type Request, type Response } from 'express'
 import { pool } from '../../config/db.js'
 import { authenticate, requirePermission } from '../../middleware/auth.js'
-import { AppError } from '../../utils/helpers.js'
+import { AppError, asyncHandler } from '../../utils/helpers.js'
 import { getAudienceMembers, getAudienceCount } from '../../services/marketing/audienceEngine.js'
 
 const router = Router()
 
 router.use(authenticate)
 
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const { page = '1', limit = '20' } = req.query
   const offset = (parseInt(page as string) - 1) * parseInt(limit as string)
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
@@ -29,9 +29,8 @@ router.get('/', async (req: Request, res: Response) => {
   const { rows: count } = await pool.query(`SELECT COUNT(*) FROM marketing_audiences WHERE tenant_id = $1`, [tenantId])
 
   res.json({ audiences, total: parseInt(count[0].count, 10), page: parseInt(page as string), limit: parseInt(limit as string) })
-})
-
-router.post('/', requirePermission('marketing.audiences.create'), async (req: Request, res: Response) => {
+}))
+router.post('/', requirePermission('marketing.audiences.create'), asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.body.tenant_id : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -76,9 +75,8 @@ router.post('/', requirePermission('marketing.audiences.create'), async (req: Re
   } finally {
     client.release()
   }
-})
-
-router.get('/:id', async (req: Request, res: Response) => {
+}))
+router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -110,9 +108,8 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 
   res.json(audience)
-})
-
-router.put('/:id', requirePermission('marketing.audiences.update'), async (req: Request, res: Response) => {
+}))
+router.put('/:id', requirePermission('marketing.audiences.update'), asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.body.tenant_id : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -158,17 +155,15 @@ router.put('/:id', requirePermission('marketing.audiences.update'), async (req: 
   } finally {
     client.release()
   }
-})
-
-router.delete('/:id', requirePermission('marketing.audiences.delete'), async (req: Request, res: Response) => {
+}))
+router.delete('/:id', requirePermission('marketing.audiences.delete'), asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
   await pool.query(`DELETE FROM marketing_audiences WHERE id = $1 AND tenant_id = $2`, [req.params.id, tenantId])
   res.json({ success: true })
-})
-
-router.get('/:id/members', async (req: Request, res: Response) => {
+}))
+router.get('/:id/members', asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -197,14 +192,12 @@ router.get('/:id/members', async (req: Request, res: Response) => {
   )
 
   res.json({ contacts, total, page: parseInt(page as string), limit: parseInt(limit as string) })
-})
-
-router.get('/:id/count', async (req: Request, res: Response) => {
+}))
+router.get('/:id/count', asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
   const count = await getAudienceCount(tenantId, req.params.id)
   res.json({ count })
-})
-
+}))
 export default router

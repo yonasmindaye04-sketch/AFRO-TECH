@@ -1,14 +1,14 @@
 import { Router, type Request, type Response } from 'express'
 import { pool } from '../../config/db.js'
 import { authenticate, requirePermission } from '../../middleware/auth.js'
-import { AppError } from '../../utils/helpers.js'
+import { AppError, asyncHandler } from '../../utils/helpers.js'
 import { queueCampaign, getCampaignStats } from '../../services/marketing/campaignEngine.js'
 
 const router = Router()
 
 router.use(authenticate)
 
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const { page = '1', limit = '20', status } = req.query
   const offset = (parseInt(page as string) - 1) * parseInt(limit as string)
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
@@ -40,9 +40,8 @@ router.get('/', async (req: Request, res: Response) => {
   const { rows: count } = await pool.query(`SELECT COUNT(*) FROM marketing_campaigns WHERE ${where.join(' AND ')}`, params)
 
   res.json({ campaigns, total: parseInt(count[0].count, 10), page: parseInt(page as string), limit: parseInt(limit as string) })
-})
-
-router.post('/', requirePermission('marketing.campaigns.create'), async (req: Request, res: Response) => {
+}))
+router.post('/', requirePermission('marketing.campaigns.create'), asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.body.tenant_id : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -79,9 +78,8 @@ router.post('/', requirePermission('marketing.campaigns.create'), async (req: Re
   } finally {
     client.release()
   }
-})
-
-router.get('/:id', async (req: Request, res: Response) => {
+}))
+router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -105,9 +103,8 @@ router.get('/:id', async (req: Request, res: Response) => {
   const stats = await getCampaignStats(req.params.id, tenantId)
 
   res.json({ ...campaign[0], channels, stats })
-})
-
-router.put('/:id', requirePermission('marketing.campaigns.update'), async (req: Request, res: Response) => {
+}))
+router.put('/:id', requirePermission('marketing.campaigns.update'), asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.body.tenant_id : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -151,9 +148,8 @@ router.put('/:id', requirePermission('marketing.campaigns.update'), async (req: 
   } finally {
     client.release()
   }
-})
-
-router.delete('/:id', requirePermission('marketing.campaigns.delete'), async (req: Request, res: Response) => {
+}))
+router.delete('/:id', requirePermission('marketing.campaigns.delete'), asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.query.tenant_id as string : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -165,9 +161,8 @@ router.delete('/:id', requirePermission('marketing.campaigns.delete'), async (re
 
   await pool.query(`DELETE FROM marketing_campaigns WHERE id = $1 AND tenant_id = $2`, [req.params.id, tenantId])
   res.json({ success: true })
-})
-
-router.post('/:id/send', requirePermission('marketing.campaigns.send'), async (req: Request, res: Response) => {
+}))
+router.post('/:id/send', requirePermission('marketing.campaigns.send'), asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.body.tenant_id : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
@@ -180,22 +175,19 @@ router.post('/:id/send', requirePermission('marketing.campaigns.send'), async (r
   const result = await queueCampaign(tenantId, req.params.id, req.user!.id)
 
   res.json({ success: true, ...result })
-})
-
-router.post('/:id/pause', requirePermission('marketing.campaigns.send'), async (req: Request, res: Response) => {
+}))
+router.post('/:id/pause', requirePermission('marketing.campaigns.send'), asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.body.tenant_id : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
   await pool.query(`UPDATE marketing_campaigns SET status = 'paused' WHERE id = $1 AND tenant_id = $2`, [req.params.id, tenantId])
   res.json({ success: true })
-})
-
-router.post('/:id/cancel', requirePermission('marketing.campaigns.send'), async (req: Request, res: Response) => {
+}))
+router.post('/:id/cancel', requirePermission('marketing.campaigns.send'), asyncHandler(async (req: Request, res: Response) => {
   const tenantId = req.user!.role === 'afrotech_admin' ? req.body.tenant_id : req.user!.tenant_id
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
   await pool.query(`UPDATE marketing_campaigns SET status = 'cancelled', completed_at = now() WHERE id = $1 AND tenant_id = $2`, [req.params.id, tenantId])
   res.json({ success: true })
-})
-
+}))
 export default router

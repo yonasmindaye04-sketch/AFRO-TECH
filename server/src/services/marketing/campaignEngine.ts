@@ -1,6 +1,7 @@
 import { pool } from '../../config/db.js'
-import { getMarketingQueues, marketingQueues, redisEnabled } from '../../config/queue.js'
+import { marketingQueues, redisEnabled } from '../../config/queue.js'
 import type { MarketingJobData } from '../../config/queue.js'
+import { AppError } from '../../utils/helpers.js'
 import { renderTemplate, validateVariables } from './templateEngine.js'
 
 export async function queueCampaign(
@@ -25,7 +26,11 @@ export async function queueCampaign(
   const channels = camp.channels?.[0]?.channel ? camp.channels : []
 
   if (channels.length === 0) {
-    throw new Error('Campaign has no channels configured')
+    throw new AppError(400, 'Campaign has no channels configured', 'NO_CHANNELS')
+  }
+
+  if (!redisEnabled) {
+    throw new AppError(503, 'Campaign queue is not running — UPSTASH_REDIS_URL is not configured on this server.', 'QUEUE_UNAVAILABLE')
   }
 
   const audienceMembers = await getAudienceMemberContacts(tenantId, camp.audience_id)
