@@ -135,8 +135,142 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
         ? `<b>${user.full_name}</b> — AFRO-TECH assistant for <b>${user.tenant_name ?? 'AFRO-TECH'}</b>.\n\n` +
             `Commands:\n/today — daily summary\n/lowstock — products to reorder\n/expiring — batches expiring soon\n/shift — your open cash drawer\n/unlink — disconnect this chat\n\n` +
             `Or open the app: ${MINI_APP_URL}`
-        : `Welcome to the <b>AFRO-TECH Suite</b> assistant!\n\nTo link your work account:\n1. Open the web app → Settings → Telegram\n2. Generate a code and send it here as <code>/link CODE</code>\n\nThen I'll keep you posted on stock, fees and appointments.\nApp: ${MINI_APP_URL}`
+        : `Welcome to the <b>AFRO-TECH Suite</b> assistant!\n\n` +
+            `👨‍🏫 <b>Staff / Work account:</b>\n1. Web app → Settings → Telegram\n2. Send <code>/link CODE</code> here.\n\n` +
+            `👨‍👩‍👧 <b>Parents & Guardians:</b>\nTo receive school notices and fee alerts for your child:\nSend: <code>/parent STUDENT_CODE</code>\n(Example: <code>/parent STU-00001</code>)\n\n` +
+            `App: ${MINI_APP_URL}`
     )
+    return
+  }
+
+  /* ── Guardian / Parent Link ── */
+  if (cmd === '/parent') {
+    const rawCode = (args[0] || '').trim().toUpperCase()
+    if (!rawCode) {
+      await sendMessage(
+        chatId,
+        `Please provide your child's student code:\nExample: <code>/parent STU-00001</code>\n\n(Ask the school administration for the student code if you don't have it.)`
+      )
+      return
+    }
+
+    const student = await queryOne<{
+      id: string
+      code: string
+      first_name: string
+      last_name: string
+      class_name: string | null
+      tenant_name: string | null
+    }>(
+      `SELECT s.id, s.code, s.first_name, s.last_name, c.name AS class_name, t.name AS tenant_name
+       FROM students s
+       LEFT JOIN classes c ON c.id = s.class_id
+       LEFT JOIN tenants t ON t.id = s.tenant_id
+       WHERE UPPER(s.code) = $1 AND s.status = 'active' LIMIT 1`,
+      [rawCode]
+    )
+
+    if (!student) {
+      await sendMessage(
+        chatId,
+        `❌ No active student found with code "<b>${rawCode}</b>".\nPlease check the code and try again.\nExample: <code>/parent STU-00001</code>`
+      )
+      return
+    }
+
+    await query(
+      `UPDATE students
+       SET guardian_telegram_chat_id = $1, guardian_telegram_username = $2
+       WHERE id = $3`,
+      [String(chatId), tgUser.first_name ? `${tgUser.first_name}` : null, student.id]
+    )
+
+    await sendMessage(
+      chatId,
+      `✅ <b>Successfully Linked as Guardian!</b>\n\n` +
+      `👤 <b>Student:</b> ${student.first_name} ${student.last_name}\n` +
+      `🆔 <b>Code:</b> <code>${student.code}</code>\n` +
+      `🏫 <b>School:</b> ${student.tenant_name || 'School'}\n` +
+      `📚 <b>Class:</b> ${student.class_name || 'Not assigned'}\n\n` +
+      `You will now receive important school announcements, notices, and fee receipts directly in this chat.\n\n` +
+      `Commands for parents:\n` +
+      `/child — View linked student info\n` +
+      `/myfees — View outstanding fee records`
+    )
+    return
+  }
+
+  /* ── Guardian Inquiries ── */
+  if (cmd === '/child' || cmd === '/student') {
+    const students = await query<{
+      id: string
+      code: string
+      first_name: string
+      last_name: string
+      class_name: string | null
+      tenant_name: string | null
+    }>(
+      `SELECT s.id, s.code, s.first_name, s.last_name, c.name AS class_name, t.name AS tenant_name
+       FROM students s
+       LEFT JOIN classes c ON c.id = s.class_id
+       LEFT JOIN tenants t ON t.id = s.tenant_id
+       WHERE s.guardian_telegram_chat_id = $1::text AND s.status = 'active'`,
+      [String(chatId)]
+    )
+
+    if (!students.length) {
+      await sendMessage(
+        chatId,
+        `You have not linked any students to this chat yet.\nSend <code>/parent STUDENT_CODE</code> to link your child.`
+      )
+      return
+    }
+
+    const list = students
+      .map(
+        (s) =>
+          `• <b>${s.first_name} ${s.last_name}</b> (Code: <code>${s.code}</code>)\n  Class: ${s.class_name || 'N/A'} | School: ${s.tenant_name || 'School'}`
+      )
+      .join('\n\n')
+
+    await sendMessage(chatId, `👨‍👩‍👧 <b>Linked Students:</b>\n\n${list}\n\nType /myfees to check fee status.`)
+    return
+  }
+
+  if (cmd === '/myfees') {
+    const fees = await query<{
+      title: string
+      amount: string
+      paid_amount: string
+      status: string
+      due_date: string | null
+      student_name: string
+      school_name: string
+    }>(
+      `SELECT f.title, f.amount::text, f.paid_amount::text, f.status, f.due_date,
+              s.first_name || ' ' || s.last_name AS student_name, t.name AS school_name
+       FROM fees f
+       JOIN students s ON s.id = f.student_id
+       LEFT JOIN tenants t ON t.id = f.tenant_id
+       WHERE s.guardian_telegram_chat_id = $1::text
+       ORDER BY f.created_at DESC LIMIT 6`,
+      [String(chatId)]
+    )
+
+    if (!fees.length) {
+      await sendMessage(chatId, `No fee records found for your linked student(s).`)
+      return
+    }
+
+    const textList = fees
+      .map((f) => {
+        const remaining = Math.max(0, Number(f.amount) - Number(f.paid_amount))
+        const statusEmoji = f.status === 'paid' ? '✅ Paid' : remaining > 0 ? `⚠️ Due: ${remaining.toFixed(2)} ETB` : 'Pending'
+        return `• <b>${f.title}</b> (${f.student_name})\n  Total: ${Number(f.amount).toFixed(2)} ETB | Paid: ${Number(f.paid_amount).toFixed(2)} ETB\n  Status: ${statusEmoji}${f.due_date ? ` (Due: ${f.due_date.toString().slice(0, 10)})` : ''}`
+      })
+      .join('\n\n')
+
+    await sendMessage(chatId, `📋 <b>Fee Statements:</b>\n\n${textList}`)
     return
   }
 
@@ -164,7 +298,13 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
 
   const user = await findLinkedUser(chatId)
   if (!user) {
-    await sendMessage(chatId, 'This chat is not linked yet. Send /start to see how to link your account.')
+    // Check if this user is a linked parent
+    const isParent = await queryOne(`SELECT id FROM students WHERE guardian_telegram_chat_id = $1::text LIMIT 1`, [String(chatId)])
+    if (isParent) {
+      await sendMessage(chatId, 'Parent options:\n/child — View linked student info\n/myfees — View fee statement\n/parent CODE — Link another student')
+      return
+    }
+    await sendMessage(chatId, 'This chat is not linked yet. Send /start to see how to link your staff or parent account.')
     return
   }
 

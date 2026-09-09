@@ -322,6 +322,144 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
     }
   }
 
+  /* ── 2b. Parent & Guardian Linking (/parent CODE) ── */
+  if (cmd === '/parent') {
+    const rawCode = (args[0] || '').trim().toUpperCase()
+    if (!rawCode) {
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: `Please provide your child's student code:\nExample: <code>/parent STU-00001</code>\n\n(Ask the school administration for the student code if you don't have it.)`,
+        parse_mode: 'HTML',
+      })
+      return
+    }
+
+    const student = await queryOne<{
+      id: string
+      code: string
+      first_name: string
+      last_name: string
+      class_name: string | null
+    }>(
+      `SELECT s.id, s.code, s.first_name, s.last_name, c.name AS class_name
+       FROM students s
+       LEFT JOIN classes c ON c.id = s.class_id
+       WHERE UPPER(s.code) = $1 AND s.tenant_id = $2 AND s.status = 'active' LIMIT 1`,
+      [rawCode, botRow.tenant_id]
+    )
+
+    if (!student) {
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: `❌ No active student found with code "<b>${rawCode}</b>" at <b>${tenantName}</b>.\nPlease check the student code and try again.`,
+        parse_mode: 'HTML',
+      })
+      return
+    }
+
+    await query(
+      `UPDATE students
+       SET guardian_telegram_chat_id = $1, guardian_telegram_username = $2
+       WHERE id = $3`,
+      [String(chatId), firstName || null, student.id]
+    )
+
+    await tgApi(botRow.bot_token, 'sendMessage', {
+      chat_id: chatId,
+      text: `✅ <b>Successfully Linked as Guardian!</b>\n\n` +
+        `👤 <b>Student:</b> ${student.first_name} ${student.last_name}\n` +
+        `🆔 <b>Code:</b> <code>${student.code}</code>\n` +
+        `🏫 <b>School:</b> ${tenantName}\n` +
+        `📚 <b>Class:</b> ${student.class_name || 'Not assigned'}\n\n` +
+        `You will now receive important school announcements, notices, and fee receipts directly in this chat.\n\n` +
+        `Commands for parents:\n` +
+        `/child — View linked student info\n` +
+        `/myfees — View outstanding fee records`,
+      parse_mode: 'HTML',
+    })
+    return
+  }
+
+  /* ── 2c. Guardian Inquiries (/child, /student, /myfees) ── */
+  if (cmd === '/child' || cmd === '/student') {
+    const students = await query<{
+      id: string
+      code: string
+      first_name: string
+      last_name: string
+      class_name: string | null
+    }>(
+      `SELECT s.id, s.code, s.first_name, s.last_name, c.name AS class_name
+       FROM students s
+       LEFT JOIN classes c ON c.id = s.class_id
+       WHERE s.guardian_telegram_chat_id = $1::text AND s.tenant_id = $2 AND s.status = 'active'`,
+      [String(chatId), botRow.tenant_id]
+    )
+
+    if (!students.length) {
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: `You have not linked any students to this bot yet.\nSend <code>/parent STUDENT_CODE</code> to link your child.`,
+        parse_mode: 'HTML',
+      })
+      return
+    }
+
+    const list = students
+      .map((s) => `• <b>${s.first_name} ${s.last_name}</b> (Code: <code>${s.code}</code>)\n  Class: ${s.class_name || 'N/A'}`)
+      .join('\n\n')
+
+    await tgApi(botRow.bot_token, 'sendMessage', {
+      chat_id: chatId,
+      text: `👨‍👩‍👧 <b>Linked Students at ${tenantName}:</b>\n\n${list}\n\nType /myfees to check fee status.`,
+      parse_mode: 'HTML',
+    })
+    return
+  }
+
+  if (cmd === '/myfees') {
+    const fees = await query<{
+      title: string
+      amount: string
+      paid_amount: string
+      status: string
+      due_date: string | null
+      student_name: string
+    }>(
+      `SELECT f.title, f.amount::text, f.paid_amount::text, f.status, f.due_date,
+              s.first_name || ' ' || s.last_name AS student_name
+       FROM fees f
+       JOIN students s ON s.id = f.student_id
+       WHERE s.guardian_telegram_chat_id = $1::text AND f.tenant_id = $2
+       ORDER BY f.created_at DESC LIMIT 6`,
+      [String(chatId), botRow.tenant_id]
+    )
+
+    if (!fees.length) {
+      await tgApi(botRow.bot_token, 'sendMessage', {
+        chat_id: chatId,
+        text: `No fee records found for your linked student(s).`,
+        parse_mode: 'HTML',
+      })
+      return
+    }
+
+    const textList = fees
+      .map((f) => {
+        const remaining = Math.max(0, Number(f.amount) - Number(f.paid_amount))
+        const statusEmoji = f.status === 'paid' ? '✅ Paid' : remaining > 0 ? `⚠️ Due: ${remaining.toFixed(2)} ETB` : 'Pending'
+        return `• <b>${f.title}</b> (${f.student_name})\n  Total: ${Number(f.amount).toFixed(2)} ETB | Paid: ${Number(f.paid_amount).toFixed(2)} ETB\n  Status: ${statusEmoji}${f.due_date ? ` (Due: ${f.due_date.toString().slice(0, 10)})` : ''}`
+      })
+      .join('\n\n')
+
+    await tgApi(botRow.bot_token, 'sendMessage', {
+      chat_id: chatId,
+      text: `📋 <b>Fee Statements:</b>\n\n${textList}`,
+      parse_mode: 'HTML',
+    })
+    return
+  }
+
   /* ── 3. Start & Help (/start, /help) ── */
   if (cmd === '/start' || cmd === '/help') {
     // If the user sent a deeplink like /start D09806 (Telegram start parameter)

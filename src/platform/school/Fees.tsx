@@ -45,6 +45,50 @@ export default function Fees(): JSX.Element {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Guardian Fee Notice Modal state
+  const [feeNoticeTarget, setFeeNoticeTarget] = useState<FeeRow | null>(null)
+  const [feeNoticeChannel, setFeeNoticeChannel] = useState<'email' | 'telegram' | 'both'>('both')
+  const [feeNoticeNote, setFeeNoticeNote] = useState('')
+  const [feeNoticeBusy, setFeeNoticeBusy] = useState(false)
+  const [feeNoticeSuccess, setFeeNoticeSuccess] = useState<string | null>(null)
+  const [feeNoticeError, setFeeNoticeError] = useState<string | null>(null)
+
+  const openFeeNoticeModal = (f: FeeRow): void => {
+    setFeeNoticeTarget(f)
+    setFeeNoticeChannel('both')
+    setFeeNoticeNote('')
+    setFeeNoticeSuccess(null)
+    setFeeNoticeError(null)
+  }
+
+  const sendFeeNotice = async (e: FormEvent): Promise<void> => {
+    e.preventDefault()
+    if (!feeNoticeTarget) return
+    setFeeNoticeBusy(true)
+    setFeeNoticeError(null)
+    setFeeNoticeSuccess(null)
+    try {
+      const res = await api.post<{ ok: boolean; emailStatus?: string; telegramStatus?: string }>(
+        `/school/fees/${feeNoticeTarget.id}/notify`,
+        {
+          channel: feeNoticeChannel,
+          custom_message: feeNoticeNote.trim() || null,
+        }
+      )
+      const channels: string[] = []
+      if (res.emailStatus && res.emailStatus !== 'failed' && res.emailStatus !== 'not_configured') channels.push('Email')
+      if (res.telegramStatus && res.telegramStatus !== 'failed' && res.telegramStatus !== 'not_configured') channels.push('Telegram')
+      setFeeNoticeSuccess(`Notification sent successfully${channels.length ? ` via ${channels.join(' & ')}` : ''}!`)
+      setTimeout(() => {
+        setFeeNoticeTarget(null)
+      }, 1500)
+    } catch (err) {
+      setFeeNoticeError(err instanceof Error ? err.message : 'Failed to notify guardian')
+    } finally {
+      setFeeNoticeBusy(false)
+    }
+  }
+
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
     setError(null)
@@ -153,7 +197,7 @@ export default function Fees(): JSX.Element {
             {
               key: 'act',
               header: '',
-              width: '180px',
+              width: '220px',
               render: (f) => (
                 <div className="pl-row-actions">
                   {f.status !== 'paid' ? (
@@ -163,6 +207,15 @@ export default function Fees(): JSX.Element {
                   ) : (
                     <small style={{ color: 'var(--text-dim)' }}>{fmtDate(f.paid_at)}</small>
                   )}
+                  <button
+                    type="button"
+                    className="pl-icon-btn"
+                    aria-label={`Notify guardian of ${f.student_name}`}
+                    title="Send notice/receipt to guardian (Email & Telegram)"
+                    onClick={() => openFeeNoticeModal(f)}
+                  >
+                    <i className="fa-solid fa-paper-plane" aria-hidden="true" style={{ color: 'var(--accent)' }} />
+                  </button>
                   <button
                     type="button"
                     className="pl-icon-btn"
@@ -282,6 +335,73 @@ export default function Fees(): JSX.Element {
           }
           return <ThermalReceipt data={rData} onDone={() => setReceiptFee(null)} />
         })()}
+      </Modal>
+
+      {/* Guardian Fee Notice Modal */}
+      <Modal
+        open={Boolean(feeNoticeTarget)}
+        title={feeNoticeTarget ? `Notify Guardian — ${feeNoticeTarget.student_name}` : 'Fee Notice'}
+        onClose={() => setFeeNoticeTarget(null)}
+      >
+        <form onSubmit={sendFeeNotice}>
+          {feeNoticeTarget && (
+            <div style={{ background: 'var(--card-subtle, rgba(255,255,255,0.03))', padding: '12px 14px', borderRadius: 8, marginBottom: 16, border: '1px solid var(--border)' }}>
+              <div style={{ fontWeight: 600, fontSize: '.95rem', color: 'var(--text)' }}>
+                {feeNoticeTarget.title}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.84rem', color: 'var(--text-dim)', marginTop: 4 }}>
+                <span>Student: <b>{feeNoticeTarget.student_name}</b></span>
+                <span>Class: <b>{feeNoticeTarget.class_name || 'N/A'}</b></span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.84rem', marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border)' }}>
+                <span>Total: <b>{fmtMoney(feeNoticeTarget.amount)} ETB</b></span>
+                <span>Paid: <b>{fmtMoney(feeNoticeTarget.paid_amount)} ETB</b></span>
+                <span style={{ color: feeNoticeTarget.status === 'paid' ? '#4ade80' : '#f87171', fontWeight: 600 }}>
+                  {feeNoticeTarget.status === 'paid'
+                    ? 'Fully Paid'
+                    : `Due: ${fmtMoney(Number(feeNoticeTarget.amount) - Number(feeNoticeTarget.paid_amount))} ETB`}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <Field label="Notification Channel">
+            <select
+              className="pl-select"
+              value={feeNoticeChannel}
+              onChange={(e) => setFeeNoticeChannel(e.target.value as 'email' | 'telegram' | 'both')}
+            >
+              <option value="both">Both Email & Telegram</option>
+              <option value="email">Email Only</option>
+              <option value="telegram">Telegram Only</option>
+            </select>
+          </Field>
+
+          <Field label="Custom Note (optional)">
+            <textarea
+              className="pl-textarea"
+              rows={3}
+              placeholder="e.g. Please note bank receipt can be brought to the accounts desk…"
+              value={feeNoticeNote}
+              onChange={(e) => setFeeNoticeNote(e.target.value)}
+            />
+          </Field>
+
+          {feeNoticeSuccess && (
+            <p style={{ color: '#4ade80', fontSize: '.87rem', background: 'rgba(74,222,128,0.1)', padding: '6px 10px', borderRadius: 6, marginBottom: 12 }}>
+              <i className="fa-solid fa-circle-check" style={{ marginRight: 6 }} />
+              {feeNoticeSuccess}
+            </p>
+          )}
+
+          {feeNoticeError && <p role="alert" style={{ color: '#e07a7a', fontSize: '.87rem' }}>{feeNoticeError}</p>}
+
+          <div className="pl-form-actions">
+            <button type="submit" className="pl-btn pl-btn-primary" disabled={feeNoticeBusy}>
+              {feeNoticeBusy ? 'Sending Notice…' : feeNoticeTarget?.status === 'paid' ? 'Send Payment Receipt' : 'Send Fee Reminder'}
+            </button>
+          </div>
+        </form>
       </Modal>
     </div>
   )

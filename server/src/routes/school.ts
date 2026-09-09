@@ -5,6 +5,7 @@ import { asyncHandler, AppError, nextCode, withTransaction } from '../utils/help
 import { logAudit } from '../utils/audit.js'
 import { authenticate, requireActiveTenant, requireRole, requirePermission } from '../middleware/auth.js'
 import { validateBody } from '../middleware/validate.js'
+import { broadcastAnnouncementToGuardians, notifySingleGuardian } from '../services/guardianNotifier.js'
 
 const router = Router()
 router.use(authenticate, requireActiveTenant)
@@ -98,6 +99,9 @@ const studentSchema = z.object({
   class_id: z.string().uuid().optional().nullable(),
   guardian_name: z.string().trim().max(160).optional().nullable(),
   guardian_phone: z.string().trim().max(40).optional().nullable(),
+  guardian_email: z.union([z.string().trim().email(), z.literal(''), z.null()]).optional().nullable(),
+  guardian_telegram_chat_id: z.string().trim().max(100).optional().nullable(),
+  guardian_telegram_username: z.string().trim().max(100).optional().nullable(),
   address: z.string().trim().max(300).optional().nullable(),
 })
 router.get(
@@ -131,9 +135,24 @@ router.post(
     const row = await withTransaction(pool, async (client) => {
       const code = await nextCode(client, 'students', 'STU', t(req))
       const r = await client.query(
-        `INSERT INTO students (tenant_id, code, first_name, last_name, gender, dob, class_id, guardian_name, guardian_phone, address)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-        [t(req), code, d.first_name, d.last_name, d.gender, d.dob || null, d.class_id ?? null, d.guardian_name ?? null, d.guardian_phone ?? null, d.address ?? null]
+        `INSERT INTO students (tenant_id, code, first_name, last_name, gender, dob, class_id,
+                               guardian_name, guardian_phone, guardian_email, guardian_telegram_chat_id, guardian_telegram_username, address)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+        [
+          t(req),
+          code,
+          d.first_name,
+          d.last_name,
+          d.gender,
+          d.dob || null,
+          d.class_id ?? null,
+          d.guardian_name ?? null,
+          d.guardian_phone ?? null,
+          d.guardian_email || null,
+          d.guardian_telegram_chat_id || null,
+          d.guardian_telegram_username || null,
+          d.address ?? null,
+        ]
       )
       return r.rows[0]
     })
@@ -150,15 +169,67 @@ router.patch(
     const d = req.body as Partial<z.infer<typeof studentSchema>> & { status?: string }
     const row = await queryOne(
       `UPDATE students SET first_name=$3, last_name=$4, gender=$5, dob=$6, class_id=$7,
-              guardian_name=$8, guardian_phone=$9, address=$10, status=COALESCE($11, status)
+              guardian_name=$8, guardian_phone=$9,
+              guardian_email=$10,
+              guardian_telegram_chat_id=$11,
+              guardian_telegram_username=$12,
+              address=$13, status=COALESCE($14, status)
        WHERE id=$1 AND tenant_id=$2 RETURNING *`,
       [
-        req.params.id, t(req), d.first_name ?? cur.first_name, d.last_name ?? cur.last_name, d.gender ?? cur.gender,
-        d.dob ?? cur.dob, d.class_id ?? cur.class_id, d.guardian_name ?? cur.guardian_name,
-        d.guardian_phone ?? cur.guardian_phone, d.address ?? cur.address, (d as { status?: string }).status ?? cur.status,
+        req.params.id,
+        t(req),
+        d.first_name ?? cur.first_name,
+        d.last_name ?? cur.last_name,
+        d.gender ?? cur.gender,
+        d.dob ?? cur.dob,
+        d.class_id ?? cur.class_id,
+        d.guardian_name ?? cur.guardian_name,
+        d.guardian_phone ?? cur.guardian_phone,
+        d.guardian_email !== undefined ? (d.guardian_email || null) : cur.guardian_email,
+        d.guardian_telegram_chat_id !== undefined ? (d.guardian_telegram_chat_id || null) : cur.guardian_telegram_chat_id,
+        d.guardian_telegram_username !== undefined ? (d.guardian_telegram_username || null) : cur.guardian_telegram_username,
+        d.address ?? cur.address,
+        (d as { status?: string }).status ?? cur.status,
       ]
     )
     res.json({ student: row })
+  })
+)
+
+/** POST /students/:id/notify — Send a direct 1-on-1 notice to student guardian */
+router.post(
+  '/students/:id/notify',
+  requirePermission('students.manage'),
+  validateBody(
+    z.object({
+      title: z.string().trim().min(2).max(160),
+      message: z.string().trim().min(2).max(3000),
+      channel: z.enum(['email', 'telegram', 'both']).default('both'),
+    })
+  ),
+  asyncHandler(async (req, res) => {
+    const { title, message, channel } = req.body as {
+      title: string
+      message: string
+      channel: 'email' | 'telegram' | 'both'
+    }
+    const result = await notifySingleGuardian({
+      tenantId: t(req),
+      studentId: req.params.id,
+      title,
+      message,
+      channel,
+    })
+    logAudit({
+      tenantId: t(req),
+      userId: req.user!.id,
+      userName: req.user!.full_name,
+      action: 'guardian.notify',
+      entity: 'student',
+      entityId: req.params.id,
+      details: { title, channel, result },
+    })
+    res.json({ ok: true, ...result })
   })
 )
 
@@ -356,6 +427,67 @@ router.patch(
   })
 )
 
+/** POST /fees/:id/notify — Send fee due reminder or payment receipt to guardian */
+router.post(
+  '/fees/:id/notify',
+  requirePermission('fees.manage'),
+  validateBody(
+    z.object({
+      channel: z.enum(['email', 'telegram', 'both']).default('both'),
+      custom_message: z.string().trim().max(1000).optional().nullable(),
+    })
+  ),
+  asyncHandler(async (req, res) => {
+    const { channel, custom_message } = req.body as {
+      channel: 'email' | 'telegram' | 'both'
+      custom_message?: string | null
+    }
+    const fee = await queryOne<{
+      id: string
+      student_id: string
+      title: string
+      amount: string
+      paid_amount: string
+      status: string
+      due_date: string | null
+    }>(`SELECT * FROM fees WHERE id = $1 AND tenant_id = $2`, [req.params.id, t(req)])
+    if (!fee) throw new AppError(404, 'Fee record not found', 'NOT_FOUND')
+
+    const remaining = Math.max(0, Number(fee.amount) - Number(fee.paid_amount))
+    const isPaid = fee.status === 'paid' || remaining <= 0
+
+    const noticeTitle = isPaid
+      ? `Payment Receipt: ${fee.title}`
+      : `Fee Due Reminder: ${fee.title}`
+
+    const defaultMsg = isPaid
+      ? `This confirms receipt of payment for ${fee.title}. Total Amount: ${Number(fee.amount).toFixed(2)} ETB (Paid in full). Thank you!`
+      : `This is a reminder regarding school fee "${fee.title}".\nTotal: ${Number(fee.amount).toFixed(2)} ETB\nPaid: ${Number(fee.paid_amount).toFixed(2)} ETB\nOutstanding Due: ${remaining.toFixed(2)} ETB${fee.due_date ? `\nDue Date: ${fee.due_date.toString().slice(0, 10)}` : ''}.\nPlease arrange payment at your earliest convenience.`
+
+    const message = custom_message ? `${custom_message}\n\n${defaultMsg}` : defaultMsg
+
+    const result = await notifySingleGuardian({
+      tenantId: t(req),
+      studentId: fee.student_id,
+      title: noticeTitle,
+      message,
+      channel,
+    })
+
+    logAudit({
+      tenantId: t(req),
+      userId: req.user!.id,
+      userName: req.user!.full_name,
+      action: 'fee.notify_guardian',
+      entity: 'fee',
+      entityId: req.params.id,
+      details: { channel, isPaid, result },
+    })
+
+    res.json({ ok: true, ...result })
+  })
+)
+
 /* ══════════════ SUBJECTS ══════════════ */
 
 router.get(
@@ -513,7 +645,10 @@ router.get(
   requirePermission('announcements.view'),
   asyncHandler(async (req, res) => {
     const rows = await query(
-      `SELECT a.*, u.full_name AS posted_by FROM announcements a LEFT JOIN users u ON u.id = a.created_by
+      `SELECT a.*, u.full_name AS posted_by, c.name AS class_name
+       FROM announcements a
+       LEFT JOIN users u ON u.id = a.created_by
+       LEFT JOIN classes c ON c.id = a.class_id
        WHERE a.tenant_id = $1 ORDER BY a.pinned DESC, a.created_at DESC LIMIT 50`,
       [t(req)]
     )
@@ -523,14 +658,71 @@ router.get(
 router.post(
   '/announcements',
   requirePermission('announcements.create'),
-  validateBody(z.object({ title: z.string().trim().min(2).max(160), body: z.string().trim().min(2).max(3000), pinned: z.boolean().default(false) })),
+  validateBody(
+    z.object({
+      title: z.string().trim().min(2).max(160),
+      body: z.string().trim().min(2).max(3000),
+      pinned: z.boolean().default(false),
+      target_type: z.enum(['all', 'class', 'staff']).default('all'),
+      class_id: z.string().uuid().optional().nullable(),
+      send_email: z.boolean().default(false),
+      send_telegram: z.boolean().default(false),
+    })
+  ),
   asyncHandler(async (req, res) => {
-    const d = req.body as { title: string; body: string; pinned: boolean }
-    const row = await queryOne(
-      `INSERT INTO announcements (tenant_id, title, body, pinned, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [t(req), d.title, d.body, d.pinned, req.user!.id]
+    const d = req.body as {
+      title: string
+      body: string
+      pinned: boolean
+      target_type?: 'all' | 'class' | 'staff'
+      class_id?: string | null
+      send_email?: boolean
+      send_telegram?: boolean
+    }
+    const targetType = d.target_type || 'all'
+    const sendEmail = Boolean(d.send_email)
+    const sendTelegram = Boolean(d.send_telegram)
+
+    const row = await queryOne<{ id: string }>(
+      `INSERT INTO announcements (tenant_id, title, body, pinned, created_by, target_type, class_id, sent_email, sent_telegram)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [t(req), d.title, d.body, d.pinned, req.user!.id, targetType, d.class_id ?? null, sendEmail, sendTelegram]
     )
-    res.status(201).json({ announcement: row })
+
+    let deliveryStats = null
+    if (sendEmail || sendTelegram) {
+      deliveryStats = await broadcastAnnouncementToGuardians({
+        tenantId: t(req),
+        announcementId: row!.id,
+        title: d.title,
+        body: d.body,
+        targetType,
+        classId: d.class_id,
+        sendEmail,
+        sendTelegram,
+      })
+    }
+
+    const updated = await queryOne(
+      `SELECT a.*, u.full_name AS posted_by, c.name AS class_name
+       FROM announcements a
+       LEFT JOIN users u ON u.id = a.created_by
+       LEFT JOIN classes c ON c.id = a.class_id
+       WHERE a.id = $1 AND a.tenant_id = $2`,
+      [row!.id, t(req)]
+    )
+
+    logAudit({
+      tenantId: t(req),
+      userId: req.user!.id,
+      userName: req.user!.full_name,
+      action: 'announcement.create',
+      entity: 'announcement',
+      entityId: row!.id,
+      details: { title: d.title, targetType, sendEmail, sendTelegram, delivery: deliveryStats },
+    })
+
+    res.status(201).json({ announcement: updated, delivery: deliveryStats })
   })
 )
 router.delete(
@@ -540,6 +732,25 @@ router.delete(
     const row = await queryOne(`DELETE FROM announcements WHERE id = $1 AND tenant_id = $2 RETURNING id`, [req.params.id, t(req)])
     if (!row) throw new AppError(404, 'Announcement not found', 'NOT_FOUND')
     res.json({ ok: true })
+  })
+)
+
+/* ══════════════ GUARDIAN NOTIFICATIONS AUDIT ══════════════ */
+
+router.get(
+  '/guardian-notifications',
+  requirePermission('students.view'),
+  asyncHandler(async (req, res) => {
+    const rows = await query(
+      `SELECT gn.*, s.first_name, s.last_name, s.code AS student_code, c.name AS class_name
+       FROM guardian_notifications gn
+       LEFT JOIN students s ON s.id = gn.student_id
+       LEFT JOIN classes c ON c.id = s.class_id
+       WHERE gn.tenant_id = $1
+       ORDER BY gn.created_at DESC LIMIT 100`,
+      [t(req)]
+    )
+    res.json({ notifications: rows })
   })
 )
 
