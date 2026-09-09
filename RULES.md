@@ -55,6 +55,12 @@ All authenticated sessions must:
 
 Report cards must follow the formal multi-column layout (dual-tone header, boxed student info, grading table, attendance, comments, signatures). Include a linear graph showing grade movement across terms/semesters.
 
+## 7. Dark Mode, Light Mode & Clean Indicators
+
+- Both **Dark Mode** (`[data-theme="dark"]`) and **Light Mode** (`[data-theme="light"]`) must be fully supported across all firm types (hospital, pharmacy, store, school).
+- Never hardcode `#ffffff` card/panel/table backgrounds in dark mode — always use CSS variables `var(--card)`, `var(--border)`, and `var(--bg-alt)`.
+- Timetable slots and status indicators must **never** use colored background tints or thick colored indicator borders — use clean surface backgrounds with bold typography.
+
 ---
 
 *Last updated by agent — September 2026*

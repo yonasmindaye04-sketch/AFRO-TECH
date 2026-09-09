@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { useTheme } from '../context/useTheme'
 
 interface NavItem {
   to: string
@@ -78,6 +79,7 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
     .toUpperCase()
 
   const trialLeft = tenant?.status === 'trial' ? (tenant.trial_days_left ?? 0) : null
+  const { dark, toggle: toggleTheme } = useTheme()
 
   useEffect(() => {
     document.documentElement.setAttribute('data-firm', firmType)
@@ -96,12 +98,23 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
         <aside className={`pl-sidebar ${open ? 'open' : ''}`}>
           <div className="pl-side-brand">
             <div>AFRO<span>SUITE</span></div>
-            {tenant && (
-              <span className={`pl-firm-pill ${firmType}`}>
-                <i className={FIRM_ICONS[firmType] || 'fa-solid fa-building'} aria-hidden="true" />
-                {firmType}
-              </span>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {tenant && (
+                <span className={`pl-firm-pill ${firmType}`}>
+                  <i className={FIRM_ICONS[firmType] || 'fa-solid fa-building'} aria-hidden="true" />
+                  {firmType}
+                </span>
+              )}
+              <button
+                type="button"
+                className="pl-theme-toggle"
+                onClick={toggleTheme}
+                title={dark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                aria-label={dark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              >
+                <i className={dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon'} aria-hidden="true" />
+              </button>
+            </div>
           </div>
           <nav className="pl-nav" aria-label="Main">
             {items.map((item) => (
@@ -146,6 +159,16 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
               type="button"
               className="pl-btn pl-btn-ghost pl-btn-sm"
               style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}
+              onClick={toggleTheme}
+              aria-label={dark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              <i className={dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon'} aria-hidden="true" />
+              {dark ? 'Light Mode' : 'Dark Mode'}
+            </button>
+            <button
+              type="button"
+              className="pl-btn pl-btn-ghost pl-btn-sm"
+              style={{ width: '100%', justifyContent: 'center', marginTop: 6 }}
               onClick={() => {
                 logout()
                 navigate('/app/login')

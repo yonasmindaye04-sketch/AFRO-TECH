@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
-import { Card, Field, OkBox, Spinner, Badge } from '../ui'
+import { useTheme } from '../../context/useTheme'
+import { Card, Field, OkBox, Spinner } from '../ui'
 
 import ThermalReceipt from '../ui/ThermalReceipt'
 import type { ReceiptData } from '../utils/receipt'
@@ -31,6 +32,7 @@ interface TelegramConfig {
 
 export default function Settings(): JSX.Element {
   const { me } = useAuth()
+  const { dark, toggle: toggleTheme } = useTheme()
   const isSchool = me?.tenant?.business_type === 'school'
   const [settings, setSettings] = useState<TenantSettings>({})
   const [loaded, setLoaded] = useState(false)
@@ -376,6 +378,39 @@ export default function Settings(): JSX.Element {
       <p className="pl-page-sub" style={{ marginBottom: 22 }}>
         Workspace: <strong>{me?.tenant?.slug}</strong> · Plan: free trial
       </p>
+
+      {/* ── Appearance & Theme ────────────────────────────────────────────── */}
+      <div style={{ marginBottom: 20 }}>
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <h2 style={{ margin: 0 }}>
+                <i className="fa-solid fa-palette" style={{ marginRight: 8, color: 'var(--accent)' }} />
+                Appearance & Theme
+              </h2>
+              <p style={{ color: 'var(--text-dim)', fontSize: '.84rem', margin: '4px 0 0' }}>
+                Select your preferred visual mode for the entire AFRO SUITE platform.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                type="button"
+                className={`pl-btn ${!dark ? 'pl-btn-primary' : 'pl-btn-ghost'}`}
+                onClick={() => { if (dark) toggleTheme() }}
+              >
+                <i className="fa-solid fa-sun" /> Light Mode
+              </button>
+              <button
+                type="button"
+                className={`pl-btn ${dark ? 'pl-btn-primary' : 'pl-btn-ghost'}`}
+                onClick={() => { if (!dark) toggleTheme() }}
+              >
+                <i className="fa-solid fa-moon" /> Dark Mode
+              </button>
+            </div>
+          </div>
+        </Card>
+      </div>
 
       <div className="pl-cols-2">
         <Card>

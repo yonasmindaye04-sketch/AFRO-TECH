@@ -32,6 +32,10 @@ These rules apply to all AI agents working in this workspace. They supplement an
 
 10. **Never use `ArtifactMetadata`** when writing project source files (only use it for artifact documents in the brain directory).
 
+11. **Dark & Light Mode Support** — Both Dark Mode (`[data-theme="dark"]`) and Light Mode (`[data-theme="light"]`) must be supported across all firm types. Use CSS variables instead of hardcoded background colors.
+
+12. **Clean Timetable & Indicators** — Never use colored background tints or thick colored indicator stripes for timetable slots or badges. Use clean surface backgrounds and bold text.
+
 ---
 
 *Last updated — September 2026*

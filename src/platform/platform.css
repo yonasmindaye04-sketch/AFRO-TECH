@@ -168,15 +168,37 @@
 
 /* ── Badges ─────────────────────────────────────────────── */
 .pl-badge {
-  display: inline-flex; align-items: center;
-  font-size: .8rem; font-weight: 700;
-  line-height: 1.4;
+  display: inline-flex !important;
+  align-items: center !important;
+  font-size: .82rem !important;
+  font-weight: 700 !important;
+  line-height: 1.4 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
 }
-.pl-badge-neutral { color: var(--text-dim); }
-.pl-badge-good { color: #10b981; }
-.pl-badge-warn { color: #f59e0b; }
-.pl-badge-bad { color: #ef4444; }
-.pl-badge-info { color: #3b82f6; }
+.pl-badge::before,
+.pl-badge::after {
+  display: none !important;
+  content: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.pl-badge-neutral { color: var(--text-dim) !important; }
+.pl-badge-good    { color: #059669 !important; }
+.pl-badge-warn    { color: #d97706 !important; }
+.pl-badge-bad     { color: #dc2626 !important; }
+.pl-badge-info    { color: #0284c7 !important; }
+
+[data-theme="dark"] .pl-badge-neutral { color: var(--text-dim) !important; }
+[data-theme="dark"] .pl-badge-good    { color: #34d399 !important; }
+[data-theme="dark"] .pl-badge-warn    { color: #fbbf24 !important; }
+[data-theme="dark"] .pl-badge-bad     { color: #f87171 !important; }
+[data-theme="dark"] .pl-badge-info    { color: #38bdf8 !important; }
 
 /* ── Universal Checkbox & Radio Controls ─────────────────── */
 input[type="checkbox"], input[type="radio"] {
@@ -302,12 +324,22 @@ label:has(input[type="radio"]) {
 .pl-tt-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
 @media (max-width: 900px) { .pl-tt-grid { grid-template-columns: repeat(2, 1fr); } }
 .pl-tt-day { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; min-height: 140px; }
-.pl-tt-day h3 { font-size: .85rem; color: var(--text-dim); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .05em; }
-.pl-tt-slot { border: 1px solid var(--border2); border-radius: 8px; padding: 7px 9px; margin-bottom: 6px; font-size: .82rem; position: relative; }
-.pl-tt-slot strong { display: block; }
-.pl-tt-slot small { color: var(--text-dim); }
-.pl-tt-del { position: absolute; top: 4px; right: 4px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; font-size: .7rem; }
-.pl-tt-del:hover { color: #e07a7a; }
+.pl-tt-day h3 { font-size: .85rem; color: var(--accent); margin-bottom: 10px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+.pl-tt-slot {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 7px;
+  font-size: .82rem;
+  position: relative;
+  transition: border-color .15s;
+}
+.pl-tt-slot:hover { border-color: var(--accent); }
+.pl-tt-slot strong { display: block; font-weight: 700; color: var(--text); margin-bottom: 3px; font-size: .85rem; }
+.pl-tt-slot small { color: var(--text-dim); font-size: .76rem; display: block; }
+.pl-tt-del { position: absolute; top: 6px; right: 6px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; font-size: .75rem; }
+.pl-tt-del:hover { color: #ef4444; }
 
 /* ── Report card print layout ───────────────────────────── */
 .pl-reportcard { background: #fff; color: #111; padding: 26px; border-radius: 8px; max-width: 720px; margin: 0 auto; }
@@ -363,8 +395,7 @@ label:has(input[type="radio"]) {
    FIRM-SPECIFIC THEMES (HOSPITAL, PHARMACY, STORE, SCHOOL)
    ══════════════════════════════════════════════════════════ */
 
-/* ── 1. HOSPITAL MANAGEMENT: Light Blue with White Background ── */
-html[data-firm="hospital"] body,
+/* ── 1. HOSPITAL MANAGEMENT: Light Blue with White Background (Light) / Sleek Medical Navy (Dark) ── */
 .pl-firm-hospital,
 [data-firm="hospital"] {
   --bg:           #ffffff;
@@ -386,90 +417,110 @@ html[data-firm="hospital"] body,
   --stat-bg:      #ffffff;
 }
 
+[data-theme="dark"] .pl-firm-hospital,
+[data-theme="dark"] [data-firm="hospital"] {
+  --bg:           #09111e;
+  --bg-alt:       #0d1728;
+  --surface:      #111d33;
+  --surface2:     #192742;
+  --border:       #1f3254;
+  --border2:      #2a416b;
+  --accent:       #38bdf8;        /* Vibrant Medical Cyan */
+  --accent-rgb:   56, 189, 248;
+  --accent-h:     #7dd3fc;
+  --accent-text:  #09111e;
+  --text:         #f1f5f9;
+  --text-mid:     #cbd5e1;
+  --text-dim:     #8ba2c4;
+  --card:         #111d33;
+  --nav:          #0d1728;
+  --input:        #15223c;
+  --stat-bg:      #111d33;
+}
+
 .pl-firm-hospital .pl-panel,
 .pl-firm-hospital .pl-card {
-  background: #ffffff;
-  border-color: #d8e6f1;
-  box-shadow: 0 4px 18px rgba(2, 132, 199, 0.05), 0 1px 3px rgba(15, 23, 42, 0.04);
+  background: var(--card);
+  border-color: var(--border);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .pl-firm-hospital .pl-table-wrap {
-  background: #ffffff;
-  border-color: #d8e6f1;
+  background: var(--card);
+  border-color: var(--border);
 }
 
 .pl-firm-hospital .pl-table th {
-  background: #f4f8fb;
-  color: #0284c7;
-  border-bottom: 1px solid #d8e6f1;
+  background: var(--bg-alt);
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
 }
 
 .pl-firm-hospital .pl-table td {
-  border-bottom-color: #edf3f8;
+  border-bottom-color: var(--border);
 }
 
 .pl-firm-hospital .pl-table tbody tr:hover {
-  background: rgba(2, 132, 199, 0.04);
+  background: rgba(var(--accent-rgb), 0.05);
 }
 
 .pl-firm-hospital .pl-nav a {
-  color: #475569;
+  color: var(--text-dim);
 }
 
 .pl-firm-hospital .pl-nav a:hover {
-  background: rgba(2, 132, 199, 0.08);
-  color: #0284c7;
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent);
 }
 
 .pl-firm-hospital .pl-nav a.active {
-  background: rgba(2, 132, 199, 0.12);
-  color: #0284c7;
+  background: rgba(var(--accent-rgb), 0.15);
+  color: var(--accent);
   font-weight: 600;
 }
 
 .pl-firm-hospital .pl-stat {
-  background: #ffffff;
-  border-color: #d8e6f1;
+  background: var(--card);
+  border-color: var(--border);
 }
 
 .pl-firm-hospital .pl-stat-icon {
-  color: #0284c7;
+  color: var(--accent);
   background: transparent !important;
 }
 
 .pl-firm-hospital .pl-queue-item {
-  background: #ffffff;
-  border-color: #d8e6f1;
+  background: var(--card);
+  border-color: var(--border);
 }
 
 .pl-firm-hospital .pl-queue-item.in_service {
-  border-color: #0284c7;
-  background: #f0f9ff;
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
 }
 
 .pl-firm-hospital .pl-queue-time {
-  color: #0284c7;
+  color: var(--accent);
 }
 
 .pl-firm-hospital .pl-trial-banner {
-  background: #f0f9ff;
-  border-color: #bae6fd;
-  color: #0369a1;
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: rgba(var(--accent-rgb), 0.25);
+  color: var(--accent);
 }
 
 .pl-firm-hospital .pl-trial-banner i,
 .pl-firm-hospital .pl-trial-banner a {
-  color: #0284c7;
+  color: var(--accent);
 }
 
 .pl-firm-hospital .pl-modal {
-  background: #ffffff;
-  border-color: #d8e6f1;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.15);
+  background: var(--card);
+  border-color: var(--border);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
 }
 
-/* ── 2. PHARMACY MANAGEMENT: Light Earth Green with Cream-Whitish Background ── */
-html[data-firm="pharmacy"] body,
+/* ── 2. PHARMACY MANAGEMENT: Light Earth Green (Light) / Dark Botanical Forest (Dark) ── */
 .pl-firm-pharmacy,
 [data-firm="pharmacy"] {
   --bg:           #faf8f3;        /* Soft Cream Whitish */
@@ -491,90 +542,110 @@ html[data-firm="pharmacy"] body,
   --stat-bg:      #ffffff;
 }
 
+[data-theme="dark"] .pl-firm-pharmacy,
+[data-theme="dark"] [data-firm="pharmacy"] {
+  --bg:           #0b140f;        /* Deep Forest */
+  --bg-alt:       #0f1c15;
+  --surface:      #14241b;
+  --surface2:     #1b3024;
+  --border:       #233e2f;
+  --border2:      #2f533f;
+  --accent:       #34d399;        /* Vibrant Herbal Mint */
+  --accent-rgb:   52, 211, 153;
+  --accent-h:     #6ee7b7;
+  --accent-text:  #0b140f;
+  --text:         #ecfdf5;
+  --text-mid:     #a7f3d0;
+  --text-dim:     #7ca38c;
+  --card:         #14241b;
+  --nav:          #0f1c15;
+  --input:        #182b20;
+  --stat-bg:      #14241b;
+}
+
 .pl-firm-pharmacy .pl-panel,
 .pl-firm-pharmacy .pl-card {
-  background: #ffffff;
-  border-color: #ded6c3;
-  box-shadow: 0 4px 16px rgba(45, 122, 70, 0.04), 0 1px 3px rgba(26, 36, 25, 0.04);
+  background: var(--card);
+  border-color: var(--border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .pl-firm-pharmacy .pl-table-wrap {
-  background: #ffffff;
-  border-color: #ded6c3;
+  background: var(--card);
+  border-color: var(--border);
 }
 
 .pl-firm-pharmacy .pl-table th {
-  background: #f5f1e6;
-  color: #2d7a46;
-  border-bottom: 1px solid #ded6c3;
+  background: var(--bg-alt);
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
 }
 
 .pl-firm-pharmacy .pl-table td {
-  border-bottom-color: #eee9dc;
+  border-bottom-color: var(--border);
 }
 
 .pl-firm-pharmacy .pl-table tbody tr:hover {
-  background: rgba(45, 122, 70, 0.04);
+  background: rgba(var(--accent-rgb), 0.05);
 }
 
 .pl-firm-pharmacy .pl-nav a {
-  color: #4a5847;
+  color: var(--text-dim);
 }
 
 .pl-firm-pharmacy .pl-nav a:hover {
-  background: rgba(45, 122, 70, 0.08);
-  color: #2d7a46;
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent);
 }
 
 .pl-firm-pharmacy .pl-nav a.active {
-  background: rgba(45, 122, 70, 0.12);
-  color: #2d7a46;
+  background: rgba(var(--accent-rgb), 0.15);
+  color: var(--accent);
   font-weight: 600;
 }
 
 .pl-firm-pharmacy .pl-stat {
-  background: #ffffff;
-  border-color: #ded6c3;
+  background: var(--card);
+  border-color: var(--border);
 }
 
 .pl-firm-pharmacy .pl-stat-icon {
-  color: #2d7a46;
+  color: var(--accent);
   background: transparent !important;
 }
 
 .pl-firm-pharmacy .pl-pos-item {
-  background: #ffffff;
-  border-color: #ded6c3;
+  background: var(--card);
+  border-color: var(--border);
 }
 
 .pl-firm-pharmacy .pl-pos-item:hover:not(:disabled) {
-  border-color: #2d7a46;
-  box-shadow: 0 4px 12px rgba(45, 122, 70, 0.08);
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.1);
 }
 
 .pl-firm-pharmacy .pl-pos-price {
-  color: #2d7a46;
+  color: var(--accent);
 }
 
 .pl-firm-pharmacy .pl-trial-banner {
-  background: #f1f8f3;
-  border-color: #c6e6cf;
-  color: #1b532e;
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: rgba(var(--accent-rgb), 0.25);
+  color: var(--accent);
 }
 
 .pl-firm-pharmacy .pl-trial-banner i,
 .pl-firm-pharmacy .pl-trial-banner a {
-  color: #2d7a46;
+  color: var(--accent);
 }
 
 .pl-firm-pharmacy .pl-modal {
-  background: #ffffff;
-  border-color: #ded6c3;
-  box-shadow: 0 24px 60px rgba(26, 36, 25, 0.15);
+  background: var(--card);
+  border-color: var(--border);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
 }
 
-/* ── 3. STORE / RETAIL SHOP: Keep Current (Signature Gold & Dark Theme) ── */
-html[data-firm="store"] body,
+/* ── 3. STORE / RETAIL SHOP: Signature Gold & Dark (Dark) / Warm Light Ivory (Light) ── */
 .pl-firm-store,
 [data-firm="store"] {
   --bg:           #100e0a;
@@ -596,8 +667,69 @@ html[data-firm="store"] body,
   --stat-bg:      #100e0a;
 }
 
-/* ── 4. SCHOOL MANAGEMENT: White Background with Attractive Distinguishable Color Schemes ── */
-html[data-firm="school"] body,
+[data-theme="light"] .pl-firm-store,
+[data-theme="light"] [data-firm="store"] {
+  --bg:           #faf7f2;        /* Warm Ivory */
+  --bg-alt:       #f3eee5;
+  --surface:      #eee8dc;
+  --surface2:     #e5ded0;
+  --border:       #ded5c3;
+  --border2:      #cbbea5;
+  --accent:       #b48528;        /* Refined Warm Gold */
+  --accent-rgb:   180, 133, 40;
+  --accent-h:     #966e1e;
+  --accent-text:  #ffffff;
+  --text:         #1e1a14;
+  --text-mid:     #3b3429;
+  --text-dim:     #786c58;
+  --card:         #ffffff;
+  --nav:          #eee8dc;
+  --input:        #fdfbf7;
+  --stat-bg:      #ffffff;
+}
+
+.pl-firm-store .pl-panel,
+.pl-firm-store .pl-card {
+  background: var(--card);
+  border-color: var(--border);
+}
+
+.pl-firm-store .pl-table-wrap {
+  background: var(--card);
+  border-color: var(--border);
+}
+
+.pl-firm-store .pl-table th {
+  background: var(--bg-alt);
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
+}
+
+.pl-firm-store .pl-table td {
+  border-bottom-color: var(--border);
+}
+
+.pl-firm-store .pl-table tbody tr:hover {
+  background: rgba(var(--accent-rgb), 0.06);
+}
+
+.pl-firm-store .pl-trial-banner {
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: rgba(var(--accent-rgb), 0.25);
+  color: var(--accent);
+}
+
+.pl-firm-store .pl-trial-banner i,
+.pl-firm-store .pl-trial-banner a {
+  color: var(--accent);
+}
+
+.pl-firm-store .pl-modal {
+  background: var(--card);
+  border-color: var(--border);
+}
+
+/* ── 4. SCHOOL MANAGEMENT: Academic Indigo & White (Light) / Academic Midnight (Dark) ── */
 .pl-firm-school,
 [data-firm="school"] {
   --bg:           #f8fafc;        /* Clean Bright White */
@@ -619,72 +751,113 @@ html[data-firm="school"] body,
   --stat-bg:      #ffffff;
 }
 
+[data-theme="dark"] .pl-firm-school,
+[data-theme="dark"] [data-firm="school"] {
+  --bg:           #0b0f19;        /* Deep Academic Midnight */
+  --bg-alt:       #0f1523;
+  --surface:      #141c2e;
+  --surface2:     #1b263e;
+  --border:       #23314f;
+  --border2:      #304269;
+  --accent:       #818cf8;        /* Vibrant Academic Indigo */
+  --accent-rgb:   129, 140, 248;
+  --accent-h:     #a5b4fc;
+  --accent-text:  #0b0f19;
+  --text:         #f8fafc;
+  --text-mid:     #cbd5e1;
+  --text-dim:     #94a3b8;
+  --card:         #141c2e;
+  --nav:          #0f1523;
+  --input:        #182238;
+  --stat-bg:      #141c2e;
+}
+
 .pl-firm-school .pl-panel,
 .pl-firm-school .pl-card {
-  background: #ffffff;
-  border-color: #e2e8f0;
-  box-shadow: 0 4px 16px rgba(67, 56, 202, 0.04), 0 1px 3px rgba(15, 23, 42, 0.04);
+  background: var(--card);
+  border-color: var(--border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .pl-firm-school .pl-table-wrap {
-  background: #ffffff;
-  border-color: #e2e8f0;
+  background: var(--card);
+  border-color: var(--border);
 }
 
 .pl-firm-school .pl-table th {
-  background: #f8fafc;
-  color: #4338ca;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--bg-alt);
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
 }
 
 .pl-firm-school .pl-table td {
-  border-bottom-color: #f1f5f9;
+  border-bottom-color: var(--border);
 }
 
 .pl-firm-school .pl-table tbody tr:hover {
-  background: rgba(67, 56, 202, 0.04);
+  background: rgba(var(--accent-rgb), 0.05);
 }
 
 .pl-firm-school .pl-nav a {
-  color: #475569;
+  color: var(--text-dim);
 }
 
 .pl-firm-school .pl-nav a:hover {
-  background: rgba(67, 56, 202, 0.08);
-  color: #4338ca;
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent);
 }
 
 .pl-firm-school .pl-nav a.active {
-  background: rgba(67, 56, 202, 0.12);
-  color: #4338ca;
+  background: rgba(var(--accent-rgb), 0.15);
+  color: var(--accent);
   font-weight: 600;
 }
 
 .pl-firm-school .pl-stat {
-  background: #ffffff;
-  border-color: #e2e8f0;
+  background: var(--card);
+  border-color: var(--border);
 }
 
 .pl-firm-school .pl-stat-icon {
-  color: #4338ca;
+  color: var(--accent);
   background: transparent !important;
 }
 
 .pl-firm-school .pl-trial-banner {
-  background: #eef2ff;
-  border-color: #c7d2fe;
-  color: #3730a3;
+  background: rgba(var(--accent-rgb), 0.12);
+  border-color: rgba(var(--accent-rgb), 0.25);
+  color: var(--accent);
 }
 
 .pl-firm-school .pl-trial-banner i,
 .pl-firm-school .pl-trial-banner a {
-  color: #4338ca;
+  color: var(--accent);
 }
 
 .pl-firm-school .pl-modal {
-  background: #ffffff;
-  border-color: #e2e8f0;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.15);
+  background: var(--card);
+  border-color: var(--border);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
+}
+
+/* ── Theme toggle button ────────────────────────────────── */
+.pl-theme-toggle {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--text-dim);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  font-size: .88rem;
+  transition: color .15s, border-color .15s, background-color .15s;
+}
+.pl-theme-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
 }
 
 /* Distinct Attendance Register Colors in School */
@@ -721,46 +894,25 @@ html[data-firm="school"] body,
   box-shadow: 0 1px 3px rgba(2, 132, 199, 0.3);
 }
 
-/* Attractive, Distinct Timetable Subject Slots in School */
+/* Clean Timetable Slots in School — no background tints or thick indicators */
 .pl-firm-school .pl-tt-day {
-  background: #ffffff;
-  border-color: #e2e8f0;
+  background: var(--card);
+  border-color: var(--border);
 }
 
 .pl-firm-school .pl-tt-day h3 {
-  color: #4338ca;
+  color: var(--accent);
   font-weight: 700;
 }
 
 .pl-firm-school .pl-tt-slot {
+  background: var(--surface2);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  border-left-width: 4px;
 }
 
-.pl-firm-school .pl-tt-slot:nth-child(5n + 1) {
-  border-left-color: #4338ca;
-  background: #eef2ff;
-}
-
-.pl-firm-school .pl-tt-slot:nth-child(5n + 2) {
-  border-left-color: #059669;
-  background: #ecfdf5;
-}
-
-.pl-firm-school .pl-tt-slot:nth-child(5n + 3) {
-  border-left-color: #d97706;
-  background: #fffbeb;
-}
-
-.pl-firm-school .pl-tt-slot:nth-child(5n + 4) {
-  border-left-color: #7c3aed;
-  background: #f5f3ff;
-}
-
-.pl-firm-school .pl-tt-slot:nth-child(5n + 5) {
-  border-left-color: #0284c7;
-  background: #f0f9ff;
+.pl-firm-school .pl-tt-slot strong {
+  color: var(--text);
 }
 
 /* ── Firm-specific badge color adjustments (light themes) ── */
@@ -783,6 +935,27 @@ html[data-firm="school"] body,
 .pl-firm-hospital .pl-badge-neutral,
 .pl-firm-pharmacy .pl-badge-neutral,
 .pl-firm-school .pl-badge-neutral { color: #475569; }
+
+/* ── Firm-specific badge color adjustments (dark themes) ── */
+[data-theme="dark"] .pl-firm-hospital .pl-badge-good,
+[data-theme="dark"] .pl-firm-pharmacy .pl-badge-good,
+[data-theme="dark"] .pl-firm-school .pl-badge-good { color: #34d399; }
+
+[data-theme="dark"] .pl-firm-hospital .pl-badge-warn,
+[data-theme="dark"] .pl-firm-pharmacy .pl-badge-warn,
+[data-theme="dark"] .pl-firm-school .pl-badge-warn { color: #fbbf24; }
+
+[data-theme="dark"] .pl-firm-hospital .pl-badge-bad,
+[data-theme="dark"] .pl-firm-pharmacy .pl-badge-bad,
+[data-theme="dark"] .pl-firm-school .pl-badge-bad { color: #f87171; }
+
+[data-theme="dark"] .pl-firm-hospital .pl-badge-info,
+[data-theme="dark"] .pl-firm-pharmacy .pl-badge-info,
+[data-theme="dark"] .pl-firm-school .pl-badge-info { color: #38bdf8; }
+
+[data-theme="dark"] .pl-firm-hospital .pl-badge-neutral,
+[data-theme="dark"] .pl-firm-pharmacy .pl-badge-neutral,
+[data-theme="dark"] .pl-firm-school .pl-badge-neutral { color: var(--text-dim); }
 
 /* ── Business Type Options in Register.tsx ── */
 .pl-type-opt.pharmacy.active {
