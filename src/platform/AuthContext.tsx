@@ -78,6 +78,32 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     setMe(null)
   }, [])
 
+  // ── 30-minute inactivity timeout (silent) ─────────────────────────────
+  const IDLE_MS = 30 * 60 * 1000 // 30 minutes
+  useEffect(() => {
+    // Only run the timer when logged in
+    if (!me) return
+
+    let timer: ReturnType<typeof setTimeout>
+
+    const reset = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        saveAuth(null)
+        setMe(null)
+      }, IDLE_MS)
+    }
+
+    const events = ['mousemove', 'keydown', 'click', 'scroll'] as const
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }))
+    reset() // start the timer immediately
+
+    return () => {
+      clearTimeout(timer)
+      events.forEach((e) => window.removeEventListener(e, reset))
+    }
+  }, [me])
+
   const value = useMemo(
     () => ({ me, ready, login, register, logout, refreshMe, persistFromTelegram: persist }),
     [me, ready, login, register, logout, refreshMe, persist]

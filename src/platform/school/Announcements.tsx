@@ -169,7 +169,7 @@ export default function Announcements(): JSX.Element {
                       checked={form.send_email}
                       onChange={(e) => setForm((f) => ({ ...f, send_email: e.target.checked }))}
                     />
-                    <span>Send to Guardian Email 📧</span>
+                    <span><i className="fa-solid fa-envelope" style={{ marginRight: 5 }} />Send to Guardian Email</span>
                   </label>
                   <label className="pl-checkbox-label">
                     <input
@@ -177,7 +177,7 @@ export default function Announcements(): JSX.Element {
                       checked={form.send_telegram}
                       onChange={(e) => setForm((f) => ({ ...f, send_telegram: e.target.checked }))}
                     />
-                    <span>Send to Guardian Telegram Chat ✈️</span>
+                    <span><i className="fa-brands fa-telegram" style={{ marginRight: 5 }} />Send to Guardian Telegram Chat</span>
                   </label>
                 </div>
               </div>
@@ -242,13 +242,13 @@ export default function Announcements(): JSX.Element {
 
                   {a.sent_email && (
                     <span style={{ fontSize: '.78rem', color: 'var(--accent)', background: 'rgba(59,130,246,0.1)', padding: '2px 7px', borderRadius: 4 }}>
-                      📧 {a.delivery_stats?.emailSent ?? 1} email{((a.delivery_stats?.emailSent ?? 1) > 1) ? 's' : ''} sent
+                      <i className="fa-solid fa-envelope" style={{ marginRight: 4 }} />{a.delivery_stats?.emailSent ?? 1} email{((a.delivery_stats?.emailSent ?? 1) > 1) ? 's' : ''} sent
                     </span>
                   )}
 
                   {a.sent_telegram && (
                     <span style={{ fontSize: '.78rem', color: '#229ED9', background: 'rgba(34,158,217,0.1)', padding: '2px 7px', borderRadius: 4 }}>
-                      ✈️ {a.delivery_stats?.telegramSent ?? 1} telegram sent
+                      <i className="fa-brands fa-telegram" style={{ marginRight: 4 }} />{a.delivery_stats?.telegramSent ?? 1} telegram sent
                     </span>
                   )}
 

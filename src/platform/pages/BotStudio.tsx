@@ -249,7 +249,7 @@ export default function BotStudio(): JSX.Element {
             </li>
           </ol>
           <p style={{ color: 'var(--text-dim)', fontSize: '.85rem' }}>
-            🔒 Your token is securely stored and exclusively used for your company workspace. You can pause or replace it at any time.
+            <i className="fa-solid fa-lock" style={{ marginRight: 6 }} />Your token is securely stored and exclusively used for your company workspace. You can pause or replace it at any time.
           </p>
           <form onSubmit={handleRegister}>
             <Field label="BotFather API token">
@@ -416,7 +416,7 @@ export default function BotStudio(): JSX.Element {
               When users open a chat with <strong>@{bot.bot_username}</strong>, they see a menu button at the bottom:
             </p>
             <div style={{ padding: '6px 12px', background: 'var(--card)', borderRadius: 6, display: 'inline-block', fontSize: '.88rem', fontWeight: 600, border: '1px solid var(--border)' }}>
-              📱 Open {bot.display_name || 'Workspace'}
+              <i className="fa-solid fa-mobile-screen" style={{ marginRight: 6 }} />Open {bot.display_name || 'Workspace'}
             </div>
             <p style={{ fontSize: '.8rem', color: 'var(--text-dim)', marginTop: 8 }}>
               Tapping it launches your company's full web application inside Telegram, auto-authenticating linked users.

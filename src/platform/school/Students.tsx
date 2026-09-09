@@ -343,7 +343,7 @@ export default function Students(): JSX.Element {
             </Field>
           </div>
           <small style={{ display: 'block', color: 'var(--text-dim)', fontSize: '.78rem', marginTop: -6, marginBottom: 12 }}>
-            💡 Parents can also link automatically by sending <code>/parent {editing?.code || 'STUDENT_CODE'}</code> to the Telegram bot.
+            <i className="fa-solid fa-circle-info" style={{ marginRight: 5, color: 'var(--accent)' }} />Parents can also link automatically by sending <code>/parent {editing?.code || 'STUDENT_CODE'}</code> to the Telegram bot.
           </small>
 
           <Field label="Address">
@@ -408,10 +408,10 @@ export default function Students(): JSX.Element {
 
           <div style={{ background: 'var(--card-subtle, rgba(255,255,255,0.03))', padding: '10px 12px', borderRadius: 6, fontSize: '.82rem', marginBottom: 14 }}>
             <div>
-              📧 <b>Email:</b> {noticeTarget?.guardian_email || <span style={{ color: 'var(--text-dim)' }}>Not configured</span>}
+              <i className="fa-solid fa-envelope" style={{ marginRight: 5 }} /><b>Email:</b> {noticeTarget?.guardian_email || <span style={{ color: 'var(--text-dim)' }}>Not configured</span>}
             </div>
             <div style={{ marginTop: 4 }}>
-              ✈️ <b>Telegram:</b> {noticeTarget?.guardian_telegram_chat_id ? (
+              <i className="fa-brands fa-telegram" style={{ marginRight: 5 }} /><b>Telegram:</b> {noticeTarget?.guardian_telegram_chat_id ? (
                 <span>Connected ({noticeTarget.guardian_telegram_username ? `@${noticeTarget.guardian_telegram_username}` : noticeTarget.guardian_telegram_chat_id})</span>
               ) : (
                 <span style={{ color: 'var(--text-dim)' }}>Not linked yet</span>

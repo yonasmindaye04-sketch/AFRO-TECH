@@ -572,7 +572,7 @@ router.delete(
 
 /* ══════════════ REPORT CARDS ══════════════ */
 
-/** GET /report-cards?class_id&term — computed per-student results with class rank */
+/** GET /report-cards?class_id&term — computed per-student results with class rank + multi-term history */
 router.get(
   '/report-cards',
   requirePermission('report_cards.generate'),
@@ -599,6 +599,18 @@ router.get(
        GROUP BY g.student_id, s.code, s.first_name, s.last_name, g.subject`,
       [t(req), classId, term]
     )
+
+    // Multi-term history for the linear graph — all terms in this class
+    const historyRows = await query<{ student_id: string; term: string; subject: string; avg_pct: string }>(
+      `SELECT g.student_id, g.term, g.subject,
+              ROUND(SUM(g.score) / NULLIF(SUM(g.max_score),0) * 100, 1)::text AS avg_pct
+       FROM grades g
+       WHERE g.tenant_id = $1 AND g.class_id = $2
+       GROUP BY g.student_id, g.term, g.subject
+       ORDER BY g.student_id, g.term, g.subject`,
+      [t(req), classId]
+    )
+
     const attendanceRows = await query<{ student_id: string; present: string; total: string }>(
       `SELECT student_id,
               SUM((status='present')::int)::text AS present,
@@ -608,16 +620,40 @@ router.get(
       [t(req), classId]
     )
     const attMap = new Map(attendanceRows.map((r) => [r.student_id, r]))
+
+    // Build history map: student_id -> term -> subject -> avg_pct
+    const histMap = new Map<string, Map<string, Map<string, number>>>()
+    for (const r of historyRows) {
+      if (!histMap.has(r.student_id)) histMap.set(r.student_id, new Map())
+      const byTerm = histMap.get(r.student_id)!
+      if (!byTerm.has(r.term)) byTerm.set(r.term, new Map())
+      byTerm.get(r.term)!.set(r.subject, Number(r.avg_pct))
+    }
+
     const byStudent = new Map<string, { code: string; name: string; subjects: { subject: string; pct: number; exams: number }[] }>()
     for (const r of subjectRows) {
       if (!byStudent.has(r.student_id)) byStudent.set(r.student_id, { code: r.student_code, name: r.student_name, subjects: [] })
       byStudent.get(r.student_id)!.subjects.push({ subject: r.subject, pct: Number(r.avg_pct), exams: Number(r.exams) })
     }
+
     const cards = [...byStudent.entries()].map(([id, v]) => {
       const total = v.subjects.reduce((s, x) => s + x.pct, 0)
       const average = v.subjects.length ? total / v.subjects.length : 0
       const att = attMap.get(id)
-      const card: ReportCard = {
+
+      // Build term_history: array of { term, subjects: {subject, pct}[], overall_avg }
+      const termHistory: { term: string; subjects: { subject: string; pct: number }[]; overall_avg: number }[] = []
+      const studentTermMap = histMap.get(id)
+      if (studentTermMap) {
+        for (const [t2, subMap] of studentTermMap) {
+          const subs = [...subMap.entries()].map(([s, p]) => ({ subject: s, pct: p }))
+          const avg = subs.length ? subs.reduce((a, b) => a + b.pct, 0) / subs.length : 0
+          termHistory.push({ term: t2, subjects: subs, overall_avg: Math.round(avg * 10) / 10 })
+        }
+        termHistory.sort((a, b) => a.term.localeCompare(b.term))
+      }
+
+      const card: ReportCard & { term_history: typeof termHistory } = {
         student_id: id,
         code: v.code,
         name: v.name,
@@ -627,6 +663,7 @@ router.get(
         grade: average >= 90 ? 'A' : average >= 80 ? 'B' : average >= 70 ? 'C' : average >= 60 ? 'D' : average >= 50 ? 'D' : 'F',
         attendance_pct: att && Number(att.total) > 0 ? Math.round((Number(att.present) / Number(att.total)) * 100) : null,
         rank: 0,
+        term_history: termHistory,
       }
       return card
     })

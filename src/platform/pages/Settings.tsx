@@ -494,11 +494,6 @@ export default function Settings(): JSX.Element {
                 <i className="fa-solid fa-receipt" style={{ marginRight: 8, color: 'var(--accent)' }} />
                 80mm Thermal Receipt Preview
               </h2>
-              {liveTransaction ? (
-                <Badge tone="good">Latest Live Transaction</Badge>
-              ) : (
-                <Badge tone="neutral">Firm Preview</Badge>
-              )}
             </div>
             <p style={{ color: 'var(--text-dim)', fontSize: '.84rem', marginBottom: 14 }}>
               {liveTransaction
@@ -625,7 +620,7 @@ export default function Settings(): JSX.Element {
             {tgError && <p role="alert" style={{ color: '#e07a7a', fontSize: '.87rem' }}>{tgError}</p>}
             {me?.role === 'owner' && !tgCfg.is_tenant_bot && (
               <p style={{ fontSize: '.82rem', color: 'var(--text-dim)', marginTop: 12 }}>
-                💡 You can create a bot with your company's name on Telegram and link it directly to your workspace.{' '}
+                <i className="fa-solid fa-circle-info" style={{ marginRight: 6, color: 'var(--accent)' }} />You can create a bot with your company's name on Telegram and link it directly to your workspace.{' '}
                 <Link to="/app/bot-studio" style={{ color: 'var(--accent)' }}>Go to Bot Studio →</Link>
               </p>
             )}
