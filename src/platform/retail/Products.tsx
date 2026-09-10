@@ -209,7 +209,7 @@ export default function Products(): JSX.Element {
         />
       )}
 
-      <Modal open={modal.open} title={modal.editing ? `Edit ${modal.editing.name}` : 'Add product'} onClose={() => setModal({ open: false, editing: null })}>
+      <Modal wide open={modal.open} title={modal.editing ? `Edit ${modal.editing.name}` : 'Add product'} onClose={() => setModal({ open: false, editing: null })}>
         <form onSubmit={submit}>
           <Field label="Product name">
             <input className="pl-input" required maxLength={160} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />

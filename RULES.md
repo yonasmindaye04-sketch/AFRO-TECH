@@ -64,3 +64,44 @@ Report cards must follow the formal multi-column layout (dual-tone header, boxed
 ---
 
 *Last updated by agent — September 2026*
+
+---
+
+## 8. Dashboard Design System
+
+All dashboards (retail, pharmacy, hospital, school) must follow the **1-primary + 3-secondary hierarchy**:
+
+- **Primary tile** (`pl-dash-primary`): Full-width hero card with box-shadow (`0 8px 32px rgba(0,0,0,.18)`), `border-radius: 20px`, SVG spiral decoration, large tabular-numeral value.
+- **Secondary tiles** (`pl-dash-secondary` grid): 3 tiles in a row, `border-radius: 14px`, **no box-shadow** — they do not float.
+- **Shadow only on floating elements**: modals, the primary hero tile, dropdowns. Cards and tables get border-only, no shadow.
+- **Tighter radius on small parts**: buttons/inputs = `8–10px`, table rows = no individual radius, cards = `14px`, hero tile = `20px`.
+- **Spiral SVG decoration** on stat tiles — no icon-in-circle badge graphics.
+- **Tabular digits**: all monetary and numeric values on dashboards must use `font-variant-numeric: tabular-nums`.
+
+---
+
+## 9. Theme Toggle Placement
+
+- The theme toggle (moon/sun icon) exists **only** in the top-right of the sidebar brand bar (`pl-theme-toggle` class).
+- **No second theme toggle** in the sidebar footer or anywhere else on the page.
+
+---
+
+## 10. No Trial Banners or Comparison Bars
+
+- Do not render trial banners, free-trial notices, or "this month vs last month" comparison bars to end users.
+- If subscription status is needed, direct users to the Subscription page via the sidebar nav link.
+
+---
+
+## 11. Compact Date Range Filters
+
+All date-range filter inputs (`type="date"`) inside `.pl-toolbar` must be wrapped in a flex group with explicit `width: 150px` on each input to prevent them from stretching full-width:
+
+```tsx
+<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+  <input className="pl-input" type="date" style={{ width: 150 }} ... />
+  <span style={{ color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>to</span>
+  <input className="pl-input" type="date" style={{ width: 150 }} ... />
+</div>
+```

@@ -80,7 +80,7 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
     .join('')
     .toUpperCase()
 
-  const trialLeft = tenant?.status === 'trial' ? (tenant.trial_days_left ?? 0) : null
+
   const { dark, toggle: toggleTheme } = useTheme()
 
   useEffect(() => {
@@ -157,16 +157,7 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
                 <small>{tenant ? `${me?.role} · ${tenant.name}` : me?.role.replace('_', ' ')}</small>
               </div>
             </div>
-            <button
-              type="button"
-              className="pl-btn pl-btn-ghost pl-btn-sm"
-              style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}
-              onClick={toggleTheme}
-              aria-label={dark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            >
-              <i className={dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon'} aria-hidden="true" />
-              {dark ? 'Light Mode' : 'Dark Mode'}
-            </button>
+
             <button
               type="button"
               className="pl-btn pl-btn-ghost pl-btn-sm"
@@ -182,15 +173,6 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
         </aside>
 
         <main className="pl-main" id="main-content">
-          {trialLeft !== null && (
-            <div className="pl-trial-banner">
-              <i className="fa-solid fa-hourglass-half" aria-hidden="true" />
-              <span>
-                Free trial — <strong>{trialLeft} day{trialLeft === 1 ? '' : 's'} left</strong> for {tenant?.name}. Full access until then.
-             </span>
-              <a href="/app/subscription">Manage subscription →</a>
-           </div>
-          )}
           {children}
         </main>
       </div>

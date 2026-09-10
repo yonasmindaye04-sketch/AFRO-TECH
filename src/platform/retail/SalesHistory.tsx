@@ -117,9 +117,11 @@ export default function SalesHistory(): JSX.Element {
     <div>
       <PageHeader title="Sales History" subtitle={`${salesQ.data?.total ?? 0} transactions`} />
       <div className="pl-toolbar">
-        <input className="pl-input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From date" />
-        <span style={{ color: 'var(--text-dim)' }}>to</span>
-        <input className="pl-input" type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="To date" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input className="pl-input" type="date" style={{ width: 150 }} value={from} onChange={(e) => setFrom(e.target.value)} aria-label="From date" />
+          <span style={{ color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>to</span>
+          <input className="pl-input" type="date" style={{ width: 150 }} value={to} onChange={(e) => setTo(e.target.value)} aria-label="To date" />
+        </div>
         {(from || to) && (
           <button type="button" className="pl-btn pl-btn-ghost pl-btn-sm" onClick={() => { setFrom(''); setTo('') }}>
             Clear dates
