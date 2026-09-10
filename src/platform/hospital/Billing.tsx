@@ -171,7 +171,7 @@ export default function Billing(): JSX.Element {
 
       {/* Printable invoice (hidden on screen, visible when printing) */}
       {printData && (
-        <div className="pl-print-area" style={{ position: 'absolute', left: -9999, top: 0 }}>
+        <div className="pl-print-area pl-print-only">
           <div className="pl-reportcard">
             <h2 style={{ textAlign: 'center' }}>INVOICE {printData.number}</h2>
             <p style={{ textAlign: 'center', fontSize: '.85rem' }}>
