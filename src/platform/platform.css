@@ -1318,3 +1318,17 @@ label:has(input[type="radio"]) {
     print-color-adjust: exact !important;
   }
 }
+
+/* -- Hospital department connectivity: patient journey ----- */
+.pl-journey { position: relative; padding-left: 4px; }
+.pl-journey-step { position: relative; padding-left: 28px; padding-bottom: 18px; }
+.pl-journey-dot {
+  position: absolute; left: 0; top: 2px; width: 12px; height: 12px;
+  border-radius: 50%; background: var(--accent); border: 2px solid var(--bg);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.pl-journey-line {
+  position: absolute; left: 5px; top: 16px; bottom: 0; width: 2px;
+  background: var(--border2, var(--border));
+}
+.pl-journey-step strong { font-size: .9rem; display: block; }

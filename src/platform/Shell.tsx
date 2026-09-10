@@ -35,9 +35,11 @@ const RETAIL_NAV: NavItem[] = [
 
 const HOSPITAL_NAV: NavItem[] = [
   { to: '/app', icon: 'fa-solid fa-gauge-high', label: 'Dashboard', end: true },
-  { to: '/app/queue', icon: 'fa-solid fa-timeline', label: 'Patient Queue' },
+  { to: '/app/reception', icon: 'fa-solid fa-bell-concierge', label: 'Reception' },
+  { to: '/app/flow', icon: 'fa-solid fa-code-branch', label: 'Patient Flow' },
+  { to: '/app/queue', icon: 'fa-solid fa-timeline', label: 'Appointments' },
   { to: '/app/patients', icon: 'fa-solid fa-hospital-user', label: 'Patients' },
-  { to: '/app/appointments', icon: 'fa-solid fa-calendar-check', label: 'Appointments' },
+  { to: '/app/appointments', icon: 'fa-solid fa-calendar-check', label: 'Bookings' },
   { to: '/app/records', icon: 'fa-solid fa-file-medical', label: 'Medical Records' },
   { to: '/app/labs', icon: 'fa-solid fa-flask-vial', label: 'Laboratory' },
   { to: '/app/doctors', icon: 'fa-solid fa-user-doctor', label: 'Doctors' },

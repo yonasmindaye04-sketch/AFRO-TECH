@@ -108,7 +108,10 @@ export async function runAlerts(): Promise<void> {
       try {
         if (t.business_type === 'pharmacy' || t.business_type === 'store') await alertRetail(t.id, t.name)
         else if (t.business_type === 'school') await alertSchool(t.id, t.name)
-        else if (t.business_type === 'hospital') await alertHospital(t.id, t.name)
+        else if (t.business_type === 'hospital') {
+          await alertHospital(t.id, t.name)
+          await alertHospitalLongWait(t.id)
+        }
       } catch (err) {
         console.warn(`[alerts] tenant ${t.name} failed:`, err instanceof Error ? err.message : err)
       }
@@ -116,6 +119,23 @@ export async function runAlerts(): Promise<void> {
   } catch (err) {
     console.warn('[alerts] run failed:', err instanceof Error ? err.message : err)
   }
+}
+
+async function alertHospitalLongWait(tenantId: string): Promise<void> {
+  if (!shouldSend(`${tenantId}:longwait`)) return
+  const long = await query<{ patient_name: string; department_name: string | null; minutes: number }>(
+    `SELECT p.first_name || ' ' || p.last_name AS patient_name, d.name AS department_name,
+            EXTRACT(EPOCH FROM (now() - v.opened_at))/60::int AS minutes
+     FROM visits v
+     JOIN patients p ON p.id = v.patient_id
+     LEFT JOIN departments d ON d.id = v.current_department_id
+     WHERE v.tenant_id = $1 AND v.status = 'waiting'
+       AND v.opened_at < now() - interval '30 minutes'`,
+    [tenantId]
+  )
+  if (!long.length) return
+  const lines = long.map((r) => `• ${r.patient_name} — ${r.minutes} min (${r.department_name ?? 'no department'})`).join('\n')
+  await notifyTenant(tenantId, `<b>⏳ Long wait alert</b>\nPatients waiting 30+ minutes:\n${lines}`)
 }
 
 let timer: ReturnType<typeof setInterval> | null = null

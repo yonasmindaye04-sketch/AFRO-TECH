@@ -29,6 +29,8 @@ const Billing = lazy(() => import('./hospital/Billing'))
 const Queue = lazy(() => import('./hospital/Queue'))
 const Labs = lazy(() => import('./hospital/Labs'))
 const HospitalReports = lazy(() => import('./hospital/HospitalReports'))
+const Reception = lazy(() => import('./hospital/Reception'))
+const FlowBoard = lazy(() => import('./hospital/FlowBoard'))
 
 const SchoolDashboard = lazy(() => import('./school/SchoolDashboard'))
 const Students = lazy(() => import('./school/Students'))
@@ -144,6 +146,8 @@ function Inner(): JSX.Element {
             <Route path="reports" element={<RetailReports />} />
             {/* hospital */}
             <Route path="queue" element={<Queue />} />
+            <Route path="reception" element={<Reception />} />
+            <Route path="flow" element={<FlowBoard />} />
             <Route path="patients" element={<Patients />} />
             <Route path="appointments" element={<Appointments />} />
             <Route path="records" element={<Records />} />

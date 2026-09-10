@@ -15,6 +15,7 @@ import usersRoutes from './routes/users.js'
 import adminRoutes from './routes/admin.js'
 import retailRoutes from './routes/retail.js'
 import hospitalRoutes from './routes/hospital.js'
+import hospitalFlowRoutes from './routes/hospitalFlow.js'
 import schoolRoutes from './routes/school.js'
 import telegramRoutes from './routes/telegram.js'
 import billingRoutes from './routes/billing.js'
@@ -69,6 +70,7 @@ app.use('/api/v1/users', usersRoutes)
 app.use('/api/v1/admin', adminRoutes)
 app.use('/api/v1/retail', retailRoutes)
 app.use('/api/v1/hospital', hospitalRoutes)
+app.use('/api/v1/flow', hospitalFlowRoutes)
 app.use('/api/v1/school', schoolRoutes)
 app.use('/api/v1/telegram', telegramRoutes)
 app.use('/api/v1/billing', billingRoutes)
