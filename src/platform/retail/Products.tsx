@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api } from '../api'
+import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, DataTable, Field, Modal, PageHeader, Spinner } from '../ui'
 
@@ -32,11 +33,27 @@ interface FormState {
   sell_by_pill: boolean
   pills_per_unit: string
   default_margin: string
+  initial_stock: string
 }
 
-const EMPTY: FormState = { name: '', category: '', unit: 'pcs', sell_price: '', cost_price: '', low_stock_threshold: '10', barcode: '', sell_by_pill: false, pills_per_unit: '1', default_margin: '25' }
+const EMPTY: FormState = {
+  name: '',
+  category: '',
+  unit: 'pcs',
+  sell_price: '',
+  cost_price: '',
+  low_stock_threshold: '10',
+  barcode: '',
+  sell_by_pill: false,
+  pills_per_unit: '1',
+  default_margin: '25',
+  initial_stock: '0',
+}
 
 export default function Products(): JSX.Element {
+  const { me } = useAuth()
+  const isPharmacy = me?.tenant?.business_type === 'pharmacy'
+
   const { data, loading, reload } = useApiData<{ products: Product[] }>('/retail/products')
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState<{ open: boolean; editing: Product | null }>({ open: false, editing: null })
@@ -61,6 +78,7 @@ export default function Products(): JSX.Element {
       sell_by_pill: p.sell_by_pill,
       pills_per_unit: String(p.pills_per_unit),
       default_margin: String(Number(p.default_margin)),
+      initial_stock: String(p.stock ?? 0),
     })
     setError(null)
     setModal({ open: true, editing: p })
@@ -78,9 +96,10 @@ export default function Products(): JSX.Element {
       cost_price: Number(form.cost_price) || 0,
       low_stock_threshold: Number(form.low_stock_threshold) || 0,
       barcode: form.barcode.trim() || null,
-      sell_by_pill: form.sell_by_pill,
-      pills_per_unit: Math.max(1, Number(form.pills_per_unit) || 1),
+      sell_by_pill: isPharmacy ? form.sell_by_pill : false,
+      pills_per_unit: isPharmacy && form.sell_by_pill ? Math.max(1, Number(form.pills_per_unit) || 1) : 1,
       default_margin: Number(form.default_margin) || 25,
+      initial_stock: Math.max(0, Number(form.initial_stock) || 0),
     }
     try {
       if (modal.editing) await api.patch(`/retail/products/${modal.editing.id}`, body)
@@ -141,17 +160,19 @@ export default function Products(): JSX.Element {
               key: 'stock',
               header: 'Stock',
               render: (p) => {
-                const sellable = p.sell_by_pill ? p.display_stock : p.sellable_stock
+                const isPill = isPharmacy && p.sell_by_pill
+                const sellable = isPill ? p.display_stock : p.sellable_stock
+                const unitLabel = isPill ? 'pills' : (p.unit || 'pcs')
                 return (
                   <span>
                     {p.stock <= p.low_stock_threshold ? (
                       <Badge tone="bad">
-                        {p.sell_by_pill ? `${sellable} pills` : `${sellable} ${p.unit}`} left
+                        {sellable} {unitLabel} left
                       </Badge>
                     ) : (
                       <>
-                        {p.sell_by_pill ? `${sellable} pills` : `${sellable} ${p.unit}`}
-                        {p.sell_by_pill && (
+                        {sellable} {unitLabel}
+                        {isPill && (
                           <small style={{ display: 'block', color: 'var(--text-dim)' }}>
                             ≈ {Math.floor(sellable / p.pills_per_unit)} {p.unit} + {sellable % p.pills_per_unit} pills
                           </small>
@@ -175,10 +196,10 @@ export default function Products(): JSX.Element {
             {
               key: 'act',
               header: '',
-              width: '70px',
+              width: '80px',
               render: (p) => (
                 <div className="pl-row-actions">
-                  <button type="button" className="pl-icon-btn" aria-label={`Edit ${p.name}`} onClick={() => openEdit(p)}>
+                  <button type="button" className="pl-icon-btn" aria-label={`Edit ${p.name}`} title="Edit product & stock" onClick={() => openEdit(p)}>
                     <i className="fa-solid fa-pen" aria-hidden="true" />
                   </button>
                 </div>
@@ -196,25 +217,27 @@ export default function Products(): JSX.Element {
           <Field label="Barcode" hint="Scan it in the POS to add to cart instantly">
             <input className="pl-input" maxLength={60} value={form.barcode} onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))} placeholder="Scan or type…" />
           </Field>
-          <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 14 }}>
-            <label className="pl-checkbox-label" style={{ fontWeight: 600 }}>
-              <input type="checkbox" checked={form.sell_by_pill} onChange={(e) => setForm((f) => ({ ...f, sell_by_pill: e.target.checked }))} />
-              <span>Sell by pill / tablet</span>
-            </label>
-            <p style={{ color: 'var(--text-dim)', fontSize: '.8rem', margin: '6px 0 12px' }}>
-              Lets cashiers sell loose pills out of a pack. Stock is counted in pills, and packs are broken automatically when needed.
-            </p>
-            {form.sell_by_pill && (
-              <div className="pl-grid-2">
-                <Field label={`Pills per ${form.unit || 'unit'}`} hint="e.g. 30 pills per pack">
-                  <input className="pl-input" type="number" min="1" required value={form.pills_per_unit} onChange={(e) => setForm((f) => ({ ...f, pills_per_unit: e.target.value }))} />
-                </Field>
-                <Field label="Price per pill (ETB)" hint={`From ${form.sell_price || 0} ÷ ${form.pills_per_unit || 1}`}>
-                  <input className="pl-input" value={((Number(form.sell_price) || 0) / Math.max(1, Number(form.pills_per_unit) || 1)).toFixed(2)} readOnly disabled />
-                </Field>
-              </div>
-            )}
-          </div>
+          {isPharmacy && (
+            <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 14 }}>
+              <label className="pl-checkbox-label" style={{ fontWeight: 600 }}>
+                <input type="checkbox" checked={form.sell_by_pill} onChange={(e) => setForm((f) => ({ ...f, sell_by_pill: e.target.checked }))} />
+                <span>Sell by pill / tablet</span>
+              </label>
+              <p style={{ color: 'var(--text-dim)', fontSize: '.8rem', margin: '6px 0 12px' }}>
+                Lets cashiers sell loose pills out of a pack. Stock is counted in pills, and packs are broken automatically when needed.
+              </p>
+              {form.sell_by_pill && (
+                <div className="pl-grid-2">
+                  <Field label={`Pills per ${form.unit || 'unit'}`} hint="e.g. 30 pills per pack">
+                    <input className="pl-input" type="number" min="1" required value={form.pills_per_unit} onChange={(e) => setForm((f) => ({ ...f, pills_per_unit: e.target.value }))} />
+                  </Field>
+                  <Field label="Price per pill (ETB)" hint={`From ${form.sell_price || 0} ÷ ${form.pills_per_unit || 1}`}>
+                    <input className="pl-input" value={((Number(form.sell_price) || 0) / Math.max(1, Number(form.pills_per_unit) || 1)).toFixed(2)} readOnly disabled />
+                  </Field>
+                </div>
+              )}
+            </div>
+          )}
           <Field label="Default margin %" hint="Preselected margin in the POS — price = cost × (1 + margin)">
             <input className="pl-input" type="number" min="0" step="0.5" value={form.default_margin} onChange={(e) => setForm((f) => ({ ...f, default_margin: e.target.value }))} />
           </Field>
@@ -234,9 +257,24 @@ export default function Products(): JSX.Element {
               <input className="pl-input" type="number" min="0" step="0.01" value={form.cost_price} onChange={(e) => setForm((f) => ({ ...f, cost_price: e.target.value }))} />
             </Field>
           </div>
-          <Field label="Low stock alert threshold" hint="We warn you when total stock drops to this level">
-            <input className="pl-input" type="number" min="0" value={form.low_stock_threshold} onChange={(e) => setForm((f) => ({ ...f, low_stock_threshold: e.target.value }))} />
-          </Field>
+          <div className="pl-grid-2">
+            <Field
+              label={modal.editing ? `Current stock on hand (${form.unit || 'pcs'})` : `Initial stock (${form.unit || 'pcs'})`}
+              hint={modal.editing ? 'Edit to adjust your current in-stock quantity' : 'Opening inventory count — sets in-stock level immediately'}
+            >
+              <input
+                className="pl-input"
+                type="number"
+                min="0"
+                value={form.initial_stock}
+                onChange={(e) => setForm((f) => ({ ...f, initial_stock: e.target.value }))}
+                placeholder="0"
+              />
+            </Field>
+            <Field label="Low stock alert threshold" hint="We warn you when total stock drops to this level">
+              <input className="pl-input" type="number" min="0" value={form.low_stock_threshold} onChange={(e) => setForm((f) => ({ ...f, low_stock_threshold: e.target.value }))} />
+            </Field>
+          </div>
           {error && <p role="alert" style={{ color: '#e07a7a', fontSize: '.87rem' }}>{error}</p>}
           <div className="pl-form-actions">
             <button type="submit" className="pl-btn pl-btn-primary" disabled={busy}>

@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import type { PoolClient } from 'pg'
 import { z } from 'zod'
 import { pool, query, queryOne } from '../config/db.js'
 import { asyncHandler, AppError, nextCode, parsePagination, withTransaction } from '../utils/helpers.js'
@@ -61,6 +62,7 @@ const productSchema = z.object({
   sell_by_pill: z.boolean().default(false),
   pills_per_unit: z.number().int().min(1).default(1),
   default_margin: z.number().min(0).max(1000).default(25),
+  initial_stock: z.number().int().min(0).default(0),
 })
 router.post(
   '/products',
@@ -68,12 +70,32 @@ router.post(
   validateBody(productSchema),
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof productSchema>
-    const row = await queryOne(
-      `INSERT INTO products (tenant_id, name, category, unit, sell_price, cost_price, low_stock_threshold, barcode, sell_by_pill, pills_per_unit, default_margin)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [tenantId(req), d.name, d.category, d.unit, d.sell_price, d.cost_price, d.low_stock_threshold, d.barcode || null, d.sell_by_pill, d.pills_per_unit, d.default_margin]
-    )
-    logAudit({ tenantId: tenantId(req), userId: req.user!.id, userName: req.user!.full_name, action: 'product.create', entity: 'product', entityId: row!.id, details: { name: d.name } })
+    const t = tenantId(req)
+    const row = await withTransaction(pool, async (client: PoolClient) => {
+      const { rows } = await client.query<{ id: string; name: string } & Record<string, unknown>>(
+        `INSERT INTO products (tenant_id, name, category, unit, sell_price, cost_price, low_stock_threshold, barcode, sell_by_pill, pills_per_unit, default_margin)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+        [t, d.name, d.category, d.unit, d.sell_price, d.cost_price, d.low_stock_threshold, d.barcode || null, d.sell_by_pill, d.pills_per_unit, d.default_margin]
+      )
+      const p = rows[0]
+
+      if (d.initial_stock > 0) {
+        const { rows: batchRows } = await client.query<{ id: string }>(
+          `INSERT INTO product_batches (tenant_id, product_id, batch_no, quantity, cost_price, selling_price)
+           VALUES ($1, $2, 'INITIAL', $3, $4, $5) RETURNING id`,
+          [t, p.id, d.initial_stock, d.cost_price, d.sell_price]
+        )
+        await client.query(
+          `INSERT INTO stock_adjustments (tenant_id, product_id, batch_id, delta, reason, user_id)
+           VALUES ($1, $2, $3, $4, 'Initial / opening stock count', $5)`,
+          [t, p.id, batchRows[0].id, d.initial_stock, req.user!.id]
+        )
+      }
+
+      return p
+    })
+
+    logAudit({ tenantId: t, userId: req.user!.id, userName: req.user!.full_name, action: 'product.create', entity: 'product', entityId: row!.id, details: { name: d.name, initial_stock: d.initial_stock } })
     res.status(201).json({ product: row })
   })
 )
@@ -98,6 +120,7 @@ router.patch(
   validateBody(productSchema.partial()),
   asyncHandler(async (req, res) => {
     const d = req.body as Partial<z.infer<typeof productSchema>>
+    const t = tenantId(req)
     const cur = await queryOne<{
       name: string
       category: string
@@ -111,29 +134,84 @@ router.patch(
       default_margin: string
     }>(`SELECT name, category, unit, sell_price, cost_price, low_stock_threshold, barcode, sell_by_pill, pills_per_unit, default_margin FROM products WHERE id = $1 AND tenant_id = $2`, [
       req.params.id,
-      tenantId(req),
+      t,
     ])
     if (!cur) throw new AppError(404, 'Product not found', 'NOT_FOUND')
-    const row = await queryOne(
-      `UPDATE products SET name=$3, category=$4, unit=$5, sell_price=$6, cost_price=$7, low_stock_threshold=$8, barcode=$9,
-              sell_by_pill=$10, pills_per_unit=$11, default_margin=$12
-       WHERE id=$1 AND tenant_id=$2 RETURNING *`,
-      [
-        req.params.id,
-        tenantId(req),
-        d.name ?? cur.name,
-        d.category ?? cur.category,
-        d.unit ?? cur.unit,
-        d.sell_price ?? Number(cur.sell_price),
-        d.cost_price ?? Number(cur.cost_price),
-        d.low_stock_threshold ?? cur.low_stock_threshold,
-        'barcode' in d ? (d.barcode || null) : cur.barcode,
-        d.sell_by_pill ?? cur.sell_by_pill,
-        d.pills_per_unit ?? cur.pills_per_unit,
-        d.default_margin ?? Number(cur.default_margin),
-      ]
-    )
-    logAudit({ tenantId: tenantId(req), userId: req.user!.id, userName: req.user!.full_name, action: 'product.update', entity: 'product', entityId: req.params.id, details: { name: row?.name } })
+
+    const row = await withTransaction(pool, async (client: PoolClient) => {
+      const { rows: updatedRows } = await client.query<{ id: string; name: string } & Record<string, unknown>>(
+        `UPDATE products SET name=$3, category=$4, unit=$5, sell_price=$6, cost_price=$7, low_stock_threshold=$8, barcode=$9,
+                sell_by_pill=$10, pills_per_unit=$11, default_margin=$12
+         WHERE id=$1 AND tenant_id=$2 RETURNING *`,
+        [
+          req.params.id,
+          t,
+          d.name ?? cur.name,
+          d.category ?? cur.category,
+          d.unit ?? cur.unit,
+          d.sell_price ?? Number(cur.sell_price),
+          d.cost_price ?? Number(cur.cost_price),
+          d.low_stock_threshold ?? cur.low_stock_threshold,
+          'barcode' in d ? (d.barcode || null) : cur.barcode,
+          d.sell_by_pill ?? cur.sell_by_pill,
+          d.pills_per_unit ?? cur.pills_per_unit,
+          d.default_margin ?? Number(cur.default_margin),
+        ]
+      )
+      const updated = updatedRows[0]
+
+      if (d.initial_stock !== undefined && d.initial_stock >= 0) {
+        const { rows: stockRows } = await client.query<{ current_stock: string }>(
+          `SELECT COALESCE(SUM(quantity), 0)::text AS current_stock FROM product_batches WHERE product_id = $1 AND tenant_id = $2`,
+          [req.params.id, t]
+        )
+        const currentStock = Number(stockRows[0]?.current_stock || 0)
+        const delta = d.initial_stock - currentStock
+
+        if (delta !== 0) {
+          if (currentStock === 0 && d.initial_stock > 0) {
+            const { rows: batchRows } = await client.query<{ id: string }>(
+              `INSERT INTO product_batches (tenant_id, product_id, batch_no, quantity, cost_price, selling_price)
+               VALUES ($1, $2, 'INITIAL', $3, $4, $5) RETURNING id`,
+              [t, req.params.id, d.initial_stock, d.cost_price ?? Number(cur.cost_price), d.sell_price ?? Number(cur.sell_price)]
+            )
+            await client.query(
+              `INSERT INTO stock_adjustments (tenant_id, product_id, batch_id, delta, reason, user_id)
+               VALUES ($1, $2, $3, $4, 'Initial / opening stock count', $5)`,
+              [t, req.params.id, batchRows[0].id, d.initial_stock, req.user!.id]
+            )
+          } else {
+            const { rows: batches } = await client.query<{ id: string }>(
+              `SELECT id FROM product_batches WHERE product_id = $1 AND tenant_id = $2 ORDER BY created_at DESC LIMIT 1`,
+              [req.params.id, t]
+            )
+            let batchId = batches[0]?.id
+            if (batchId) {
+              await client.query(
+                `UPDATE product_batches SET quantity = GREATEST(0, quantity + $1) WHERE id = $2`,
+                [delta, batchId]
+              )
+            } else {
+              const { rows: newBatchRows } = await client.query<{ id: string }>(
+                `INSERT INTO product_batches (tenant_id, product_id, batch_no, quantity, cost_price, selling_price)
+                 VALUES ($1, $2, 'ADJUSTMENT', $3, $4, $5) RETURNING id`,
+                [t, req.params.id, Math.max(0, d.initial_stock), d.cost_price ?? Number(cur.cost_price), d.sell_price ?? Number(cur.sell_price)]
+              )
+              batchId = newBatchRows[0].id
+            }
+            await client.query(
+              `INSERT INTO stock_adjustments (tenant_id, product_id, batch_id, delta, reason, user_id)
+               VALUES ($1, $2, $3, $4, 'Manual stock correction from catalog', $5)`,
+              [t, req.params.id, batchId, delta, req.user!.id]
+            )
+          }
+        }
+      }
+
+      return updated
+    })
+
+    logAudit({ tenantId: t, userId: req.user!.id, userName: req.user!.full_name, action: 'product.update', entity: 'product', entityId: req.params.id, details: { name: row?.name } })
     res.json({ product: row })
   })
 )
