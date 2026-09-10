@@ -17,7 +17,7 @@ export default function SchoolDashboard(): JSX.Element {
     <div>
       <PageHeader title="School Dashboard" subtitle="Overview of your academy" />
       <div className="pl-stats">
-        <StatCard icon="fa-solid fa-user-graduate" label="Active students" value={data?.stats.students ?? '—'} tone="#4338ca" />
+        <StatCard hero icon="fa-solid fa-user-graduate" label="Students" value={data?.stats.students ?? '—'} />
         <StatCard icon="fa-solid fa-chalkboard" label="Classes" value={data?.stats.classes ?? '—'} tone="#7c3aed" />
         <StatCard icon="fa-solid fa-person-chalkboard" label="Teachers" value={data?.stats.teachers ?? '—'} tone="#0284c7" />
         <StatCard

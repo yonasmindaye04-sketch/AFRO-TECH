@@ -14,9 +14,9 @@ export function PageHeader({ title, subtitle, action }: { title: string; subtitl
   )
 }
 
-export function StatCard({ icon, label, value, tone }: { icon: string; label: string; value: string | number; tone?: string }): JSX.Element {
+export function StatCard({ icon, label, value, tone, hero }: { icon: string; label: string; value: string | number; tone?: string; hero?: boolean }): JSX.Element {
   return (
-    <div className="pl-stat">
+    <div className={`pl-stat ${hero ? 'pl-stat-hero' : ''}`}>
       <span className="pl-stat-icon" style={tone ? { color: tone } : undefined}>
         <i className={icon} aria-hidden="true" />
       </span>

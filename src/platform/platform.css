@@ -1,4 +1,4 @@
-﻿/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    AFRO SUITE â€” platform styles
    Reuses design tokens from src/index.css (--bg/--surface/â€¦)
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
@@ -54,6 +54,11 @@
 .pl-firm-pill.store { color: #d4a843; }
 .pl-nav {
   flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.pl-nav::-webkit-scrollbar {
+  display: none;
 }
 /* The marketing stylesheet (index.css) styles the bare `nav` element
    (position:fixed; width:100%; padding:20px 6%; â€¦). Reset every property it
@@ -306,7 +311,7 @@ label:has(input[type="radio"]) {
   .pl-menu-toggle { display: inline-grid !important; }
   .pl-main { padding-top: 74px; }
 }
-.pl-menu-toggle { display: none; position: fixed; top: 14px; right: 16px; z-index: 1600; width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--border2); background: var(--surface); color: var(--text); place-items: center; cursor: pointer; }
+.pl-menu-toggle { display: none; position: fixed; top: 14px; left: 16px; z-index: 1600; width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--border2); background: var(--surface); color: var(--text); place-items: center; cursor: pointer; }
 .pl-scrim { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1400; }
 
 /* receipt */
@@ -1392,3 +1397,13 @@ label:has(input[type="radio"]) {
   .pl-dash-primary-icon { display: none; }
 }
 
+.pl-stat-hero {
+  grid-column: 1 / -1;
+  padding: 24px;
+}
+.pl-stat-hero .pl-stat-value {
+  font-size: 2rem;
+}
+.pl-stat-hero .pl-stat-icon {
+  width: 50px; height: 50px; font-size: 1.8rem;
+}
