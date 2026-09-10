@@ -1,6 +1,6 @@
-﻿import { fmtDate, fmtMoney } from '../api'
+import { fmtDate, fmtMoney } from '../api'
 import { useApiData } from '../hooks/useApiData'
-import { Card, DataTable, EmptyState, PageHeader } from '../ui'
+import { Card, DataTable, EmptyState, PageHeader, StatCard } from '../ui'
 
 interface SchoolDashboard {
   stats: { students: number; classes: number; teachers: number; attendance_today: number; unpaid_fees: number; collected_this_month: number }
@@ -9,58 +9,25 @@ interface SchoolDashboard {
   recent_students: { id: string; code: string; first_name: string; last_name: string; gender: string; class_name: string | null; created_at: string }[]
 }
 
-function SpiralSvg(): JSX.Element {
-  return (
-    <svg className="pl-dash-primary-spiral" width="220" height="220" viewBox="0 0 220 220" fill="none" aria-hidden="true">
-      <path
-        d="M110 110 m0,-80 a80,80 0 1,1 -0.1,0 m0,16 a64,64 0 1,1 -0.1,0 m0,16 a48,48 0 1,1 -0.1,0 m0,16 a32,32 0 1,1 -0.1,0 m0,16 a16,16 0 1,1 -0.1,0"
-        stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
 export default function SchoolDashboard(): JSX.Element {
   const { data } = useApiData<SchoolDashboard>('/school/dashboard')
   const trend = data?.attendance_trend ?? []
-  const latestAttendance = trend.length ? Math.round(trend[trend.length - 1]?.pct ?? 0) : null
 
   return (
     <div>
       <PageHeader title="School Dashboard" subtitle="Overview of your academy" />
-
-      {/* Primary hero tile */}
-      <div className="pl-dash-primary">
-        <SpiralSvg />
-        <div className="pl-dash-primary-icon">
-          <i className="fa-solid fa-user-graduate" aria-hidden="true" />
-        </div>
-        <div className="pl-dash-primary-body">
-          <div className="pl-dash-primary-value" style={{ fontVariantNumeric: 'tabular-nums' }}>{data?.stats.students ?? '—'}</div>
-          <div className="pl-dash-primary-label">Active students</div>
-          <div className="pl-dash-primary-sub">
-            Fees collected this month: {fmtMoney(data?.stats.collected_this_month)} ETB
-          </div>
-        </div>
-      </div>
-
-      {/* 3 secondary tiles */}
-      <div className="pl-dash-secondary">
-        <div className="pl-dash-sec-tile">
-          <div className="pl-dash-sec-icon"><i className="fa-solid fa-chalkboard" aria-hidden="true" /></div>
-          <div className="pl-dash-sec-value">{data?.stats.classes ?? '—'}</div>
-          <div className="pl-dash-sec-label">Classes</div>
-        </div>
-        <div className="pl-dash-sec-tile">
-          <div className="pl-dash-sec-icon"><i className="fa-solid fa-person-chalkboard" aria-hidden="true" /></div>
-          <div className="pl-dash-sec-value">{data?.stats.teachers ?? '—'}</div>
-          <div className="pl-dash-sec-label">Teachers</div>
-        </div>
-        <div className="pl-dash-sec-tile">
-          <div className="pl-dash-sec-icon"><i className="fa-solid fa-clipboard-check" aria-hidden="true" /></div>
-          <div className="pl-dash-sec-value" style={{ color: '#059669' }}>{latestAttendance !== null ? `${latestAttendance}%` : '—'}</div>
-          <div className="pl-dash-sec-label">Attendance today</div>
-        </div>
+      <div className="pl-stats">
+        <StatCard icon="fa-solid fa-user-graduate" label="Active students" value={data?.stats.students ?? '—'} tone="#4338ca" />
+        <StatCard icon="fa-solid fa-chalkboard" label="Classes" value={data?.stats.classes ?? '—'} tone="#7c3aed" />
+        <StatCard icon="fa-solid fa-person-chalkboard" label="Teachers" value={data?.stats.teachers ?? '—'} tone="#0284c7" />
+        <StatCard
+          icon="fa-solid fa-clipboard-check"
+          label="Attendance today"
+          value={trend.length ? `${Math.round(trend[trend.length - 1]?.pct ?? 0)}%` : '—'}
+          tone="#059669"
+        />
+        <StatCard icon="fa-solid fa-money-bill-trend-up" label="Fees collected (month)" value={`${fmtMoney(data?.stats.collected_this_month)} ETB`} tone="#059669" />
+        <StatCard icon="fa-solid fa-file-invoice" label="Outstanding fees" value={`${fmtMoney(data?.stats.unpaid_fees)} ETB`} tone="#dc2626" />
       </div>
 
       <div className="pl-cols-2">

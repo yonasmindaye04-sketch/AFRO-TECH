@@ -1,6 +1,6 @@
-﻿import { fmtDateTime, fmtMoney } from '../api'
+import { fmtDateTime, fmtMoney } from '../api'
 import { useApiData } from '../hooks/useApiData'
-import { Badge, Card, DataTable, EmptyState, PageHeader } from '../ui'
+import { Badge, Card, DataTable, EmptyState, PageHeader, StatCard } from '../ui'
 
 interface HospitalDashboard {
   stats: { patients: number; today_appointments: number; upcoming_appointments: number; unpaid_total: number; month_revenue: number }
@@ -10,61 +10,23 @@ interface HospitalDashboard {
 
 const statusTone = (s: string): 'good' | 'warn' | 'bad' | 'neutral' => (s === 'completed' ? 'good' : s === 'scheduled' ? 'warn' : s === 'no_show' ? 'bad' : 'neutral')
 
-function SpiralSvg(): JSX.Element {
-  return (
-    <svg className="pl-dash-primary-spiral" width="220" height="220" viewBox="0 0 220 220" fill="none" aria-hidden="true">
-      <path
-        d="M110 110 m0,-80 a80,80 0 1,1 -0.1,0 m0,16 a64,64 0 1,1 -0.1,0 m0,16 a48,48 0 1,1 -0.1,0 m0,16 a32,32 0 1,1 -0.1,0 m0,16 a16,16 0 1,1 -0.1,0"
-        stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
 export default function HospitalDashboard(): JSX.Element {
   const { data } = useApiData<HospitalDashboard>('/hospital/dashboard')
 
   return (
     <div>
       <PageHeader title="Clinic Dashboard" subtitle="Today at your facility" />
-
-      {/* Primary hero tile */}
-      <div className="pl-dash-primary">
-        <SpiralSvg />
-        <div className="pl-dash-primary-icon">
-          <i className="fa-solid fa-hospital-user" aria-hidden="true" />
-        </div>
-        <div className="pl-dash-primary-body">
-          <div className="pl-dash-primary-value" style={{ fontVariantNumeric: 'tabular-nums' }}>{data?.stats.patients ?? '—'}</div>
-          <div className="pl-dash-primary-label">Total patients</div>
-          <div className="pl-dash-primary-sub">
-            Collected this month: {fmtMoney(data?.stats.month_revenue)} ETB
-          </div>
-        </div>
-      </div>
-
-      {/* 3 secondary tiles */}
-      <div className="pl-dash-secondary">
-        <div className="pl-dash-sec-tile">
-          <div className="pl-dash-sec-icon"><i className="fa-solid fa-calendar-check" aria-hidden="true" /></div>
-          <div className="pl-dash-sec-value">{data?.stats.today_appointments ?? '—'}</div>
-          <div className="pl-dash-sec-label">Appointments today</div>
-        </div>
-        <div className="pl-dash-sec-tile">
-          <div className="pl-dash-sec-icon"><i className="fa-solid fa-clock" aria-hidden="true" /></div>
-          <div className="pl-dash-sec-value">{data?.stats.upcoming_appointments ?? '—'}</div>
-          <div className="pl-dash-sec-label">Upcoming</div>
-        </div>
-        <div className="pl-dash-sec-tile">
-          <div className="pl-dash-sec-icon"><i className="fa-solid fa-file-invoice" aria-hidden="true" /></div>
-          <div className="pl-dash-sec-value" style={{ color: '#e07a7a', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(data?.stats.unpaid_total)} ETB</div>
-          <div className="pl-dash-sec-label">Outstanding balances</div>
-        </div>
+      <div className="pl-stats">
+        <StatCard icon="fa-solid fa-hospital-user" label="Total patients" value={data?.stats.patients ?? '—'} />
+        <StatCard icon="fa-solid fa-calendar-check" label="Appointments today" value={data?.stats.today_appointments ?? '—'} />
+        <StatCard icon="fa-solid fa-clock" label="Upcoming" value={data?.stats.upcoming_appointments ?? '—'} />
+        <StatCard icon="fa-solid fa-money-bill-trend-up" label="Collected this month" value={`${fmtMoney(data?.stats.month_revenue)} ETB`} tone="#34d399" />
+        <StatCard icon="fa-solid fa-file-invoice" label="Outstanding balances" value={`${fmtMoney(data?.stats.unpaid_total)} ETB`} tone="#e07a7a" />
       </div>
 
       <div className="pl-cols-2">
         <Card>
-          <h2>Today&apos;s schedule</h2>
+          <h2>Today's schedule</h2>
           {data && data.todays_appointments.length > 0 ? (
             <DataTable
               rows={data.todays_appointments}

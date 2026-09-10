@@ -1,4 +1,4 @@
-# AFRO SUITE — Development Rules
+﻿# AFRO SUITE â€” Development Rules
 
 These rules apply to **all agents and contributors** working on this codebase. Read before making any changes.
 
@@ -58,25 +58,14 @@ Report cards must follow the formal multi-column layout (dual-tone header, boxed
 ## 7. Dark Mode, Light Mode & Clean Indicators
 
 - Both **Dark Mode** (`[data-theme="dark"]`) and **Light Mode** (`[data-theme="light"]`) must be fully supported across all firm types (hospital, pharmacy, store, school).
-- Never hardcode `#ffffff` card/panel/table backgrounds in dark mode — always use CSS variables `var(--card)`, `var(--border)`, and `var(--bg-alt)`.
-- Timetable slots and status indicators must **never** use colored background tints or thick colored indicator borders — use clean surface backgrounds with bold typography.
+- Never hardcode `#ffffff` card/panel/table backgrounds in dark mode â€” always use CSS variables `var(--card)`, `var(--border)`, and `var(--bg-alt)`.
+- Timetable slots and status indicators must **never** use colored background tints or thick colored indicator borders â€” use clean surface backgrounds with bold typography.
 
 ---
 
-*Last updated by agent — September 2026*
+*Last updated by agent â€” September 2026*
 
 ---
-
-## 8. Dashboard Design System
-
-All dashboards (retail, pharmacy, hospital, school) must follow the **1-primary + 3-secondary hierarchy**:
-
-- **Primary tile** (`pl-dash-primary`): Full-width hero card with box-shadow (`0 8px 32px rgba(0,0,0,.18)`), `border-radius: 20px`, SVG spiral decoration, large tabular-numeral value.
-- **Secondary tiles** (`pl-dash-secondary` grid): 3 tiles in a row, `border-radius: 14px`, **no box-shadow** — they do not float.
-- **Shadow only on floating elements**: modals, the primary hero tile, dropdowns. Cards and tables get border-only, no shadow.
-- **Tighter radius on small parts**: buttons/inputs = `8–10px`, table rows = no individual radius, cards = `14px`, hero tile = `20px`.
-- **Spiral SVG decoration** on stat tiles — no icon-in-circle badge graphics.
-- **Tabular digits**: all monetary and numeric values on dashboards must use `font-variant-numeric: tabular-nums`.
 
 ---
 
@@ -105,3 +94,4 @@ All date-range filter inputs (`type="date"`) inside `.pl-toolbar` must be wrappe
   <input className="pl-input" type="date" style={{ width: 150 }} ... />
 </div>
 ```
+
