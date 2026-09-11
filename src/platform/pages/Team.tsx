@@ -3,6 +3,12 @@ import { fmtDate, api } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
 
+interface JobRole {
+  id: string
+  name: string
+  description: string
+}
+
 interface StaffUser {
   id: string
   email: string
@@ -10,12 +16,14 @@ interface StaffUser {
   role: 'owner' | 'staff'
   is_active: boolean
   created_at: string
+  job_roles: JobRole[]
 }
 
 export default function Team(): JSX.Element {
   const { data, loading, reload } = useApiData<{ users: StaffUser[] }>('/users')
+  const { data: rolesData } = useApiData<{ roles: JobRole[] }>('/users/roles')
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({ full_name: '', email: '', password: '' })
+  const [form, setForm] = useState({ full_name: '', email: '', password: '', role_id: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -24,9 +32,12 @@ export default function Team(): JSX.Element {
     setBusy(true)
     setError(null)
     try {
-      await api.post('/users', { full_name: form.full_name.trim(), email: form.email.trim().toLowerCase(), password: form.password })
+      const payload: any = { full_name: form.full_name.trim(), email: form.email.trim().toLowerCase(), password: form.password }
+      if (form.role_id) payload.role_id = form.role_id
+
+      await api.post('/users', payload)
       setOpen(false)
-      setForm({ full_name: '', email: '', password: '' })
+      setForm({ full_name: '', email: '', password: '', role_id: '' })
       reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
@@ -42,6 +53,10 @@ export default function Team(): JSX.Element {
     } catch (err) {
       window.alert(err instanceof Error ? err.message : 'Update failed')
     }
+  }
+
+  const formatJobRole = (str: string) => {
+    return str.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
   }
 
   return (
@@ -76,8 +91,16 @@ export default function Team(): JSX.Element {
             {
               key: 'role',
               header: 'Role',
-              width: '100px',
-              render: (u) => <Badge tone={u.role === 'owner' ? 'warn' : 'neutral'}>{u.role}</Badge>,
+              width: '160px',
+              render: (u) => {
+                if (u.role === 'owner') return <Badge tone="warn">Owner</Badge>
+                if (u.job_roles?.length) {
+                  return <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {u.job_roles.map(r => <Badge key={r.id} tone="info">{formatJobRole(r.name)}</Badge>)}
+                  </div>
+                }
+                return <Badge tone="neutral">Staff</Badge>
+              },
             },
             {
               key: 'status',
@@ -112,6 +135,14 @@ export default function Team(): JSX.Element {
           </Field>
           <Field label="Email">
             <input className="pl-input" type="email" required value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+          </Field>
+          <Field label="Job Role">
+            <select className="pl-input" value={form.role_id} onChange={(e) => setForm(f => ({ ...f, role_id: e.target.value }))}>
+              <option value="">-- Generic Staff --</option>
+              {rolesData?.roles.map(r => (
+                <option key={r.id} value={r.id} title={r.description}>{formatJobRole(r.name)}</option>
+              ))}
+            </select>
           </Field>
           <Field label="Temporary password" hint="At least 8 characters — share it privately">
             <input className="pl-input" type="password" required minLength={8} value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />

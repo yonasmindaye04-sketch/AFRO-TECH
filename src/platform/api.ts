@@ -15,6 +15,8 @@ export interface Me {
   role: 'owner' | 'staff' | 'afrotech_admin'
   tenant_id: string | null
   tenant?: TenantInfo | null
+  permissions?: string[]
+  job_roles?: string[]
 }
 
 export class ApiError extends Error {

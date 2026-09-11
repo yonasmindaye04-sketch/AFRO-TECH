@@ -430,7 +430,7 @@ async function seedHospital(tenantId: string, ownerId: string): Promise<void> {
       `INSERT INTO departments (tenant_id, name, type) VALUES ($1,$2,$3) ON CONFLICT (tenant_id, name) DO UPDATE SET type = EXCLUDED.type RETURNING id, name, type`,
       [tenantId, name, type]
     )
-    departments.push(row!)
+    departments.push(row as { id: string; name: string; type: string });
   }
   console.log(`  Created ${departments.length} departments`)
 
@@ -449,7 +449,7 @@ async function seedHospital(tenantId: string, ownerId: string): Promise<void> {
       `INSERT INTO doctors (tenant_id, full_name, specialty, phone, fee) VALUES ($1,$2,$3,$4,$5) RETURNING id, full_name, specialty`,
       [tenantId, `Dr. ${firstName} ${lastName}`, randomItem(specialties), `+2519${Math.floor(10000000 + Math.random() * 90000000)}`, Math.floor(200 + Math.random() * 800)]
     )
-    doctors.push(row!)
+    doctors.push(row as { id: string; full_name: string; specialty: string });
   }
   console.log(`  Created ${doctors.length} doctors`)
 
@@ -467,7 +467,7 @@ async function seedHospital(tenantId: string, ownerId: string): Promise<void> {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id, code, first_name, last_name, gender`,
       [tenantId, code, firstName, lastName, gender, formatDate(dob), `+2519${Math.floor(10000000 + Math.random() * 90000000)}`, 'Addis Ababa', randomItem(bloodTypes), randomItem(allergies)]
     )
-    patients.push(row!)
+    patients.push(row as { id: string; code: string; first_name: string; last_name: string; gender: string });
   }
   console.log(`  Created ${patients.length} patients`)
 
@@ -483,7 +483,7 @@ async function seedHospital(tenantId: string, ownerId: string): Promise<void> {
       `INSERT INTO appointments (tenant_id, patient_id, doctor_id, scheduled_at, reason, status, notes) VALUES ($1,$2,$3,$4,$5,'completed',$6) RETURNING id, patient_id, scheduled_at, status`,
       [tenantId, patient.id, doctor.id, scheduled.toISOString(), randomItem(reasons), `Patient responded well to treatment. Prescribed ${randomItem(prescriptions)}.`]
     )
-    appointments.push(row!)
+    appointments.push(row as { id: string; patient_id: string; scheduled_at: Date; status: string });
   }
 
   for (let i = 0; i < 12; i++) {
@@ -498,7 +498,7 @@ async function seedHospital(tenantId: string, ownerId: string): Promise<void> {
       `INSERT INTO appointments (tenant_id, patient_id, doctor_id, scheduled_at, reason, status) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, patient_id, scheduled_at, status`,
       [tenantId, patient.id, doctor.id, scheduled.toISOString(), randomItem(reasons), status]
     )
-    appointments.push(row!)
+    appointments.push(row as { id: string; patient_id: string; scheduled_at: Date; status: string });
   }
 
   for (let i = 0; i < 15; i++) {
@@ -509,7 +509,7 @@ async function seedHospital(tenantId: string, ownerId: string): Promise<void> {
       `INSERT INTO appointments (tenant_id, patient_id, doctor_id, scheduled_at, reason, status) VALUES ($1,$2,$3,$4,$5,'scheduled') RETURNING id, patient_id, scheduled_at, status`,
       [tenantId, patient.id, doctor.id, scheduled.toISOString(), randomItem(reasons)]
     )
-    appointments.push(row!)
+    appointments.push(row as { id: string; patient_id: string; scheduled_at: Date; status: string });
   }
   console.log(`  Created ${appointments.length} appointments`)
 
@@ -624,7 +624,7 @@ async function seedSchool(tenantId: string, ownerId: string): Promise<void> {
       `INSERT INTO teachers (tenant_id, full_name, subject, phone, email) VALUES ($1,$2,$3,$4,$5) RETURNING id, full_name, subject`,
       [tenantId, `${gender === 'male' ? 'Ato' : 'W/ro'} ${firstName} ${lastName}`, randomItem(schoolSubjects), `+2519${Math.floor(10000000 + Math.random() * 90000000)}`, `teacher${i+1}@school.edu.et`]
     )
-    teachers.push(row!)
+    teachers.push(row as { id: string; full_name: string; subject: string });
   }
   console.log(`  Created ${teachers.length} teachers`)
 
@@ -636,7 +636,7 @@ async function seedSchool(tenantId: string, ownerId: string): Promise<void> {
       `INSERT INTO classes (tenant_id, name, academic_year, homeroom_teacher_id) VALUES ($1,$2,'2025/2026',$3) RETURNING id, name, homeroom_teacher_id`,
       [tenantId, classNames[i], teachers[i % teachers.length]?.id ?? null]
     )
-    classes.push(row!)
+    classes.push(row as { id: string; name: string; homeroom_teacher_id: string | null });
   }
   console.log(`  Created ${classes.length} classes`)
 
@@ -655,7 +655,7 @@ async function seedSchool(tenantId: string, ownerId: string): Promise<void> {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id, code, first_name, last_name, class_id`,
       [tenantId, code, firstName, lastName, gender, formatDate(randomDate(new Date(2008, 0, 1), new Date(2018, 11, 31))), classId, guardian, `+2519${Math.floor(10000000 + Math.random() * 90000000)}`, `guardian${i+1}@example.com`, `${100000000 + i}`, 'Addis Ababa']
     )
-    students.push(row!)
+    students.push(row as { id: string; code: string; first_name: string; last_name: string; class_id: string | null });
   }
   console.log(`  Created ${students.length} students`)
 

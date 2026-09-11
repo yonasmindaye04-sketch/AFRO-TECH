@@ -72,13 +72,14 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
   const [open, setOpen] = useState(false)
   const tenant = me?.tenant
   const firmType = tenant?.business_type || 'store'
-  const baseItems = tenant ? navFor(tenant.business_type) : []
+  const items = tenant ? navFor(tenant.business_type) : []
   const initials = (me?.full_name ?? '?')
     .split(' ')
     .map((p) => p[0])
     .slice(0, 2)
     .join('')
     .toUpperCase()
+
 
   const { dark, toggle: toggleTheme } = useTheme()
 
@@ -88,129 +89,6 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
       document.documentElement.removeAttribute('data-firm')
     }
   }, [firmType])
-
-  // Function to determine if a nav item should be shown based on user permissions and role
-  const shouldShowNavItem = (item: NavItem): boolean => {
-    // Owner and afrotech_admin see everything
-    if (me?.role === 'owner' || me?.role === 'afrotech_admin') return true
-
-    const permissions = me?.permissions ?? []
-
-    // Define permission requirements for each nav item
-    switch (item.to) {
-      case '/app/reception':
-        // Reception: visits.manage OR appointments.manage
-        return permissions.includes('visits.manage') || permissions.includes('appointments.manage')
-      case '/app/flow':
-        // Patient Flow: visits.view
-        return permissions.includes('visits.view')
-      case '/app/labs':
-        // Laboratory: orders.lab OR orders.create
-        return permissions.includes('orders.lab') || permissions.includes('orders.create')
-      case '/app/billing':
-        // Billing: billing.view OR cash_drawer.view
-        return permissions.includes('billing.view') || permissions.includes('cash_drawer.view')
-      case '/app/doctors':
-        // Team/Doctors: owner OR users.manage (team management)
-        return permissions.includes('users.manage')
-      case '/app/users':
-        // Team page (from owner menu): owner OR users.manage
-        return permissions.includes('users.manage')
-      case '/app/settings':
-        // Settings: owner OR settings.manage
-        return permissions.includes('settings.manage')
-      case '/app/marketing':
-        // Marketing: owner OR marketing.manage (assuming we have such a permission)
-        return permissions.includes('marketing.manage')
-      case '/app/bot-studio':
-        // Telegram Bot Studio: owner OR telegram.manage (assuming)
-        return permissions.includes('telegram.manage')
-      case '/app/subscription':
-        // Subscription: owner OR billing.manage (for subscription management)
-        return permissions.includes('billing.manage')
-      case '/app':
-        // Dashboard: always show (at least one permission should allow dashboard view)
-        return true
-      case '/app/pos':
-        // New Sale: sales.create
-        return permissions.includes('sales.create')
-      case '/app/cashdrawer':
-        // Cash Drawer: cash_drawer.view
-        return permissions.includes('cash_drawer.view')
-      case '/app/sales':
-        // Sales History: sales.view
-        return permissions.includes('sales.view')
-      case '/app/products':
-        // Products: inventory.manage
-        return permissions.includes('inventory.manage')
-      case '/app/purchases':
-        // Purchases: purchases.create
-        return permissions.includes('purchases.create')
-      case '/app/stock':
-        // Stock Adjustments: inventory.adjust
-        return permissions.includes('inventory.adjust')
-      case '/app/expiry':
-        // Expiry: inventory.view (to view expiring items)
-        return permissions.includes('inventory.view')
-      case '/app/suppliers':
-        // Suppliers: purchases.view
-        return permissions.includes('purchases.view')
-      case '/app/customers':
-        // Customers: customers.view (assuming we have such a permission)
-        return permissions.includes('customers.view')
-      case '/app/credit':
-        // Credit (Khata): payments.view
-        return permissions.includes('payments.view')
-      case '/app/finance':
-        // Expenses: payments.view OR payments.create
-        return permissions.includes('payments.view') || permissions.includes('payments.create')
-      case '/app/reports':
-        // Reports: reports.view
-        return permissions.includes('reports.view')
-      case '/app/queue':
-        // Appointments: appointments.view
-        return permissions.includes('appointments.view')
-      case '/app/patients':
-        // Patients: patients.view
-        return permissions.includes('patients.view')
-      case '/app/records':
-        // Medical Records: records.view
-        return permissions.includes('records.view')
-      case '/app/hospital-reports':
-        // Hospital Reports: reports.view
-        return permissions.includes('reports.view')
-      case '/app/classes':
-        // Classes & Teachers: students.view
-        return permissions.includes('students.view')
-      case '/app/timetable':
-        // Timetable: timetable.view
-        return permissions.includes('timetable.view')
-      case '/app/attendance':
-        // Attendance: attendance.view
-        return permissions.includes('attendance.view')
-      case '/app/grades':
-        // Grades: grades.view
-        return permissions.includes('grades.view')
-      case '/app/report-cards':
-        // Report Cards: report_cards.generate
-        return permissions.includes('report_cards.generate')
-      case '/app/fees':
-        // Fees: fees.view
-        return permissions.includes('fees.view')
-      case '/app/announcements':
-        // Announcements: announcements.view
-        return permissions.includes('announcements.view')
-      case '/app/school-reports':
-        // School Reports: reports.view
-        return permissions.includes('reports.view')
-      default:
-        // For any other item, show by default (or we could hide)
-        return true
-    }
-  }
-
-  // Filter the base items based on permissions
-  const items = baseItems.filter(shouldShowNavItem)
 
   return (
     <div className={`pl-root pl-firm-${firmType}`} data-firm={firmType}>
@@ -255,11 +133,11 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
               <>
                 <NavLink to="/app/users" onClick={() => setOpen(false)}>
                   <i className="fa-solid fa-users-gear" aria-hidden="true" /> Team
-                </NavLink>
+               </NavLink>
                 <NavLink to="/app/settings" onClick={() => setOpen(false)}>
                   <i className="fa-solid fa-gear" aria-hidden="true" /> Settings
-                </NavLink>
-                <NavLink to="/app/bot-studio" onClick={() => setOpen(false)}>
+               </NavLink>
+<NavLink to="/app/bot-studio" onClick={() => setOpen(false)}>
                   <i className="fa-solid fa-robot" aria-hidden="true" /> My Telegram Bot
                 </NavLink>
                 <NavLink to="/app/marketing" onClick={() => setOpen(false)}>

@@ -9,46 +9,6 @@ import { validateBody } from '../middleware/validate.js'
 const router = Router()
 router.use(authenticate)
 
-// Mapping of business type to relevant system role names
-const roleMapping: Record<string, string[]> = {
-  pharmacy: ['pharmacist', 'cashier', 'manager', 'accountant'],
-  store: ['cashier', 'manager', 'accountant'],
-  hospital: ['doctor', 'nurse', 'lab_technician', 'pharmacist', 'accountant'],
-  school: ['teacher', 'registrar', 'accountant'],
-  // Default to empty array if business type not found
-}
-
-/** GET /api/v1/users/roles - list available job roles for the tenant's business type */
-router.get(
-  '/roles',
-  requireActiveTenant,
-  requireRole('owner'),
-  asyncHandler(async (req, res) => {
-    // Get the tenant's business type
-    const tenant = await queryOne(
-      `SELECT business_type FROM tenants WHERE id = $1`,
-      [req.user!.tenant_id]
-    )
-    if (!tenant) throw new AppError(404, 'Tenant not found', 'NOT_FOUND')
-    
-    const businessType = tenant.business_type
-    const roleNames = roleMapping[businessType] || []
-    
-    if (roleNames.length === 0) {
-      res.json({ roles: [] })
-      return
-    }
-    
-    // Build a query to fetch roles by name
-    const placeholders = roleNames.map((_, index) => `$${index + 1}`).join(',')
-    const roles = await query(
-      `SELECT id, name, description FROM roles WHERE name IN (${placeholders}) AND is_system = true ORDER BY name`,
-      roleNames
-    )
-    res.json({ roles })
-  })
-)
-
 /** GET /api/v1/users/roles - list available job roles */
 router.get(
   '/roles',
@@ -102,12 +62,10 @@ router.post(
        RETURNING id, email, full_name, role, is_active, created_at`,
       [req.user!.tenant_id, email, hash, full_name]
     )
-    if (!row) throw new AppError(500, 'Failed to create user', 'CREATE_FAILED')
     if (role_id) {
       await queryOne(`INSERT INTO user_roles (user_id, role_id, tenant_id) VALUES ($1, $2, $3)`, [row.id, role_id, req.user!.tenant_id])
       const r = await queryOne(`SELECT id, name, description FROM roles WHERE id = $1`, [role_id])
-      if (!r) throw new AppError(404, 'Role not found', 'ROLE_NOT_FOUND')
-      row.job_roles = [r]
+      row.job_roles = r ? [r] : []
     } else {
       row.job_roles = []
     }

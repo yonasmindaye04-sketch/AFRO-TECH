@@ -73,6 +73,8 @@ const loginSchema = z.object({
 
 interface MeResponse extends AuthUser {
   tenant: (TenantRow & { trial_days_left: number }) | null
+  permissions?: string[]
+  job_roles?: string[]
 }
 
 function daysLeft(trialEndsAt: Date): number {
@@ -81,13 +83,43 @@ function daysLeft(trialEndsAt: Date): number {
 
 async function loadMe(user: AuthUser): Promise<MeResponse> {
   let tenant: MeResponse['tenant'] = null
+  let permissions: string[] = []
+  let job_roles: string[] = []
+  
   if (user.tenant_id) {
     const t = await queryOne<TenantRow>(`SELECT id, name, slug, business_type, status, trial_ends_at FROM tenants WHERE id = $1`, [
       user.tenant_id,
     ])
     if (t) tenant = { ...t, trial_days_left: t.status === 'trial' ? daysLeft(t.trial_ends_at) : 0 }
+
+    if (user.role === 'owner') {
+       const allPerms = await query<{ name: string }>(`SELECT name FROM permissions`)
+       permissions = allPerms.map(p => p.name)
+       job_roles = ['Owner']
+    } else {
+       const perms = await query<{ name: string }>(
+         `SELECT p.name FROM permissions p
+          JOIN role_permissions rp ON rp.permission_id = p.id
+          JOIN user_roles ur ON ur.role_id = rp.role_id
+          WHERE ur.user_id = $1 AND ur.tenant_id = $2`,
+         [user.id, user.tenant_id]
+       )
+       permissions = perms.map(p => p.name)
+       
+       const roles = await query<{ name: string }>(
+         `SELECT r.name FROM roles r
+          JOIN user_roles ur ON ur.role_id = r.id
+          WHERE ur.user_id = $1 AND ur.tenant_id = $2`,
+         [user.id, user.tenant_id]
+       )
+       job_roles = roles.map(r => r.name)
+    }
+  } else if (user.role === 'afrotech_admin') {
+    permissions = ['*']
+    job_roles = ['AFRO-TECH Admin']
   }
-  return { ...user, tenant }
+
+  return { ...user, tenant, permissions, job_roles }
 }
 
 /**
