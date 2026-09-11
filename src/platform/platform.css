@@ -1397,8 +1397,68 @@ label:has(input[type="radio"]) {
   .pl-dash-primary-icon { display: none; }
 }
 
+/* ── Dashboard cards (Stacklane-inspired) ──────────────────── */
+.pl-dash-grid {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.pl-dash-grid--half { grid-template-columns: 1fr 1fr; }
+@media (max-width: 900px) {
+  .pl-dash-grid, .pl-dash-grid--half { grid-template-columns: 1fr; }
+}
+.pl-dash-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 22px;
+  margin-bottom: 16px;
+}
+.pl-dash-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 10px;
+}
+.pl-dash-card-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.pl-dash-trend {
+  font-size: .82rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pl-dash-trend--up { color: #34d399; }
+.pl-dash-trend--down { color: #e07a7a; }
 
-
-
-
-
+/* ── Dashboard inner table ─────────────────────────────────── */
+.pl-dash-table-wrap { overflow-x: auto; }
+.pl-dash-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .89rem;
+}
+.pl-dash-table th {
+  text-align: left;
+  padding: 8px 10px;
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: .74rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  border-bottom: 1px solid var(--border);
+}
+.pl-dash-table td {
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.pl-dash-table tbody tr:last-child td { border-bottom: none; }
+.pl-dash-table tbody tr:hover { background: rgba(var(--accent-rgb), .04); }
+.pl-dash-table .num { text-align: right; font-variant-numeric: tabular-nums; }
