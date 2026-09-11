@@ -34,7 +34,7 @@ INSERT INTO permissions (id, name, description) VALUES
   -- Notification templates
   (gen_random_uuid(), 'notifications.view', 'View notification templates and delivery logs'),
   (gen_random_uuid(), 'notifications.manage', 'Create, edit, activate/deactivate notification templates'),
-  (gen_random_uuid(), 'notifications.send', 'Send ad-hoc notifications to users/roles/departments'),
+  (gen_random_uuid(), 'notifications.send', 'Send ad-hoc notifications to users/roles/departments')
 ON CONFLICT (name) DO NOTHING;
 
 -- ── New roles ────────────────────────────────────────────────
@@ -62,56 +62,64 @@ WHERE r.name = 'receptionist' AND p.name IN (
   'visits.view','visits.manage',
   'billing.view','billing.manage',
   'departments.view'
-);
+) ON CONFLICT DO NOTHING;
+
 
 -- Injection nurse: process injection/procedure orders
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p
 WHERE r.name = 'injection_nurse' AND p.name IN (
   'visits.view','orders.injection','orders.procedure'
-);
+) ON CONFLICT DO NOTHING;
+
 
 -- Counselor: process counseling orders
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p
 WHERE r.name = 'counselor' AND p.name IN (
   'visits.view','orders.counseling'
-);
+) ON CONFLICT DO NOTHING;
+
 
 -- Compounder: process compounding orders
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p
 WHERE r.name = 'compounder' AND p.name IN (
   'visits.view','orders.compounding'
-);
+) ON CONFLICT DO NOTHING;
+
 
 -- Verifier: process verification orders
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p
 WHERE r.name = 'verifier' AND p.name IN (
   'visits.view','orders.verification'
-);
+) ON CONFLICT DO NOTHING;
+
 
 -- Nurse practitioner (school): nurse referrals and screenings
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p
 WHERE r.name = 'nurse_practitioner' AND p.name IN (
   'visits.view','orders.nurse_referral','orders.screening','visits.serve'
-);
+) ON CONFLICT DO NOTHING;
+
 
 -- Return inspector: process return inspections
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p
 WHERE r.name = 'return_inspector' AND p.name IN (
   'visits.view','orders.return_inspection','orders.repair'
-);
+) ON CONFLICT DO NOTHING;
+
 
 -- Repair technician: process repair orders
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p
 WHERE r.name = 'repair_technician' AND p.name IN (
   'visits.view','orders.repair'
-);
+) ON CONFLICT DO NOTHING;
+
 
 -- Cashier supervisor: manage cash drawer shifts across verticals
 INSERT INTO role_permissions (role_id, permission_id)
@@ -120,14 +128,16 @@ WHERE r.name = 'cashier_supervisor' AND p.name IN (
   'cash_drawer.view','cash_drawer.manage',
   'payments.view','payments.create','payments.refund',
   'supplier_payments.view','supplier_payments.create'
-);
+) ON CONFLICT DO NOTHING;
+
 
 -- Notification manager: templates and sending
 INSERT INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r, permissions p
 WHERE r.name = 'notification_manager' AND p.name IN (
   'notifications.view','notifications.manage','notifications.send'
-);
+) ON CONFLICT DO NOTHING;
+
 
 -- ── Extend existing roles with new permissions ──────────────
 

@@ -9,22 +9,7 @@ UPDATE cash_drawer_shifts SET vertical = 'retail' WHERE vertical IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_cash_drawer_shifts_vertical ON cash_drawer_shifts(tenant_id, vertical);
 
--- ── Drop and recreate payment_method check with vertical-scoped values ─────
--- Retail/Pharmacy: cash, card, mobile
--- Hospital: cash, card, insurance, mobile
--- School: cash, bank_transfer, mobile, card
-
--- First, drop the existing check constraint
-ALTER TABLE cash_drawer_shifts DROP CONSTRAINT IF EXISTS cash_drawer_shifts_payment_method_check;
-
--- Add new vertical-aware check constraint
-ALTER TABLE cash_drawer_shifts ADD CONSTRAINT cash_drawer_shifts_payment_method_check
-  CHECK (
-    (vertical IN ('retail','pharmacy') AND payment_method IN ('cash','card','mobile')) OR
-    (vertical = 'hospital' AND payment_method IN ('cash','card','insurance','mobile')) OR
-    (vertical = 'school' AND payment_method IN ('cash','bank_transfer','mobile','card')) OR
-    (vertical = 'shared' AND payment_method IN ('cash','card','mobile','bank_transfer','insurance'))
-  );
+-- Payment method check was incorrectly targeting cash_drawer_shifts, removing to fix deployment.
 
 -- Add vertical column to expenses if not exists (for per-vertical categorization)
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS vertical TEXT CHECK (vertical IN ('retail','pharmacy','hospital','school','shared'));
