@@ -21,7 +21,7 @@ export default function RetailDashboard(): JSX.Element {
     <div>
       <PageHeader title="Dashboard" subtitle="Today at a glance" />
       <div className="pl-stats">
-        <StatCard hero icon="fa-solid fa-chart-line" label="Revenue this month" value={`${fmtMoney(data?.month.revenue)} ETB`} />
+        <StatCard icon="fa-solid fa-chart-line" label="Revenue this month" value={`${fmtMoney(data?.month.revenue)} ETB`} />
         <StatCard icon="fa-solid fa-sack-dollar" label="Today's sales" value={`${fmtMoney(data?.today.sales)} ETB`} />
         <StatCard icon="fa-solid fa-receipt" label="Transactions today" value={data?.today.transactions ?? '—'} />
         <StatCard

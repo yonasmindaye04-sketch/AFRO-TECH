@@ -17,7 +17,7 @@ export default function HospitalDashboard(): JSX.Element {
     <div>
       <PageHeader title="Clinic Dashboard" subtitle="Today at your facility" />
       <div className="pl-stats">
-        <StatCard hero icon="fa-solid fa-hospital-user" label="Total patients" value={data?.stats.patients ?? '—'} />
+        <StatCard icon="fa-solid fa-hospital-user" label="Total patients" value={data?.stats.patients ?? '—'} />
         <StatCard icon="fa-solid fa-calendar-check" label="Appointments today" value={data?.stats.today_appointments ?? '—'} />
         <StatCard icon="fa-solid fa-clock" label="Upcoming" value={data?.stats.upcoming_appointments ?? '—'} />
         <StatCard icon="fa-solid fa-money-bill-trend-up" label="Collected this month" value={`${fmtMoney(data?.stats.month_revenue)} ETB`} tone="#34d399" />
