@@ -1,12 +1,62 @@
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
-import { pool, queryOne, TRIAL_DAYS } from '../config/db.js'
+import { pool, query, queryOne, TRIAL_DAYS } from '../config/db.js'
 import { asyncHandler, AppError, slugify, withTransaction } from '../utils/helpers.js'
+import type { PoolClient } from 'pg'
 import { authenticate, signToken, type AuthUser, type TenantRow } from '../middleware/auth.js'
 import { validateBody } from '../middleware/validate.js'
 
 const router = Router()
+
+/** Seed default departments for a new tenant based on business_type */
+async function seedDefaultDepartments(client: PoolClient, tenantId: string, businessType: string): Promise<void> {
+  const defaultDepts: Record<string, { name: string; type: string; sort_order: number }[]> = {
+    pharmacy: [
+      { name: 'Reception', type: 'reception', sort_order: 1 },
+      { name: 'Dispensing', type: 'dispensing', sort_order: 2 },
+      { name: 'Counseling', type: 'counseling', sort_order: 3 },
+      { name: 'Compounding', type: 'compounding', sort_order: 4 },
+      { name: 'Verification', type: 'verification', sort_order: 4 },
+      { name: 'Billing', type: 'billing', sort_order: 5 },
+    ],
+    store: [
+      { name: 'Reception', type: 'reception', sort_order: 1 },
+      { name: 'Sales Floor', type: 'sales', sort_order: 2 },
+      { name: 'Returns/Repair', type: 'returns', sort_order: 3 },
+      { name: 'Special Orders', type: 'special_orders', sort_order: 4 },
+      { name: 'Billing', type: 'billing', sort_order: 5 },
+    ],
+    hospital: [
+      { name: 'Reception', type: 'reception', sort_order: 1 },
+      { name: 'Consultation', type: 'consultation', sort_order: 2 },
+      { name: 'Laboratory', type: 'laboratory', sort_order: 3 },
+      { name: 'Injection Room', type: 'injection', sort_order: 4 },
+      { name: 'Procedure', type: 'procedure', sort_order: 5 },
+      { name: 'Billing', type: 'billing', sort_order: 6 },
+      { name: 'Records', type: 'records', sort_order: 7 },
+    ],
+    school: [
+      { name: 'Reception', type: 'reception', sort_order: 1 },
+      { name: 'Nurse/Clinic', type: 'nurse', sort_order: 2 },
+      { name: 'Administration', type: 'admin', sort_order: 3 },
+      { name: 'Billing', type: 'billing', sort_order: 4 },
+      { name: 'Records', type: 'records', sort_order: 5 },
+    ],
+  }
+
+  const depts = defaultDepts[businessType]
+  if (!depts) return
+
+  for (const dept of depts) {
+    await client.query(
+      `INSERT INTO departments (tenant_id, name, type, sort_order, is_active)
+       VALUES ($1,$2,$3,$4,true)
+       ON CONFLICT (tenant_id, name) DO NOTHING`,
+      [tenantId, dept.name, dept.type, dept.sort_order]
+    )
+  }
+}
 
 const registerSchema = z.object({
   company_name: z.string().trim().min(2).max(120),
@@ -70,6 +120,10 @@ router.post(
         `INSERT INTO users (tenant_id, email, password_hash, full_name, role) VALUES ($1,$2,$3,$4,'owner') RETURNING id, email, full_name, role, tenant_id`,
         [tenantRow.rows[0].id, email, hash, owner_name.trim()]
       )
+
+      // Seed default departments for the new tenant
+      await seedDefaultDepartments(client, tenantRow.rows[0].id, business_type)
+
       return { tenant: tenantRow.rows[0], user: userRow.rows[0] }
     })
 

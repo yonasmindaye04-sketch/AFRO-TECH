@@ -6,29 +6,18 @@ import { logAudit } from '../utils/audit.js'
 import { authenticate, requireActiveTenant, requirePermission } from '../middleware/auth.js'
 import { validateBody } from '../middleware/validate.js'
 import { notifyOrderCreated, notifyOrderCompleted } from '../services/hospitalNotify.js'
+import { sendNotification, notifyLongWait } from '../services/notificationEngine.js'
+import { assertCanProcessDepartment } from './hospitalFlow.js'
 
 const router = Router()
 router.use(authenticate, requireActiveTenant)
 const t = (req: { user?: { tenant_id: string | null } }) => req.user!.tenant_id as string
 
-/** Which permission is required to work an order in a department, by department type. */
-export function assertCanProcessDepartment(permissions: string[] | undefined, departmentType: string): void {
-   if (!permissions) throw new AppError(403, 'You do not have permission for this action', 'FORBIDDEN')
-   if (permissions.includes('*')) return
-   const required =
-     departmentType === 'laboratory' ? 'orders.lab' :
-     departmentType === 'injection' || departmentType === 'procedure' ? 'orders.injection' :
-     'orders.lab'
-   if (!permissions.includes(required)) {
-     throw new AppError(403, `Permission denied: ${required} required`, 'FORBIDDEN')
-   }
- }
-
 /* ═══════════════ DEPARTMENTS ═══════════════ */
 
 const departmentSchema = z.object({
   name: z.string().trim().min(2).max(80),
-  type: z.enum(['reception', 'consultation', 'laboratory', 'injection', 'procedure', 'billing', 'other']),
+  type: z.enum(['reception', 'consultation', 'laboratory', 'injection', 'procedure', 'billing', 'nurse', 'counseling', 'compounding', 'verification', 'nurse_referral', 'screening', 'sales', 'returns', 'special_orders', 'admin', 'records', 'other']),
 })
 
 router.get(
@@ -55,7 +44,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const d = req.body as z.infer<typeof departmentSchema>
     const row = await queryOne(
-      `INSERT INTO departments (tenant_id, name, type) VALUES ($1,$2,$3) RETURNING *`,
+      `INSERT INTO departments (tenant_id, name, type, sort_order) VALUES ($1,$2,$3,0) RETURNING *`,
       [t(req), d.name, d.type]
     )
     res.status(201).json({ department: row })
@@ -110,6 +99,8 @@ const checkinSchema = z.object({
   department_id: z.string().uuid().optional().nullable(),
   chief_complaint: z.string().trim().max(500).optional().nullable(),
   priority: z.enum(['normal', 'urgent']).optional(),
+  source_entity_type: z.enum(['patient', 'student', 'customer', 'staff']).optional(),
+  source_entity_id: z.string().uuid().optional().nullable(),
 })
 
 router.get(
@@ -118,6 +109,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const departmentId = req.query.department_id ? String(req.query.department_id) : null
     const status = req.query.status ? String(req.query.status) : null
+    const sourceEntityType = req.query.source_entity_type ? String(req.query.source_entity_type) : null
     const params: unknown[] = [t(req)]
     let where = `WHERE v.tenant_id = $1 AND v.status != 'completed' AND v.status != 'no_show'`
 
@@ -128,6 +120,10 @@ router.get(
     if (status) {
       params.push(status)
       where += ` AND v.status = $${params.length}`
+    }
+    if (sourceEntityType) {
+      params.push(sourceEntityType)
+      where += ` AND v.source_entity_type = $${params.length}`
     }
 
     const rows = await query(
@@ -158,13 +154,13 @@ router.post(
     const visit = await withTransaction(pool, async (client) => {
       const deptId =
         d.department_id ??
-        (await client.query(`SELECT id FROM departments WHERE tenant_id = $1 AND type = 'consultation' ORDER BY created_at LIMIT 1`, [t(req)])
+        (await client.query(`SELECT id FROM departments WHERE tenant_id = $1 AND type = 'consultation' ORDER BY d.created_at LIMIT 1`, [t(req)])
         ).rows[0]?.id
 
       const r = await client.query(
-        `INSERT INTO visits (tenant_id, patient_id, appointment_id, visit_type, current_department_id, status, priority, chief_complaint, opened_by)
-         VALUES ($1,$2,$3,$4,$5,'waiting',$6,$7,$8) RETURNING *`,
-        [t(req), d.patient_id, d.appointment_id ?? null, isWalkIn ? 'walk_in' : 'scheduled', deptId ?? null, d.priority ?? 'normal', d.chief_complaint ?? null, req.user!.id]
+        `INSERT INTO visits (tenant_id, patient_id, appointment_id, visit_type, current_department_id, status, priority, chief_complaint, opened_by, source_entity_type, source_entity_id)
+         VALUES ($1,$2,$3,$4,$5,'waiting',$6,$7,$8,$9,$10) RETURNING *`,
+        [t(req), d.patient_id, d.appointment_id ?? null, isWalkIn ? 'walk_in' : 'scheduled', deptId ?? null, d.priority ?? 'normal', d.chief_complaint ?? null, req.user!.id, d.source_entity_type ?? 'patient', d.source_entity_id ?? null]
       )
       const v = r.rows[0]
 
@@ -219,7 +215,6 @@ router.get(
   })
 )
 
-// Call a patient in (waiting → in_service) for the current department
 router.post(
   '/visits/:id/call',
   requirePermission('visits.serve'),
@@ -240,7 +235,6 @@ router.post(
   })
 )
 
-// Transfer the patient to another department
 router.post(
   '/visits/:id/transfer',
   requirePermission('visits.manage'),
@@ -262,7 +256,6 @@ router.post(
   })
 )
 
-// Finish the whole visit (closed out)
 router.post(
   '/visits/:id/complete',
   requirePermission('visits.manage'),
@@ -303,7 +296,7 @@ router.post(
 
 const orderSchema = z.object({
   visit_id: z.string().uuid(),
-  order_type: z.enum(['lab_test', 'injection', 'procedure', 'vitals', 'other']),
+  order_type: z.enum(['lab_test', 'injection', 'procedure', 'vitals', 'counseling', 'compounding', 'verification', 'nurse_referral', 'screening', 'return_inspection', 'repair', 'special_order', 'other']),
   target_department_id: z.string().uuid(),
   details: z.record(z.unknown()).default({}),
   fee: z.number().min(0).default(0),
