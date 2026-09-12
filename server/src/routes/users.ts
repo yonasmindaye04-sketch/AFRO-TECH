@@ -13,8 +13,8 @@ router.use(authenticate)
 const roleMapping: Record<string, string[]> = {
   pharmacy: ['pharmacist', 'cashier', 'manager', 'accountant'],
   store: ['cashier', 'manager', 'accountant'],
-  hospital: ['doctor', 'nurse', 'lab_technician', 'pharmacist', 'accountant'],
-  school: ['teacher', 'registrar', 'accountant'],
+  hospital: ['doctor', 'nurse', 'lab_technician', 'pharmacist', 'receptionist', 'accountant'],
+  school: ['teacher', 'registrar', 'receptionist', 'accountant'],
   // Default to empty array if business type not found
 }
 

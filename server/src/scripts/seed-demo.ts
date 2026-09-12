@@ -75,7 +75,7 @@ function formatDateTime(d: Date): string {
   return d.toISOString().slice(0, 19).replace('T', ' ')
 }
 
-async function createUser(tenantId: string, email: string, password: string, fullName: string, role: 'owner' | 'staff' = 'owner'): Promise<string> {
+async function createUser(tenantId: string, email: string, password: string, fullName: string, role: 'owner' | 'staff' = 'owner', jobRoleName?: string): Promise<string> {
   const existing = await queryOne(`SELECT id FROM users WHERE email = $1`, [email])
   if (existing) {
     console.log(`  User ${email} already exists`)
@@ -87,6 +87,15 @@ async function createUser(tenantId: string, email: string, password: string, ful
     [tenantId, email, hash, fullName, role]
   )
   console.log(`  Created user: ${fullName} (${email})`)
+
+  if (jobRoleName) {
+    const roleRow = await queryOne(`SELECT id FROM roles WHERE name = $1 AND is_system = true`, [jobRoleName])
+    if (roleRow) {
+      await queryOne(`INSERT INTO user_roles (user_id, role_id, tenant_id) VALUES ($1, $2, $3)`, [row!.id, roleRow.id, tenantId])
+      console.log(`    Assigned job role: ${jobRoleName}`)
+    }
+  }
+
   return row!.id
 }
 
@@ -761,9 +770,21 @@ async function main(): Promise<void> {
     const ownerEmail = `${tenant.slug.replace(/[^a-z0-9]/gi, '')}@demo.com`.toLowerCase()
     const ownerId = await createUser(tenant.id, ownerEmail, 'demo123', `${tenant.name} Owner`, 'owner')
     
-    // Add staff users
-    await createUser(tenant.id, `${tenant.slug.replace(/[^a-z0-9]/gi, '')}.staff@demo.com`.toLowerCase(), 'demo123', 'Staff Member', 'staff')
-    await createUser(tenant.id, `${tenant.slug.replace(/[^a-z0-9]/gi, '')}.cashier@demo.com`.toLowerCase(), 'demo123', 'Cashier', 'staff')
+    // Add staff users based on business type
+    if (tenant.business_type === 'pharmacy') {
+      await createUser(tenant.id, `${tenant.slug.replace(/[^a-z0-9]/gi, '')}.pharmacist@demo.com`.toLowerCase(), 'demo123', 'Demo Pharmacist', 'staff', 'pharmacist')
+      await createUser(tenant.id, `${tenant.slug.replace(/[^a-z0-9]/gi, '')}.cashier@demo.com`.toLowerCase(), 'demo123', 'Demo Cashier', 'staff', 'cashier')
+    } else if (tenant.business_type === 'store') {
+      await createUser(tenant.id, `${tenant.slug.replace(/[^a-z0-9]/gi, '')}.cashier@demo.com`.toLowerCase(), 'demo123', 'Demo Cashier', 'staff', 'cashier')
+      await createUser(tenant.id, `${tenant.slug.replace(/[^a-z0-9]/gi, '')}.manager@demo.com`.toLowerCase(), 'demo123', 'Demo Manager', 'staff', 'manager')
+    } else if (tenant.business_type === 'hospital') {
+      await createUser(tenant.id, `${tenant.slug.replace(/[^a-z0-9]/gi, '')}.doctor@demo.com`.toLowerCase(), 'demo123', 'Demo Doctor', 'staff', 'doctor')
+      await createUser(tenant.id, `${tenant.slug.replace(/[^a-z0-9]/gi, '')}.lab@demo.com`.toLowerCase(), 'demo123', 'Demo Lab Tech', 'staff', 'lab_technician')
+      await createUser(tenant.id, `${tenant.slug.replace(/[^a-z0-9]/gi, '')}.reception@demo.com`.toLowerCase(), 'demo123', 'Demo Receptionist', 'staff', 'receptionist')
+    } else if (tenant.business_type === 'school') {
+      await createUser(tenant.id, `${tenant.slug.replace(/[^a-z0-9]/gi, '')}.teacher@demo.com`.toLowerCase(), 'demo123', 'Demo Teacher', 'staff', 'teacher')
+      await createUser(tenant.id, `${tenant.slug.replace(/[^a-z0-9]/gi, '')}.registrar@demo.com`.toLowerCase(), 'demo123', 'Demo Registrar', 'staff', 'registrar')
+    }
 
     // Seed based on business type
     switch (tenant.business_type) {
