@@ -49,17 +49,6 @@ router.get(
   })
 )
 
-/** GET /api/v1/users/roles - list available job roles */
-router.get(
-  '/roles',
-  requireActiveTenant,
-  requireRole('owner'),
-  asyncHandler(async (req, res) => {
-    const roles = await query(`SELECT id, name, description FROM roles WHERE is_system = true ORDER BY name ASC`)
-    res.json({ roles })
-  })
-)
-
 /** GET /api/v1/users - list workspace staff (owner only) */
 router.get(
   '/',
