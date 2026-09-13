@@ -173,12 +173,21 @@ function GraphLegend({ subjects }: { subjects: string[] }) {
   )
 }
 
+interface ReportCardConfig {
+  principalName: string
+  defaultTeacherName: string
+  schoolName: string
+  address: string
+  phone: string
+  email: string
+}
+
 // ── Complete Formal Report Card Renderer (Exact Image 5 Design) ──
 function renderCard(
   s: CardRow,
   info: ClassInfo | undefined,
   currentTerm: string,
-  schoolName: string
+  config: ReportCardConfig
 ): JSX.Element {
   const subjectNames = s.subjects.map((x) => x.subject)
   const hasGraph = s.term_history && s.term_history.length > 0
@@ -192,8 +201,7 @@ function renderCard(
 
   // Signatures
   const guardianName = s.guardian_name || 'Patricia H. Mize'
-  const teacherName = info?.homeroom_teacher || 'David M. Binkley'
-  const principalName = 'Stephen Winters'
+  const teacherName = info?.homeroom_teacher || config.defaultTeacherName
 
   return (
     <div className="pl-reportcard-v2">
@@ -205,7 +213,7 @@ function renderCard(
         <div className="rc-header-navy">
           <i className="fa-solid fa-graduation-cap rc-header-school-icon" aria-hidden="true" />
           <div>
-            <div className="rc-header-school-name">{schoolName || 'Alexander High School'}</div>
+            <div className="rc-header-school-name">{config.schoolName}</div>
             <div className="rc-header-school-sub">High School</div>
           </div>
         </div>
@@ -344,9 +352,9 @@ function renderCard(
           </div>
           <div>
             <div className="rc-sig-title">Principal Signature:</div>
-            <div className="rc-sig-handwriting">{principalName}</div>
+            <div className="rc-sig-handwriting">{config.principalName}</div>
             <div className="rc-sig-line" />
-            <div className="rc-sig-name">{principalName}</div>
+            <div className="rc-sig-name">{config.principalName}</div>
           </div>
         </div>
 
@@ -354,15 +362,15 @@ function renderCard(
         <div className="rc-footer-bar">
           <div className="rc-footer-item">
             <i className="fa-solid fa-location-dot" aria-hidden="true" />
-            <span>108 N Platinum Ave Deming, NY 88030</span>
+            <span>{config.address}</span>
           </div>
           <div className="rc-footer-item">
             <i className="fa-solid fa-phone" aria-hidden="true" />
-            <span>+1 312-692-0767</span>
+            <span>{config.phone}</span>
           </div>
           <div className="rc-footer-item">
             <i className="fa-solid fa-envelope" aria-hidden="true" />
-            <span>info@alexanderhighschool.com</span>
+            <span>{config.email}</span>
           </div>
         </div>
       </div>
@@ -373,7 +381,31 @@ function renderCard(
 // ── Main Page Component ──────────────────────────────────────────
 export default function ReportCards(): JSX.Element {
   const { me } = useAuth()
-  const schoolName = me?.tenant?.name || 'Alexander High School'
+  const defaultSchoolName = me?.tenant?.name || 'Alexander High School'
+
+  // Load saved config from local storage or use defaults
+  const [reportConfig, setReportConfig] = useState<ReportCardConfig>(() => {
+    const saved = localStorage.getItem('afro_report_config')
+    if (saved) {
+      try { return JSON.parse(saved) } catch (e) {}
+    }
+    return {
+      principalName: 'Stephen Winters',
+      defaultTeacherName: 'David M. Binkley',
+      schoolName: defaultSchoolName,
+      address: '108 N Platinum Ave Deming, NY 88030',
+      phone: '+1 312-692-0767',
+      email: 'info@alexanderhighschool.com'
+    }
+  })
+  
+  const [showConfig, setShowConfig] = useState(false)
+
+  const saveConfig = (c: ReportCardConfig) => {
+    setReportConfig(c)
+    localStorage.setItem('afro_report_config', JSON.stringify(c))
+    setShowConfig(false)
+  }
 
   const classesQ = useApiData<{ classes: { id: string; name: string }[] }>('/school/classes')
   const [classId, setClassId] = useState('')
@@ -409,6 +441,14 @@ export default function ReportCards(): JSX.Element {
         action={
           students.length > 0 && (
             <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                className="pl-btn pl-btn-secondary"
+                onClick={() => setShowConfig(true)}
+                title="Edit School & Official Details"
+              >
+                <i className="fa-solid fa-pen-to-square" aria-hidden="true" /> Customize Template
+              </button>
               <button
                 type="button"
                 className="pl-btn pl-btn-primary"
@@ -476,6 +516,62 @@ export default function ReportCards(): JSX.Element {
         )}
       </div>
 
+      {showConfig && (
+        <div className="pl-modal-overlay">
+          <div className="pl-modal" style={{ maxWidth: 500 }}>
+            <h3>Customize Report Card</h3>
+            <p className="pl-text-dim">Update the official information that appears on all printed report cards.</p>
+            <form onSubmit={(e) => {
+              e.preventDefault()
+              const fd = new FormData(e.currentTarget)
+              saveConfig({
+                schoolName: fd.get('schoolName') as string,
+                principalName: fd.get('principalName') as string,
+                defaultTeacherName: fd.get('defaultTeacherName') as string,
+                address: fd.get('address') as string,
+                phone: fd.get('phone') as string,
+                email: fd.get('email') as string,
+              })
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20 }}>
+                <div className="pl-form-group">
+                  <label>School Name</label>
+                  <input name="schoolName" className="pl-input" defaultValue={reportConfig.schoolName} required />
+                </div>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <div className="pl-form-group" style={{ flex: 1 }}>
+                    <label>Principal Name</label>
+                    <input name="principalName" className="pl-input" defaultValue={reportConfig.principalName} required />
+                  </div>
+                  <div className="pl-form-group" style={{ flex: 1 }}>
+                    <label>Default Teacher (if missing)</label>
+                    <input name="defaultTeacherName" className="pl-input" defaultValue={reportConfig.defaultTeacherName} required />
+                  </div>
+                </div>
+                <div className="pl-form-group">
+                  <label>Address</label>
+                  <input name="address" className="pl-input" defaultValue={reportConfig.address} required />
+                </div>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <div className="pl-form-group" style={{ flex: 1 }}>
+                    <label>Phone</label>
+                    <input name="phone" className="pl-input" defaultValue={reportConfig.phone} required />
+                  </div>
+                  <div className="pl-form-group" style={{ flex: 1 }}>
+                    <label>Email</label>
+                    <input name="email" type="email" className="pl-input" defaultValue={reportConfig.email} required />
+                  </div>
+                </div>
+              </div>
+              <div className="pl-modal-actions" style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <button type="button" className="pl-btn pl-btn-ghost" onClick={() => setShowConfig(false)}>Cancel</button>
+                <button type="submit" className="pl-btn pl-btn-primary">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {!effectiveClassId ? (
         <EmptyState icon="fa-solid fa-award" title="Choose a class" hint="Select a class and term to generate report cards." />
       ) : cardsQ.loading ? (
@@ -531,7 +627,7 @@ export default function ReportCards(): JSX.Element {
 
               {/* Rendered Live Card Preview */}
               <div style={{ background: 'var(--bg-alt)', padding: '24px 12px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-                {renderCard(activeStudent, info, term, schoolName)}
+                {renderCard(activeStudent, info, term, reportConfig)}
               </div>
             </div>
           )}
@@ -599,7 +695,7 @@ export default function ReportCards(): JSX.Element {
           <div className="pl-print-area pl-print-only">
             {(printOne ? [printOne] : students).map((s) => (
               <div key={s.student_id} className="pl-print-page">
-                {renderCard(s, info, term, schoolName)}
+                {renderCard(s, info, term, reportConfig)}
               </div>
             ))}
           </div>
