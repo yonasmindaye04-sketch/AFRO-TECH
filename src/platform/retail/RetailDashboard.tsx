@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { fmtDate, fmtMoney } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { EmptyState, PageHeader, StatCard } from '../ui'
@@ -14,6 +15,7 @@ interface RetailDashboard {
 }
 
 function AreaChart({ trend }: { trend: { day: string; revenue: number }[] }) {
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const W = 560
   const H = 140
   const PAD = { top: 16, right: 8, bottom: 28, left: 48 }
@@ -50,11 +52,40 @@ function AreaChart({ trend }: { trend: { day: string; revenue: number }[] }) {
       ))}
       {pts.length > 1 && <path d={areaPath} fill="url(#areaGrad)" />}
       {pts.length > 1 && <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
-      {pts.map((p) => (
-        <circle key={p.day} cx={p.x} cy={p.y} r="3.5" fill="var(--accent)" />
+      
+      {/* Invisible layer for mouse interaction */}
+      {pts.map((p, i) => (
+        <g 
+          key={p.day}
+          onMouseEnter={() => setHoverIndex(i)}
+          onMouseLeave={() => setHoverIndex(null)}
+          style={{ cursor: 'crosshair', pointerEvents: 'all' }}
+        >
+          <circle cx={p.x} cy={p.y} r="16" fill="transparent" />
+          <circle 
+            cx={p.x} cy={p.y} 
+            r={hoverIndex === i ? 6 : 3.5} 
+            fill={hoverIndex === i ? '#fff' : 'var(--accent)'} 
+            stroke="var(--accent)" 
+            strokeWidth={hoverIndex === i ? 2 : 0} 
+            style={{ transition: 'all 0.15s ease' }} 
+          />
+        </g>
       ))}
+      
+      {/* Hover Tooltip */}
+      {hoverIndex !== null && (
+        <g transform={`translate(${pts[hoverIndex].x}, ${pts[hoverIndex].y - 12})`} style={{ pointerEvents: 'none' }}>
+          <rect x="-45" y="-32" width="90" height="26" rx="4" fill="#1e293b" opacity="0.95" />
+          <polygon points="-5,-6 5,-6 0,0" fill="#1e293b" opacity="0.95" />
+          <text x="0" y="-14" textAnchor="middle" fill="#fff" fontSize="11" fontWeight="600">
+            {fmtMoney(pts[hoverIndex].revenue)} ETB
+          </text>
+        </g>
+      )}
+
       {pts.filter((_, i) => i % step === 0 || i === pts.length - 1).map((p) => (
-        <text key={p.day} x={p.x} y={H - 4} textAnchor="middle" fill="var(--text-dim)" fontSize="10">{p.day}</text>
+        <text key={p.day} x={p.x} y={H - 4} textAnchor="middle" fill="var(--text-dim)" fontSize="10" style={{ pointerEvents: 'none' }}>{p.day}</text>
       ))}
     </svg>
   )
