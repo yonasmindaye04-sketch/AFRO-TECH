@@ -758,8 +758,13 @@ async function seedSchool(tenantId: string, ownerId: string): Promise<void> {
 async function main(): Promise<void> {
   console.log('🌱 Starting comprehensive demo data seeding for ALL tenants...\n')
 
-  // Get all existing tenants
-  const tenants = await query(`SELECT id, name, slug, business_type FROM tenants ORDER BY business_type, name`)
+  // Get one tenant per business type to avoid connection drops
+  const tenants = await query(`
+    SELECT DISTINCT ON (business_type) id, name, slug, business_type 
+    FROM tenants 
+    ORDER BY business_type, name
+  `)
+
   console.log(`Found ${tenants.length} tenants to seed:`)
   for (const t of tenants) {
     console.log(`  - ${t.name} (${t.business_type})`)
