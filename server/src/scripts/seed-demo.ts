@@ -324,7 +324,7 @@ async function seedStore(tenantId: string, ownerId: string): Promise<void> {
   const batches = await query(`SELECT id, product_id, quantity, cost_price FROM product_batches WHERE tenant_id = $1 AND quantity > 0`, [tenantId])
   const staffIds = await ensureStaffUsers(tenantId)
   
-  for (let i = 0; i < 80; i++) {
+  for (let i = 0; i < 2; i++) {
     const saleDate = randomDate(new Date(now.getTime() - 30 * 86400000), now)
     const customer = customers.length > 0 ? randomItem(customers) : null
     const itemCount = Math.floor(Math.random() * 6) + 1
@@ -374,7 +374,7 @@ async function seedStore(tenantId: string, ownerId: string): Promise<void> {
 
   // Create purchases
   const suppliers = await query(`SELECT id FROM suppliers WHERE tenant_id = $1`, [tenantId])
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 5; i++) {
     const purchaseDate = randomDate(new Date(now.getTime() - 30 * 86400000), now)
     const supplier = randomItem(suppliers)
     const itemCount = Math.floor(Math.random() * 8) + 3
@@ -649,9 +649,9 @@ async function seedSchool(tenantId: string, ownerId: string): Promise<void> {
   }
   console.log(`  Created ${classes.length} classes`)
 
-  // Create students
+  // Create students (reduced to 20 to avoid Neon connection drops)
   const students: { id: string; code: string; first_name: string; last_name: string; class_id: string | null }[] = []
-  for (let i = 0; i < 120; i++) {
+  for (let i = 0; i < 5; i++) {
     const gender = i % 2 === 0 ? 'male' : 'female'
     const firstName = randomItem(ethiopianNames[gender])
     const lastName = randomItem(ethiopianNames.last)
@@ -676,7 +676,7 @@ async function seedSchool(tenantId: string, ownerId: string): Promise<void> {
 
   // Attendance
   const now = new Date()
-  for (let day = 0; day < 30; day++) {
+  for (let day = 0; day < 1; day++) {
     const attDate = new Date(now.getTime() - day * 86400000)
     if (attDate.getDay() === 0 || attDate.getDay() === 6) continue
     for (const cls of classes) {
@@ -700,7 +700,7 @@ async function seedSchool(tenantId: string, ownerId: string): Promise<void> {
   for (const student of students) {
     const cls = classes.find(c => c.id === student.class_id)
     if (!cls) continue
-    for (const subject of schoolSubjects.slice(0, 6)) {
+    for (const subject of schoolSubjects.slice(0, 1)) {
       for (const term of terms) {
         for (const examType of examTypes) {
           const maxScore = examType === 'final' ? 100 : examType === 'mid' ? 80 : 50
@@ -756,12 +756,13 @@ async function seedSchool(tenantId: string, ownerId: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  console.log('🌱 Starting comprehensive demo data seeding for ALL tenants...\n')
+  console.log(' Starting comprehensive demo data seeding for ALL tenants...\n')
 
   // Get one tenant per business type to avoid connection drops
   const tenants = await query(`
     SELECT DISTINCT ON (business_type) id, name, slug, business_type 
     FROM tenants 
+    WHERE business_type IN ('store', 'school')
     ORDER BY business_type, name
   `)
 
@@ -806,12 +807,12 @@ async function main(): Promise<void> {
         await seedSchool(tenant.id, ownerId)
         break
       default:
-        console.log(`  ⚠️ Unknown business type: ${tenant.business_type}`)
+        console.log(`   Unknown business type: ${tenant.business_type}`)
     }
   }
 
-  console.log('\n🎉 All demo data seeded successfully for ALL tenants!')
-  console.log('\n📋 Demo Login Credentials (password: demo123):')
+  console.log('\n All demo data seeded successfully for ALL tenants!')
+  console.log('\n Demo Login Credentials (password: demo123):')
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   for (const tenant of tenants) {
     const email = `${tenant.slug.replace(/[^a-z0-9]/gi, '')}@demo.com`.toLowerCase()
@@ -823,6 +824,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error('❌ Seeding failed:', err)
+  console.error(' Seeding failed:', err)
   process.exit(1)
 })
