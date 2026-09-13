@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { PageHeader, Card, StatCard, Spinner, ErrorBox } from '../ui'
+import MarketingNav from './MarketingNav'
 
 interface ChannelStats {
   sms: { sent: string; delivered: string; failed: string }
@@ -38,6 +39,7 @@ export default function Analytics(): JSX.Element {
   return (
     <div className="pl-page">
       <PageHeader title="Analytics" subtitle="Delivery and engagement per channel." />
+      <MarketingNav />
 
       <Card>
         <h2 style={{ marginTop: 0 }}>

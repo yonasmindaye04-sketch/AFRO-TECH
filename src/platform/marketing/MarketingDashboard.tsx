@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { PageHeader, Card, StatCard, Badge, Spinner, ErrorBox } from '../ui'
+import MarketingNav from './MarketingNav'
 import { campaignTone, type MarketingOverview } from './types'
 
 export default function MarketingDashboard(): JSX.Element {
@@ -34,6 +35,7 @@ export default function MarketingDashboard(): JSX.Element {
   return (
     <div className="pl-page">
       <PageHeader title="Marketing" subtitle="Campaigns, contacts, audiences, and delivery analytics." />
+      <MarketingNav />
 
       <div className="pl-stats">
         <StatCard icon="fa-solid fa-users" label="Contacts" value={d.contacts.total} />

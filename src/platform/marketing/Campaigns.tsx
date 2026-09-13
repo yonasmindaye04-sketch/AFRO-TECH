@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { PageHeader, Card, Badge, ErrorBox, OkBox, Field, Modal, FormRow, DataTable } from '../ui'
+import MarketingNav from './MarketingNav'
 import { campaignTone, type MarketingCampaign, type MarketingAudience, type MarketingTemplate } from './types'
 
 interface ChannelRow {
@@ -145,6 +146,7 @@ export default function Campaigns(): JSX.Element {
           </button>
         }
       />
+      <MarketingNav />
       {error && !editor && <ErrorBox message={error} />}
       {ok && <OkBox message={ok} />}
       <Card>{loading ? <p>Loading…</p> : <DataTable columns={cols} rows={campaigns} empty="No campaigns yet." />}</Card>

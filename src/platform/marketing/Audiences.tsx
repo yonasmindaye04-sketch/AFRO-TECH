@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { PageHeader, Card, Badge, ErrorBox, OkBox, Field, Modal, FormRow, DataTable, EmptyState } from '../ui'
+import MarketingNav from './MarketingNav'
 import type { MarketingAudience, MarketingContact } from './types'
 
 interface Rule {
@@ -162,6 +163,7 @@ export default function Audiences(): JSX.Element {
           </button>
         }
       />
+      <MarketingNav />
       {error && !editor && <ErrorBox message={error} />}
       {ok && <OkBox message={ok} />}
       <Card>

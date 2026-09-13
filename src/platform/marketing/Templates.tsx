@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { PageHeader, Card, Badge, ErrorBox, OkBox, Field, Modal, FormRow, DataTable } from '../ui'
+import MarketingNav from './MarketingNav'
 import type { MarketingTemplate } from './types'
 
 export default function Templates(): JSX.Element {
@@ -84,6 +85,7 @@ export default function Templates(): JSX.Element {
           </button>
         }
       />
+      <MarketingNav />
       {error && <ErrorBox message={error} />}
       {ok && <OkBox message={ok} />}
       <Card>{loading ? <p>Loading…</p> : <DataTable columns={cols} rows={templates} empty="No templates yet." />}</Card>
