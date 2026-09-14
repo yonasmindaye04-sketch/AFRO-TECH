@@ -180,14 +180,24 @@ interface ReportCardConfig {
   address: string
   phone: string
   email: string
+  title?: string
+  subtitle?: string
+  gradingScaleText?: string
+  attPresentLabel?: string
+  attAbsentLabel?: string
+  attTardyLabel?: string
+  sigParentLabel?: string
+  sigTeacherLabel?: string
+  sigPrincipalLabel?: string
 }
 
-// ── Complete Formal Report Card Renderer (Exact Image 5 Design) ──
 function renderCard(
   s: CardRow,
   info: ClassInfo | undefined,
   currentTerm: string,
-  config: ReportCardConfig
+  config: ReportCardConfig,
+  customComment?: string,
+  onCommentChange?: (val: string) => void
 ): JSX.Element {
   const subjectNames = s.subjects.map((x) => x.subject)
   const hasGraph = s.term_history && s.term_history.length > 0
@@ -208,13 +218,13 @@ function renderCard(
       {/* 1. Dual-tone Header: Burgundy (left) + Navy (right) */}
       <div className="rc-header">
         <div className="rc-header-burgundy">
-          <h1 className="rc-header-title">High School Report Card</h1>
+          <h1 className="rc-header-title">{config.title || 'High School Report Card'}</h1>
         </div>
         <div className="rc-header-navy">
           <i className="fa-solid fa-graduation-cap rc-header-school-icon" aria-hidden="true" />
           <div>
             <div className="rc-header-school-name">{config.schoolName}</div>
-            <div className="rc-header-school-sub">High School</div>
+            <div className="rc-header-school-sub">{config.subtitle || 'High School'}</div>
           </div>
         </div>
       </div>
@@ -302,19 +312,17 @@ function renderCard(
           <div>
             <div className="rc-section-title" style={{ margin: '0 0 8px' }}>Grading Scale:</div>
             <ul className="rc-bullets">
-              <li>A: 90-100%</li>
-              <li>B: 80-89%</li>
-              <li>C: 70-79%</li>
-              <li>D: 60-69%</li>
-              <li>F: Below 60%</li>
+              {(config.gradingScaleText || 'A: 90-100%\nB: 80-89%\nC: 70-79%\nD: 60-69%\nF: Below 60%').split('\n').map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
             </ul>
           </div>
           <div>
             <div className="rc-section-title" style={{ margin: '0 0 8px' }}>Attendance:</div>
             <ul className="rc-bullets">
-              <li>Days Present: {daysPresent}</li>
-              <li>Days Absent: {daysAbsent}</li>
-              <li>Tardies: {tardies}</li>
+              <li>{config.attPresentLabel || 'Days Present'}: {daysPresent}</li>
+              <li>{config.attAbsentLabel || 'Days Absent'}: {daysAbsent}</li>
+              <li>{config.attTardyLabel || 'Tardies'}: {tardies}</li>
             </ul>
           </div>
         </div>
@@ -332,26 +340,31 @@ function renderCard(
 
         {/* 6. Comments Box */}
         <div className="rc-section-title" style={{ margin: '14px 0 6px' }}>Comments:</div>
-        <div className="rc-comments-box">
-          {getStudentComment(s.name, s.average)}
+        <div
+          className="rc-comments-box"
+          contentEditable={!!onCommentChange}
+          suppressContentEditableWarning
+          onBlur={(e) => onCommentChange?.(e.currentTarget.textContent || '')}
+        >
+          {customComment !== undefined ? customComment : getStudentComment(s.name, s.average)}
         </div>
 
         {/* 7. Signatures */}
         <div className="rc-signatures">
           <div>
-            <div className="rc-sig-title">Parent's Signature:</div>
+            <div className="rc-sig-title">{config.sigParentLabel || "Parent's Signature"}:</div>
             <div className="rc-sig-handwriting">{guardianName}</div>
             <div className="rc-sig-line" />
             <div className="rc-sig-name">{guardianName}</div>
           </div>
           <div>
-            <div className="rc-sig-title">Teacher Signature:</div>
+            <div className="rc-sig-title">{config.sigTeacherLabel || "Teacher Signature"}:</div>
             <div className="rc-sig-handwriting">{teacherName}</div>
             <div className="rc-sig-line" />
             <div className="rc-sig-name">{teacherName}</div>
           </div>
           <div>
-            <div className="rc-sig-title">Principal Signature:</div>
+            <div className="rc-sig-title">{config.sigPrincipalLabel || "Principal Signature"}:</div>
             <div className="rc-sig-handwriting">{config.principalName}</div>
             <div className="rc-sig-line" />
             <div className="rc-sig-name">{config.principalName}</div>
@@ -395,11 +408,21 @@ export default function ReportCards(): JSX.Element {
       schoolName: defaultSchoolName,
       address: '108 N Platinum Ave Deming, NY 88030',
       phone: '+1 312-692-0767',
-      email: 'info@alexanderhighschool.com'
+      email: 'info@alexanderhighschool.com',
+      title: 'High School Report Card',
+      subtitle: 'High School',
+      gradingScaleText: 'A: 90-100%\nB: 80-89%\nC: 70-79%\nD: 60-69%\nF: Below 60%',
+      attPresentLabel: 'Days Present',
+      attAbsentLabel: 'Days Absent',
+      attTardyLabel: 'Tardies',
+      sigParentLabel: 'Parent\'s Signature',
+      sigTeacherLabel: 'Teacher Signature',
+      sigPrincipalLabel: 'Principal Signature',
     }
   })
   
   const [showConfig, setShowConfig] = useState(false)
+  const [studentComments, setStudentComments] = useState<Record<string, string>>({})
 
   const saveConfig = (c: ReportCardConfig) => {
     setReportConfig(c)
@@ -518,9 +541,9 @@ export default function ReportCards(): JSX.Element {
 
       {showConfig && (
         <div className="pl-modal-overlay">
-          <div className="pl-modal" style={{ maxWidth: 500 }}>
-            <h3>Customize Report Card</h3>
-            <p className="pl-text-dim">Update the official information that appears on all printed report cards.</p>
+          <div className="pl-modal" style={{ maxWidth: 650, maxHeight: '90vh', overflowY: 'auto' }}>
+            <h3>Customize Report Card Template</h3>
+            <p className="pl-text-dim">Update the structure and official information that appears on all printed report cards.</p>
             <form onSubmit={(e) => {
               e.preventDefault()
               const fd = new FormData(e.currentTarget)
@@ -531,13 +554,66 @@ export default function ReportCards(): JSX.Element {
                 address: fd.get('address') as string,
                 phone: fd.get('phone') as string,
                 email: fd.get('email') as string,
+                title: fd.get('title') as string,
+                subtitle: fd.get('subtitle') as string,
+                gradingScaleText: fd.get('gradingScaleText') as string,
+                attPresentLabel: fd.get('attPresentLabel') as string,
+                attAbsentLabel: fd.get('attAbsentLabel') as string,
+                attTardyLabel: fd.get('attTardyLabel') as string,
+                sigParentLabel: fd.get('sigParentLabel') as string,
+                sigTeacherLabel: fd.get('sigTeacherLabel') as string,
+                sigPrincipalLabel: fd.get('sigPrincipalLabel') as string,
               })
             }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20 }}>
-                <div className="pl-form-group">
-                  <label>School Name</label>
-                  <input name="schoolName" className="pl-input" defaultValue={reportConfig.schoolName} required />
+                <h4 style={{ margin: '10px 0 0', borderBottom: '1px solid var(--border)', paddingBottom: 4 }}>Header Labels</h4>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <div className="pl-form-group" style={{ flex: 1 }}>
+                    <label>Report Card Title</label>
+                    <input name="title" className="pl-input" defaultValue={reportConfig.title || 'High School Report Card'} required />
+                  </div>
+                  <div className="pl-form-group" style={{ flex: 1 }}>
+                    <label>School Name</label>
+                    <input name="schoolName" className="pl-input" defaultValue={reportConfig.schoolName} required />
+                  </div>
+                  <div className="pl-form-group" style={{ flex: 1 }}>
+                    <label>School Subtitle</label>
+                    <input name="subtitle" className="pl-input" defaultValue={reportConfig.subtitle || 'High School'} required />
+                  </div>
                 </div>
+
+                <h4 style={{ margin: '10px 0 0', borderBottom: '1px solid var(--border)', paddingBottom: 4 }}>Scales & Attendance</h4>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <div className="pl-form-group" style={{ flex: 1 }}>
+                    <label>Grading Scale (One per line)</label>
+                    <textarea name="gradingScaleText" className="pl-input" style={{ minHeight: 90 }} defaultValue={reportConfig.gradingScaleText || 'A: 90-100%\nB: 80-89%\nC: 70-79%\nD: 60-69%\nF: Below 60%'} required />
+                  </div>
+                  <div className="pl-form-group" style={{ flex: 1 }}>
+                    <label>Attendance Labels</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <input name="attPresentLabel" className="pl-input" placeholder="Present" defaultValue={reportConfig.attPresentLabel || 'Days Present'} required />
+                      <input name="attAbsentLabel" className="pl-input" placeholder="Absent" defaultValue={reportConfig.attAbsentLabel || 'Days Absent'} required />
+                      <input name="attTardyLabel" className="pl-input" placeholder="Tardy" defaultValue={reportConfig.attTardyLabel || 'Tardies'} required />
+                    </div>
+                  </div>
+                </div>
+
+                <h4 style={{ margin: '10px 0 0', borderBottom: '1px solid var(--border)', paddingBottom: 4 }}>Signatures</h4>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <div className="pl-form-group" style={{ flex: 1 }}>
+                    <label>Parent Signature Label</label>
+                    <input name="sigParentLabel" className="pl-input" defaultValue={reportConfig.sigParentLabel || "Parent's Signature"} required />
+                  </div>
+                  <div className="pl-form-group" style={{ flex: 1 }}>
+                    <label>Teacher Signature Label</label>
+                    <input name="sigTeacherLabel" className="pl-input" defaultValue={reportConfig.sigTeacherLabel || "Teacher Signature"} required />
+                  </div>
+                  <div className="pl-form-group" style={{ flex: 1 }}>
+                    <label>Principal Signature Label</label>
+                    <input name="sigPrincipalLabel" className="pl-input" defaultValue={reportConfig.sigPrincipalLabel || "Principal Signature"} required />
+                  </div>
+                </div>
+
                 <div style={{ display: 'flex', gap: 12 }}>
                   <div className="pl-form-group" style={{ flex: 1 }}>
                     <label>Principal Name</label>
@@ -548,6 +624,8 @@ export default function ReportCards(): JSX.Element {
                     <input name="defaultTeacherName" className="pl-input" defaultValue={reportConfig.defaultTeacherName} required />
                   </div>
                 </div>
+
+                <h4 style={{ margin: '10px 0 0', borderBottom: '1px solid var(--border)', paddingBottom: 4 }}>Footer Content</h4>
                 <div className="pl-form-group">
                   <label>Address</label>
                   <input name="address" className="pl-input" defaultValue={reportConfig.address} required />
@@ -627,7 +705,14 @@ export default function ReportCards(): JSX.Element {
 
               {/* Rendered Live Card Preview */}
               <div style={{ background: 'var(--bg-alt)', padding: '24px 12px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-                {renderCard(activeStudent, info, term, reportConfig)}
+                {renderCard(
+                  activeStudent,
+                  info,
+                  term,
+                  reportConfig,
+                  studentComments[activeStudent.student_id],
+                  (val) => setStudentComments(prev => ({ ...prev, [activeStudent.student_id]: val }))
+                )}
               </div>
             </div>
           )}
@@ -695,7 +780,7 @@ export default function ReportCards(): JSX.Element {
           <div className="pl-print-area pl-print-only">
             {(printOne ? [printOne] : students).map((s) => (
               <div key={s.student_id} className="pl-print-page">
-                {renderCard(s, info, term, reportConfig)}
+                {renderCard(s, info, term, reportConfig, studentComments[s.student_id])}
               </div>
             ))}
           </div>

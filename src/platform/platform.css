@@ -1214,7 +1214,7 @@ label:has(input[type="radio"]) {
   line-height: 1.8;
 }
 .rc-bullets li::before {
-  content: "â€¢ ";
+  content: "• ";
   color: #1e293b;
   font-weight: bold;
   margin-right: 4px;
