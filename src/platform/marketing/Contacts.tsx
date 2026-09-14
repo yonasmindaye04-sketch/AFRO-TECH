@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import { PageHeader, Card, Badge, ErrorBox, OkBox, Field, Modal, FormRow, DataTable } from '../ui'
 import MarketingNav from './MarketingNav'
@@ -23,7 +23,7 @@ export default function Contacts(): JSX.Element {
   })
   const [busy, setBusy] = useState(false)
 
-  const reload = async (): Promise<void> => {
+  const reload = useCallback(async (): Promise<void> => {
     try {
       const q = search ? `?search=${encodeURIComponent(search)}` : ''
       const r = await api.get<{ contacts: MarketingContact[] }>(`/marketing/contacts${q}`)
@@ -33,11 +33,11 @@ export default function Contacts(): JSX.Element {
     } finally {
       setLoading(false)
     }
-  }
+  }, [search])
 
   useEffect(() => {
     void reload()
-  }, [])
+  }, [reload])
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault()

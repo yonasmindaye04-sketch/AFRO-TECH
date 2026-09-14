@@ -14,7 +14,8 @@
     "start": "node dist/index.js",
     "migrate": "tsx src/scripts/migrate.ts",
     "seed": "tsx src/scripts/seed.ts",
-    "seed:demo": "tsx src/scripts/seed-demo.ts"
+    "seed:demo": "tsx src/scripts/seed-demo.ts",
+    "seed:marketing": "tsx src/scripts/seed-marketing.ts"
   },
   "dependencies": {
     "@types/ioredis": "^5.0.0",
