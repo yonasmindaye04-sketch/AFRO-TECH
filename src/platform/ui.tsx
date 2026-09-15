@@ -1,4 +1,4 @@
-import { useEffect, type FormEvent, type ReactNode } from 'react'
+import { useState, useEffect, type FormEvent, type ReactNode } from 'react'
 
 /* ── Layout helpers ─────────────────────────────────────── */
 
@@ -80,30 +80,64 @@ export interface Column<T> {
   width?: string
 }
 
-export function DataTable<T>({ columns, rows, empty }: { columns: Column<T>[]; rows: T[]; empty?: string }): JSX.Element {
-  if (!rows.length) return <EmptyState title={empty ?? 'Nothing here yet'} />
+export function DataTable<T>({ columns, rows, empty, searchable = true }: { columns: Column<T>[]; rows: T[]; empty?: string; searchable?: boolean }): JSX.Element {
+  const [searchQuery, setSearchQuery] = useState('')
+
+  if (!rows.length && !searchQuery) return <EmptyState title={empty ?? 'Nothing here yet'} />
+
+  const filteredRows = !searchQuery.trim() ? rows : rows.filter(row => {
+    const q = searchQuery.toLowerCase()
+    return JSON.stringify(row).toLowerCase().includes(q)
+  })
+
   return (
-    <div className="pl-table-wrap">
-      <table className="pl-table">
-        <thead>
-          <tr>
-            {columns.map((c) => (
-              <th key={c.key} style={c.width ? { width: c.width } : undefined} scope="col">
-                {c.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={(row as { id?: string }).id ?? i}>
+    <div className="pl-table-container" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {searchable && rows.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+          <div style={{ position: 'relative' }}>
+            <i className="fa-solid fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
+            <input
+              type="text"
+              className="pl-input"
+              style={{ paddingLeft: 32, width: 260 }}
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Search"
+            />
+          </div>
+        </div>
+      )}
+      <div className="pl-table-wrap">
+        <table className="pl-table">
+          <thead>
+            <tr>
               {columns.map((c) => (
-                <td key={c.key}>{c.render(row)}</td>
+                <th key={c.key} style={c.width ? { width: c.width } : undefined} scope="col">
+                  {c.header}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filteredRows.length > 0 ? (
+              filteredRows.map((row, i) => (
+                <tr key={(row as { id?: string }).id ?? i}>
+                  {columns.map((c) => (
+                    <td key={c.key}>{c.render(row)}</td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={columns.length} style={{ textAlign: 'center', padding: '32px' }}>
+                  <span style={{ color: 'var(--text-dim)' }}>No results found for "{searchQuery}"</span>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
