@@ -91,15 +91,15 @@ export function DataTable<T>({ columns, rows, empty, searchable = true }: { colu
   })
 
   return (
-    <div className="pl-table-container" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+    <div className="pl-table-container" style={{ display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
       {searchable && rows.length > 0 && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <div style={{ position: 'relative' }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: '260px' }}>
             <i className="fa-solid fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
             <input
               type="text"
               className="pl-input"
-              style={{ paddingLeft: 32, width: 260 }}
+              style={{ paddingLeft: 32, width: '100%' }}
               placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
