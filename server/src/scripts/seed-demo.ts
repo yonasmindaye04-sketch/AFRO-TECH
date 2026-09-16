@@ -462,15 +462,16 @@ async function seedHospital(tenantId: string, ownerId: string): Promise<void> {
   }
   console.log(`  Created ${doctors.length} doctors`)
 
-  // Create patients
+  // Create patients (numbering continues after existing codes to avoid duplicates)
+  const maxPatRow = await queryOne(`SELECT COALESCE(MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::bigint), 0) AS m FROM patients WHERE tenant_id = $1 AND code LIKE 'PAT%'`, [tenantId])
+  const patStart = Number(maxPatRow?.m ?? 0)
   const patients: { id: string; code: string; first_name: string; last_name: string; gender: string }[] = []
   for (let i = 0; i < 50; i++) {
     const gender = i % 2 === 0 ? 'male' : 'female'
     const firstName = randomItem(ethiopianNames[gender])
     const lastName = randomItem(ethiopianNames.last)
     const dob = randomDate(new Date(1940, 0, 1), new Date(2015, 11, 31))
-    const nextCodeNum = i + 1
-    const code = `PAT${String(nextCodeNum).padStart(4, '0')}`
+    const code = `PAT${String(patStart + i + 1).padStart(4, '0')}`
     const row = await queryOne(
       `INSERT INTO patients (tenant_id, code, first_name, last_name, gender, dob, phone, address, blood_type, allergies) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id, code, first_name, last_name, gender`,
@@ -534,15 +535,16 @@ async function seedHospital(tenantId: string, ownerId: string): Promise<void> {
   }
   console.log(`  Created ${completedAppts.length} medical records`)
 
-  // Invoices
+  // Invoices (numbering continues after existing numbers)
+  const maxInvRow = await queryOne(`SELECT COALESCE(MAX(NULLIF(regexp_replace(number, '\\D', '', 'g'), '')::bigint), 0) AS m FROM invoices WHERE tenant_id = $1 AND number LIKE 'INV%'`, [tenantId])
+  const invStart = Number(maxInvRow?.m ?? 0)
   for (let i = 0; i < 30; i++) {
     const patient = randomItem(patients)
     const amount = Math.floor(500 + Math.random() * 5000)
     const paid = Math.random() < 0.7 ? amount : Math.floor(Math.random() * amount)
     const status = paid >= amount ? 'paid' : paid > 0 ? 'partial' : 'unpaid'
     const issued = randomDate(new Date(now.getTime() - 60 * 86400000), now)
-    const nextInvNum = i + 1
-    const number = `INV${String(nextInvNum).padStart(4, '0')}`
+    const number = `INV${String(invStart + i + 1).padStart(4, '0')}`
     await queryOne(
       `INSERT INTO invoices (tenant_id, patient_id, number, description, amount, paid_amount, status, issued_on) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [tenantId, patient.id, number, 'Consultation and medication', amount, paid, status, formatDate(issued)]
@@ -649,7 +651,9 @@ async function seedSchool(tenantId: string, ownerId: string): Promise<void> {
   }
   console.log(`  Created ${classes.length} classes`)
 
-  // Create students (reduced to 20 to avoid Neon connection drops)
+  // Create students (reduced to 20 to avoid Neon connection drops; numbering continues after existing codes)
+  const maxStuRow = await queryOne(`SELECT COALESCE(MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::bigint), 0) AS m FROM students WHERE tenant_id = $1 AND code LIKE 'STU%'`, [tenantId])
+  const stuStart = Number(maxStuRow?.m ?? 0)
   const students: { id: string; code: string; first_name: string; last_name: string; class_id: string | null }[] = []
   for (let i = 0; i < 5; i++) {
     const gender = i % 2 === 0 ? 'male' : 'female'
@@ -657,8 +661,7 @@ async function seedSchool(tenantId: string, ownerId: string): Promise<void> {
     const lastName = randomItem(ethiopianNames.last)
     const classId = classes[i % classes.length].id
     const guardian = randomItem(guardianNames)
-    const nextCodeNum = i + 1
-    const code = `STU${String(nextCodeNum).padStart(4, '0')}`
+    const code = `STU${String(stuStart + i + 1).padStart(4, '0')}`
     const row = await queryOne(
       `INSERT INTO students (tenant_id, code, first_name, last_name, gender, dob, class_id, guardian_name, guardian_phone, guardian_email, guardian_telegram_chat_id, address) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id, code, first_name, last_name, class_id`,

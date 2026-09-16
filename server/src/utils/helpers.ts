@@ -45,11 +45,12 @@ export function slugify(name: string): string {
   )
 }
 
-/** Human friendly sequential codes like PAT-000123 / STU-000045 (per-tenant via count). */
+/** Human friendly sequential codes like PAT-000123 / STU-000045 (per-tenant, MAX-based so deletes never cause collisions). */
 export async function nextCode(client: PoolClient, table: string, prefix: string, tenantId: string): Promise<string> {
   const { rows } = await client.query<{ n: string }>(
-    `SELECT count(*) + 1 AS n FROM ${table} WHERE tenant_id = $1`,
-    [tenantId]
+    `SELECT COALESCE(MAX(NULLIF(regexp_replace(code, '\\D', '', 'g'), '')::bigint), 0) + 1 AS n
+     FROM ${table} WHERE tenant_id = $1 AND code LIKE $2 || '%'`,
+    [tenantId, prefix]
   )
   return `${prefix}-${String(rows[0].n).padStart(5, '0')}`
 }
