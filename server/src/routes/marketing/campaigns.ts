@@ -37,7 +37,9 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
     [...params, parseInt(limit as string), offset]
   )
 
-  const { rows: count } = await pool.query(`SELECT COUNT(*) FROM marketing_campaigns WHERE ${where.join(' AND ')}`, params)
+  // Count query has no table alias, so strip the "c." prefix from the filters
+  const countWhere = where.map((w) => w.replace('c.', '')).join(' AND ')
+  const { rows: count } = await pool.query(`SELECT COUNT(*) FROM marketing_campaigns WHERE ${countWhere}`, params)
 
   res.json({ campaigns, total: parseInt(count[0].count, 10), page: parseInt(page as string), limit: parseInt(limit as string) })
 }))

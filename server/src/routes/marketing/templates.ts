@@ -15,17 +15,18 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
 
   if (!tenantId) throw new AppError(400, 'tenant_id required', 'NO_TENANT')
 
-  const where: string[] = ['tenant_id = $1']
+  // The main query joins users (which also has tenant_id), so qualify every reference with "t."
+  const where: string[] = ['t.tenant_id = $1']
   const params: unknown[] = [tenantId]
   let paramIndex = 2
 
   if (channel) {
-    where.push(`channel = $${paramIndex}`)
+    where.push(`t.channel = $${paramIndex}`)
     params.push(channel)
     paramIndex++
   }
   if (status) {
-    where.push(`status = $${paramIndex}`)
+    where.push(`t.status = $${paramIndex}`)
     params.push(status)
     paramIndex++
   }
@@ -39,7 +40,9 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
     [...params, parseInt(limit as string), offset]
   )
 
-  const { rows: count } = await pool.query(`SELECT COUNT(*) FROM marketing_templates WHERE ${where.join(' AND ')}`, params)
+  // Count query has no table alias, so strip the "t." prefix from the filters
+  const countWhere = where.map((w) => w.replace('t.', '')).join(' AND ')
+  const { rows: count } = await pool.query(`SELECT COUNT(*) FROM marketing_templates WHERE ${countWhere}`, params)
 
   res.json({ templates, total: parseInt(count[0].count, 10), page: parseInt(page as string), limit: parseInt(limit as string) })
 }))
