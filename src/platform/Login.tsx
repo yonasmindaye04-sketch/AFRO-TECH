@@ -3,7 +3,13 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { ApiError, api } from './api'
 import { Field } from './ui'
+import TelegramWidgetButton from './TelegramWidgetButton'
 import { initTelegramUi, isTelegram } from './utils/telegram'
+
+interface Providers {
+  google: boolean
+  telegram_bot: string | null
+}
 
 export default function Login(): JSX.Element {
   const { login, persistFromTelegram } = useAuth()
@@ -13,6 +19,15 @@ export default function Login(): JSX.Element {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [tgStatus, setTgStatus] = useState<'idle' | 'working' | 'failed'>('idle')
+  const [providers, setProviders] = useState<Providers | null>(null)
+
+  // Which social providers are configured on this server
+  useEffect(() => {
+    api
+      .get<Providers>('/auth/providers')
+      .then(setProviders)
+      .catch(() => setProviders({ google: false, telegram_bot: null }))
+  }, [])
 
   // Telegram Mini App: signed initData replaces the password entirely.
   useEffect(() => {
@@ -79,6 +94,26 @@ export default function Login(): JSX.Element {
               {busy ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+
+          {(providers?.google || providers?.telegram_bot) && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '18px 0 14px' }}>
+                <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                <span style={{ color: 'var(--text-dim)', fontSize: '.78rem', textTransform: 'uppercase', letterSpacing: '.05em' }}>or continue with</span>
+                <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+              </div>
+              <div style={{ display: 'grid', gap: 10 }}>
+                {providers.google && (
+                  <a href="/api/v1/auth/google" className="pl-btn pl-btn-ghost" style={{ width: '100%', justifyContent: 'center', textDecoration: 'none' }}>
+                    <i className="fa-brands fa-google" aria-hidden="true" style={{ color: '#4285F4' }} /> Continue with Google
+                  </a>
+                )}
+                {providers.telegram_bot && (
+                  <TelegramWidgetButton botUsername={providers.telegram_bot} onError={setError} />
+                )}
+              </div>
+            </>
+          )}
         </div>
         <p className="pl-auth-alt">
           New to AFRO-TECH systems?{' '}

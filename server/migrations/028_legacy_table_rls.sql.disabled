@@ -1,0 +1,62 @@
+-- ═══════════════════════════════════════════════════════════
+-- DISABLED MIGRATION — do NOT enable until ready.
+--
+-- To activate: rename this file to 028_legacy_table_rls.sql
+-- and run `npm run migrate` (from server/).
+--
+-- PREREQUISITE: the request middleware MUST set the tenant on
+-- every request transaction BEFORE this runs, e.g.:
+--   SELECT set_config('app.tenant_id', $1, true);
+-- Otherwise, because FORCE ROW LEVEL SECURITY applies even to
+-- the table owner (the app's DB role), every legacy query will
+-- return zero rows / fail.
+--
+-- What this does: sweeps EVERY table in the public schema that
+-- has a tenant_id column (including future marketing/billing
+-- tables) and applies ENABLE + FORCE + a tenant-isolation
+-- policy. Idempotent — safe to re-run. Tables whose policy
+-- already exists are skipped.
+-- ═══════════════════════════════════════════════════════════
+
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN
+    SELECT DISTINCT table_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND column_name = 'tenant_id'
+      AND table_name NOT IN (
+        'product_variants', 'locations', 'inventory', 'batches',
+        'stock_movements', 'purchase_orders', 'purchase_receipts',
+        'stock_transfers', 'stock_reservations'
+      )
+  LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', r.table_name);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', r.table_name);
+
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_policies
+      WHERE schemaname = 'public'
+        AND tablename = r.table_name
+        AND policyname = r.table_name || '_tenant_iso'
+    ) THEN
+      EXECUTE format(
+        'CREATE POLICY %I ON %I USING (tenant_id = current_setting(''app.tenant_id'', true)::UUID)',
+        r.table_name || '_tenant_iso',
+        r.table_name
+      );
+    END IF;
+  END LOOP;
+END $$;
+
+-- ── Rollback reference ──────────────────────────────────────
+-- To undo (disables isolation without dropping policies):
+--   DO $$ DECLARE r record; BEGIN
+--     FOR r IN SELECT tablename FROM pg_tables
+--              WHERE schemaname = 'public' AND rowsecurity LOOP
+--       EXECUTE format('ALTER TABLE %I NO FORCE ROW LEVEL SECURITY', r.tablename);
+--       EXECUTE format('ALTER TABLE %I DISABLE ROW LEVEL SECURITY', r.tablename);
+--     END LOOP; END $$;
+-- ═══════════════════════════════════════════════════════════

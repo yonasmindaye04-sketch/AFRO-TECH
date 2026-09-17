@@ -108,8 +108,8 @@ export default function ProductsPage(): JSX.Element {
                 </ul>
                 <Link
                   to={`/app/register?type=${s.type}`}
-                  className="pl-btn pl-btn-primary"
-                  style={{ justifyContent: 'center', textDecoration: 'none', width: '100%' }}
+                  className="btn-primary"
+                  style={{ textDecoration: 'none', width: '100%', justifyContent: 'center' }}
                 >
                   Try {s.name.split(' ')[0]} free
                 </Link>

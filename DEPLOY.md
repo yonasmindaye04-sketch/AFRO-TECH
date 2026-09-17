@@ -213,3 +213,32 @@ Security notes: `initDataUnsafe` is never trusted; only the HMAC-verified `initD
 - Trials auto-expire; expired companies see a "contact AFRO-TECH" screen and lose API access.
 - The AFRO-TECH admin panel (`/app`, signed in as the seeded admin) can grant free access, extend trials, or suspend any company.
 - All business tables are scoped by `tenant_id`; every query is filtered by the caller's tenant from their JWT.
+
+## 9. Android app & Google Play Protect ("Unsafe app blocked")
+
+If Google Play Protect blocks the AFRO-TECH APK with **"Unsafe app blocked — This app
+was built for an older version of Android and doesn't include the latest privacy
+protections"**, the APK was built with an outdated 	argetSdkVersion. Play Protect
+blocks sideloaded APKs whose target SDK is below Google's current minimum.
+
+**Fix — rebuild the APK with a modern target SDK:**
+
+1. Regenerate the package (PWABuilder or Bubblewrap) against the live site:
+   `ash
+   npm i -g @bubblewrap/cli
+   bubblewrap init --manifest https://afrotech-et.vercel.app/site.webmanifest
+   `
+2. In 	wa-manifest.json, make sure the target SDK is current:
+   - "appVersionName" / 	argetSdkVersion: **35** (Android 15)
+   - minSdkVersion: 23 or higher
+3. Rebuild and sign:
+   `ash
+   bubblewrap update
+   bubblewrap build
+   `
+   Sign with the same upload key you used before (keep the keystore safe).
+4. Redistribute the new APK. Recipients may need to remove the old install first.
+
+**Alternative (recommended, no APK at all):** the site is a PWA. Android users can
+install it directly from Chrome — menu (⋮) → *Add to Home screen / Install app* — or
+via the in-app install button in the navbar. PWAs don't go through Play Protect.

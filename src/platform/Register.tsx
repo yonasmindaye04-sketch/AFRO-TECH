@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth, type RegisterInput } from './AuthContext'
-import { ApiError } from './api'
+import { api, ApiError } from './api'
 import { Field } from './ui'
+import TelegramWidgetButton from './TelegramWidgetButton'
 
 const TYPES = [
   { value: 'pharmacy', label: 'Pharmacy', icon: 'fa-solid fa-pills', desc: 'POS, batch & expiry tracking' },
@@ -26,6 +27,14 @@ export default function Register(): JSX.Element {
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [providers, setProviders] = useState<{ google: boolean; telegram_bot: string | null } | null>(null)
+
+  useEffect(() => {
+    api
+      .get<{ google: boolean; telegram_bot: string | null }>('/auth/providers')
+      .then(setProviders)
+      .catch(() => setProviders({ google: false, telegram_bot: null }))
+  }, [])
 
   const set = (key: keyof RegisterInput) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
@@ -105,6 +114,26 @@ export default function Register(): JSX.Element {
               {busy ? 'Creating workspace…' : 'Create workspace — it’s free'}
             </button>
           </form>
+
+          {(providers?.google || providers?.telegram_bot) && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '18px 0 14px' }}>
+                <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                <span style={{ color: 'var(--text-dim)', fontSize: '.78rem', textTransform: 'uppercase', letterSpacing: '.05em' }}>or sign up with</span>
+                <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+              </div>
+              <div style={{ display: 'grid', gap: 10 }}>
+                {providers.google && (
+                  <a href="/api/v1/auth/google" className="pl-btn pl-btn-ghost" style={{ width: '100%', justifyContent: 'center', textDecoration: 'none' }}>
+                    <i className="fa-brands fa-google" aria-hidden="true" style={{ color: '#4285F4' }} /> Sign up with Google
+                  </a>
+                )}
+                {providers.telegram_bot && (
+                  <TelegramWidgetButton botUsername={providers.telegram_bot} onError={setError} />
+                )}
+              </div>
+            </>
+          )}
         </div>
         <p className="pl-auth-alt">
           Already registered? <Link to="/app/login">Sign in</Link>

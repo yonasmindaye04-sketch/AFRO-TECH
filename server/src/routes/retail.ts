@@ -105,8 +105,16 @@ router.get(
   '/products/barcode/:code',
   asyncHandler(async (req, res) => {
     const row = await queryOne(
-      `SELECT p.*, COALESCE((SELECT SUM(quantity) FROM product_batches b WHERE b.product_id = p.id AND (b.expiry_date IS NULL OR b.expiry_date >= CURRENT_DATE)),0)::int AS stock
-       FROM products p WHERE p.tenant_id = $1 AND p.barcode = $2 LIMIT 1`,
+      `SELECT p.*, COALESCE(b.stock, 0)::int AS stock,
+              COALESCE(b.sellable, 0)::int AS sellable_stock,
+              CASE WHEN p.sell_by_pill THEN COALESCE(b.sellable,0) * p.pills_per_unit + p.loose_pills ELSE COALESCE(b.sellable,0) END::int AS display_stock
+       FROM products p
+       LEFT JOIN (
+         SELECT product_id, SUM(quantity) AS stock,
+                SUM(CASE WHEN expiry_date IS NULL OR expiry_date >= CURRENT_DATE THEN quantity ELSE 0 END) AS sellable
+         FROM product_batches WHERE tenant_id = $1 GROUP BY product_id
+       ) b ON b.product_id = p.id
+       WHERE p.tenant_id = $1 AND p.barcode = $2 LIMIT 1`,
       [tenantId(req), req.params.code]
     )
     if (!row) throw new AppError(404, 'No product with that barcode', 'NOT_FOUND')

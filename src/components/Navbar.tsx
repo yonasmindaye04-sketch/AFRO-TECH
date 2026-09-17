@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTheme } from '../context/useTheme';
+import { usePwaInstall } from '../hooks/usePwaInstall';
 
 export default function Navbar() {
   const { dark, toggle } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
   const isHome = location.pathname === '/';
+  const { canInstall, promptInstall } = usePwaInstall();
 
   useEffect(() => {
     const h = () => { if (window.innerWidth > 768) setMenuOpen(false); };
@@ -62,6 +64,16 @@ export default function Navbar() {
         </div>
 
         <div className="nav-right">
+          {canInstall && (
+            <button
+              className="theme-toggle"
+              onClick={() => void promptInstall()}
+              title="Install AFRO-TECH as an app"
+              aria-label="Install app"
+            >
+              <i className="fa-solid fa-download" aria-hidden="true" />
+            </button>
+          )}
           <button className="theme-toggle" onClick={toggle} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
             <i className={dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon'} aria-hidden="true" />
           </button>

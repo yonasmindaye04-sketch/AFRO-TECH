@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './AuthContext'
 import Shell from './Shell'
 import Login from './Login'
 import Register from './Register'
+import SocialAuthCallback from './SocialAuthCallback'
 import Spinner from './pages/Spinner'
 import './platform.css'
 
@@ -198,6 +199,7 @@ export default function PlatformRoot(): JSX.Element {
       <Routes>
         <Route path="login" element={<Login />} />
         <Route path="register" element={<Register />} />
+        <Route path="social" element={<SocialAuthCallback />} />
         <Route
           path="*"
           element={

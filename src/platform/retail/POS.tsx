@@ -189,12 +189,21 @@ export default function POS(): JSX.Element {
     setScanError(null)
     try {
       const r = await api.get<{ product: Product }>(`/retail/products/barcode/${encodeURIComponent(code)}`)
-      addToCart(r.product)
+      const p = r.product
+      const available = p.sell_by_pill ? p.display_stock : p.stock
+      if (available <= 0) {
+        setScanError(`"${p.name}" is out of stock`)
+        setBarcode('')
+        scanRef.current?.focus()
+        return
+      }
+      addToCart(p)
       setBarcode('')
       scanRef.current?.focus()
     } catch (err) {
       setScanError(err instanceof Error ? err.message : 'Scan failed')
       setBarcode('')
+      scanRef.current?.focus()
     }
   }
 

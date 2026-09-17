@@ -1,5 +1,7 @@
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
+import crypto from 'crypto'
+import jwt from 'jsonwebtoken'
 import { z } from 'zod'
 import { pool, query, queryOne, TRIAL_DAYS } from '../config/db.js'
 import { asyncHandler, AppError, slugify, withTransaction } from '../utils/helpers.js'
@@ -202,6 +204,221 @@ router.post(
     const hash = await bcrypt.hash(new_password, 12)
     await queryOne(`UPDATE users SET password_hash = $1 WHERE id = $2`, [hash, req.user!.id])
     res.json({ ok: true })
+  })
+)
+
+/* ══════════════ SOCIAL LOGIN (Google + Telegram) ══════════════ */
+
+const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
+const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo'
+const TELEGRAM_FRESH_MS = 86_400_000
+
+function googleConfigured(): boolean {
+  return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
+}
+
+function frontendUrl(): string {
+  return String(process.env.PUBLIC_URL || 'http://localhost:5173').replace(/\/$/, '')
+}
+
+function callbackUrl(): string {
+  return `${frontendUrl()}/api/v1/auth/google/callback`
+}
+
+/** Find a user by social id, link by email, or create a fresh owner (no workspace yet). */
+async function findOrCreateSocialUser(input: {
+  googleId?: string
+  telegramId?: string
+  telegramUsername?: string
+  email?: string
+  fullName: string
+}): Promise<{ token: string; needsWorkspace: boolean }> {
+  let user: AuthUser | null = null
+
+  if (input.googleId) {
+    user = await queryOne<AuthUser>(`SELECT id, email, full_name, role, tenant_id FROM users WHERE google_id = $1 AND is_active = true`, [input.googleId])
+  }
+  if (!user && input.telegramId) {
+    user = await queryOne<AuthUser>(`SELECT id, email, full_name, role, tenant_id FROM users WHERE telegram_id = $1 AND is_active = true`, [input.telegramId])
+  }
+  // Already registered with email + password → link the social identity
+  if (!user && input.email) {
+    user = await queryOne<AuthUser>(`SELECT id, email, full_name, role, tenant_id FROM users WHERE email = $1 AND is_active = true`, [input.email])
+  }
+
+  if (!user) {
+    const email = input.email || `tg${input.telegramId}@telegram.users`
+    const dup = await queryOne<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [email])
+    if (dup) {
+      user = (await queryOne<AuthUser>(`SELECT id, email, full_name, role, tenant_id FROM users WHERE id = $1`, [dup.id]))!
+    } else {
+      // Random password — social users sign in with their provider, never with it
+      const hash = await bcrypt.hash(crypto.randomUUID(), 12)
+      user = (await queryOne<AuthUser>(
+        `INSERT INTO users (email, password_hash, full_name, role, google_id, telegram_id)
+         VALUES ($1,$2,$3,'owner',$4,$5) RETURNING id, email, full_name, role, tenant_id`,
+        [email, hash, input.fullName, input.googleId ?? null, input.telegramId ?? null]
+      ))!
+    }
+  } else {
+    // Link the social id to the existing account if not linked yet
+    if (input.googleId) await pool.query(`UPDATE users SET google_id = $1 WHERE id = $2 AND google_id IS NULL`, [input.googleId, user.id])
+    if (input.telegramId) await pool.query(`UPDATE users SET telegram_id = $1 WHERE id = $2 AND telegram_id IS NULL`, [input.telegramId, user.id])
+  }
+
+  const needsWorkspace = !user.tenant_id && user.role !== 'afrotech_admin'
+  return { token: signToken(user), needsWorkspace }
+}
+
+/** GET /auth/providers — which social providers are configured (public). */
+router.get(
+  '/providers',
+  asyncHandler(async (_req, res) => {
+    res.json({
+      google: googleConfigured(),
+      telegram_bot: process.env.TELEGRAM_BOT_USERNAME ? process.env.TELEGRAM_BOT_USERNAME.replace(/^@/, '') : null,
+    })
+  })
+)
+
+/** GET /auth/google — start the Google OAuth consent flow. */
+router.get(
+  '/google',
+  asyncHandler(async (req, res) => {
+    const fe = frontendUrl()
+    if (!googleConfigured()) return res.redirect(`${fe}/app/social?error=${encodeURIComponent('Google sign-in is not configured on this server yet')}`)
+    const state = jwt.sign({ p: 'google-oauth' }, process.env.JWT_SECRET || 'dev_secret_change_me', { expiresIn: '10m' })
+    const url = new URL(GOOGLE_AUTH_URL)
+    url.searchParams.set('client_id', process.env.GOOGLE_CLIENT_ID!)
+    url.searchParams.set('redirect_uri', callbackUrl())
+    url.searchParams.set('response_type', 'code')
+    url.searchParams.set('scope', 'openid email profile')
+    url.searchParams.set('state', state)
+    url.searchParams.set('prompt', 'select_account')
+    res.redirect(url.toString())
+  })
+)
+
+/** GET /auth/google/callback — exchange the code, find/create the user, bounce to the app. */
+router.get(
+  '/google/callback',
+  asyncHandler(async (req, res) => {
+    const fe = frontendUrl()
+    const fail = (msg: string): void => res.redirect(`${fe}/app/social?error=${encodeURIComponent(msg)}`)
+    try {
+      if (!googleConfigured()) return fail('Google sign-in is not configured on this server yet')
+      const code = String(req.query.code || '')
+      const state = String(req.query.state || '')
+      if (!code) return fail('Missing authorization code')
+      try {
+        jwt.verify(state, process.env.JWT_SECRET || 'dev_secret_change_me')
+      } catch {
+        return fail('Expired sign-in attempt — please try again')
+      }
+
+      const tokenRes = await fetch(GOOGLE_TOKEN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id: process.env.GOOGLE_CLIENT_ID!,
+          client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+          redirect_uri: callbackUrl(),
+          grant_type: 'authorization_code',
+        }),
+      })
+      if (!tokenRes.ok) return fail('Google rejected the sign-in — please try again')
+      const tokens = (await tokenRes.json()) as { access_token?: string }
+      if (!tokens.access_token) return fail('Google did not return an access token')
+
+      const infoRes = await fetch(GOOGLE_USERINFO_URL, { headers: { Authorization: `Bearer ${tokens.access_token}` } })
+      if (!infoRes.ok) return fail('Could not read your Google profile')
+      const profile = (await infoRes.json()) as { sub?: string; email?: string; name?: string; given_name?: string; family_name?: string }
+      if (!profile.sub || !profile.email) return fail('Your Google account did not share an email address')
+
+      const result = await findOrCreateSocialUser({
+        googleId: profile.sub,
+        email: profile.email.toLowerCase(),
+        fullName: profile.name || [profile.given_name, profile.family_name].filter(Boolean).join(' ') || profile.email.split('@')[0],
+      })
+      return res.redirect(`${fe}/app/social?token=${encodeURIComponent(result.token)}${result.needsWorkspace ? '&ws=1' : ''}`)
+    } catch (err) {
+      console.error('[auth/google]', err)
+      return fail('Sign-in failed — please try again')
+    }
+  })
+)
+
+/** POST /auth/telegram-login — verify the Telegram Login Widget payload and sign in. */
+const telegramLoginSchema = z.object({
+  id: z.union([z.number(), z.string()]),
+  first_name: z.string().optional(),
+  last_name: z.string().optional(),
+  username: z.string().optional(),
+  photo_url: z.string().optional(),
+  auth_date: z.union([z.number(), z.string()]),
+  hash: z.string(),
+})
+router.post(
+  '/telegram-login',
+  validateBody(telegramLoginSchema),
+  asyncHandler(async (req, res) => {
+    const d = req.body as z.infer<typeof telegramLoginSchema>
+    const botToken = process.env.TELEGRAM_BOT_TOKEN
+    if (!botToken) throw new AppError(503, 'Telegram sign-in is not configured on this server', 'NOT_CONFIGURED')
+
+    const authMs = Number(d.auth_date) * 1000
+    if (Number.isNaN(authMs) || Date.now() - authMs > TELEGRAM_FRESH_MS) {
+      throw new AppError(401, 'Expired Telegram sign-in — please try again', 'BAD_TOKEN')
+    }
+
+    // Per Telegram spec: secret = SHA256(bot_token); HMAC-SHA256(data_check_string, secret) must equal hash
+    const dataCheckString = Object.entries(d)
+      .filter(([k]) => k !== 'hash')
+      .map(([k, v]) => `${k}=${String(v)}`)
+      .sort()
+      .join('\n')
+    const secret = crypto.createHash('sha256').update(botToken).digest()
+    const hmac = crypto.createHmac('sha256', secret).update(dataCheckString).digest('hex')
+    if (hmac !== d.hash) throw new AppError(401, 'Invalid Telegram sign-in — verification failed', 'BAD_SIGNATURE')
+
+    const fullName = [d.first_name, d.last_name].filter(Boolean).join(' ') || (d.username ? `@${d.username}` : `Telegram ${d.id}`)
+    const result = await findOrCreateSocialUser({ telegramId: String(d.id), telegramUsername: d.username, fullName })
+    res.json({ token: result.token, needs_workspace: result.needsWorkspace })
+  })
+)
+
+/** POST /auth/complete-social — create a workspace for a social-logged-in user with no tenant. */
+const completeSocialSchema = z.object({
+  company_name: z.string().trim().min(2).max(120),
+  business_type: z.enum(['pharmacy', 'store', 'hospital', 'school']),
+})
+router.post(
+  '/complete-social',
+  authenticate,
+  validateBody(completeSocialSchema),
+  asyncHandler(async (req, res) => {
+    const user = req.user!
+    if (user.tenant_id) throw new AppError(409, 'Your account already has a workspace', 'HAS_TENANT')
+    const { company_name, business_type } = req.body as z.infer<typeof completeSocialSchema>
+
+    let slug = slugify(company_name)
+    const slugTaken = await queryOne(`SELECT id FROM tenants WHERE slug = $1`, [slug])
+    if (slugTaken) slug = `${slug}-${Math.random().toString(36).slice(2, 7)}`
+
+    const trialEnds = new Date(Date.now() + TRIAL_DAYS * 86_400_000)
+    const tenantRow = await queryOne<TenantRow>(
+      `INSERT INTO tenants (name, slug, business_type, status, trial_ends_at) VALUES ($1,$2,$3,'trial',$4) RETURNING *`,
+      [company_name.trim(), slug, business_type, trialEnds.toISOString()]
+    )
+    await pool.query(`UPDATE users SET tenant_id = $1 WHERE id = $2`, [tenantRow!.id, user.id])
+    await withTransaction(pool, async (client) => {
+      await seedDefaultDepartments(client, tenantRow!.id, business_type)
+    })
+
+    const updated: AuthUser = { ...user, tenant_id: tenantRow!.id }
+    res.status(201).json({ token: signToken(updated), me: await loadMe(updated) })
   })
 )
 
