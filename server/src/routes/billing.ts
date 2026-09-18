@@ -78,8 +78,11 @@ router.get(
       price_monthly: string
       price_semiannual: string
       price_annual: string
+      description: string
+      features: string[]
     }>(
-      `SELECT id, code, name, business_types, price_monthly::text, price_semiannual::text, price_annual::text
+      `SELECT id, code, name, business_types, price_monthly::text, price_semiannual::text, price_annual::text,
+              description, features
        FROM subscription_plans
        WHERE is_active = true
          AND (cardinality(business_types) = 0 OR $1::text = ANY(business_types))

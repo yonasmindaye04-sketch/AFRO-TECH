@@ -1493,3 +1493,22 @@ label:has(input[type="radio"]) {
   .pl-toolbar { gap: 8px; }
   .pl-toolbar .pl-input, .pl-toolbar .pl-select { min-width: 0; flex: 1 1 140px; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Camera barcode scanner
+   ═══════════════════════════════════════════════════════════ */
+.pl-scanner-frame { position: relative; border-radius: 10px; overflow: hidden; background: #000; }
+.pl-scanner-laser {
+  position: absolute; left: 6%; right: 6%; top: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, #ff4d4d, transparent);
+  box-shadow: 0 0 10px rgba(255,77,77,.8);
+  animation: pl-scan-sweep 2.2s ease-in-out infinite;
+}
+@keyframes pl-scan-sweep {
+  0% { top: 8%; opacity: .4; }
+  50% { top: 90%; opacity: 1; }
+  100% { top: 8%; opacity: .4; }
+}
+@media (max-width: 640px) {
+  .pl-scanner-frame video { aspect-ratio: 3 / 4; object-fit: cover; }
+}

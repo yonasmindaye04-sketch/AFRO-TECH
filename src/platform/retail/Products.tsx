@@ -3,6 +3,7 @@ import { api } from '../api'
 import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, DataTable, Field, Modal, PageHeader, Spinner } from '../ui'
+import BarcodeScanner from '../ui/BarcodeScanner'
 
 interface Product {
   id: string
@@ -60,6 +61,7 @@ export default function Products(): JSX.Element {
   const [form, setForm] = useState<FormState>(EMPTY)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [scannerOpen, setScannerOpen] = useState(false)
 
   const openNew = (): void => {
     setForm(EMPTY)
@@ -215,8 +217,23 @@ export default function Products(): JSX.Element {
             <input className="pl-input" required maxLength={160} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
           </Field>
           <Field label="Barcode" hint="Scan it in the POS to add to cart instantly">
-            <input className="pl-input" maxLength={60} value={form.barcode} onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))} placeholder="Scan or type…" />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input className="pl-input" maxLength={60} value={form.barcode} onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))} placeholder="Scan or type…" />
+              <button type="button" className="pl-btn pl-btn-ghost" onClick={() => setScannerOpen(true)} aria-label="Scan barcode with camera" title="Scan with camera">
+                <i className="fa-solid fa-camera" aria-hidden="true" />
+              </button>
+            </div>
           </Field>
+          {scannerOpen && (
+            <BarcodeScanner
+              title="Scan product barcode"
+              onDetected={(code) => {
+                setScannerOpen(false)
+                setForm((f) => ({ ...f, barcode: code }))
+              }}
+              onClose={() => setScannerOpen(false)}
+            />
+          )}
           {isPharmacy && (
             <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 14 }}>
               <label className="pl-checkbox-label" style={{ fontWeight: 600 }}>

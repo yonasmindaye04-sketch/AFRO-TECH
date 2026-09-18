@@ -9,6 +9,8 @@ interface Plan {
   price_monthly: string
   price_semiannual: string
   price_annual: string
+  description: string
+  features: string[]
 }
 
 interface Subscription {
@@ -201,11 +203,20 @@ export default function Subscription(): JSX.Element {
       ) : (
         <div className="pl-grid-3">
           {plans.map((plan) => (
-            <div className="pl-card" key={plan.id}>
-              <h3 style={{ marginTop: 0 }}>{plan.name}</h3>
-              <p style={{ color: 'var(--text-dim)' }}>
-                {plan.business_types.length === 0 ? 'All business types' : plan.business_types.join(', ')}
-              </p>
+            <div className="pl-card" key={plan.id} style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                <h3 style={{ marginTop: 0 }}>{plan.name}</h3>
+                {plan.code.endsWith('_pro') && <span className="pl-badge pl-badge-good">Most popular</span>}
+              </div>
+              <p style={{ color: 'var(--text-dim)', minHeight: '2.6em' }}>{plan.description}</p>
+              <ul style={{ listStyle: 'none', padding: 0, margin: '12px 0', display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
+                {plan.features.map((f) => (
+                  <li key={f} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <i className="fa-solid fa-circle-check" aria-hidden="true" style={{ color: 'var(--accent)' }} />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
               <ul style={{ listStyle: 'none', padding: 0, margin: '12px 0' }}>
                 <li><strong>{fmtMoney(plan.price_monthly)}</strong> ETB / month</li>
                 <li><strong>{fmtMoney(plan.price_semiannual)}</strong> ETB / 6 months</li>

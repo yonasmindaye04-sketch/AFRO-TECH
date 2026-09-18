@@ -3,6 +3,7 @@ import { fmtMoney, api } from '../api'
 import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
 import { EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
+import BarcodeScanner from '../ui/BarcodeScanner'
 import ThermalReceipt from '../ui/ThermalReceipt'
 import type { ReceiptData } from '../utils/receipt'
 
@@ -180,11 +181,12 @@ export default function POS(): JSX.Element {
 
   const [barcode, setBarcode] = useState('')
   const [scanError, setScanError] = useState<string | null>(null)
+  const [scannerOpen, setScannerOpen] = useState(false)
   const scanRef = useRef<HTMLInputElement>(null)
 
-  const handleScan = async (e: FormEvent): Promise<void> => {
-    e.preventDefault()
-    const code = barcode.trim()
+  /** Look up a scanned/typed barcode and add the product to the cart. */
+  const lookupBarcode = async (rawCode: string): Promise<void> => {
+    const code = rawCode.trim()
     if (!code) return
     setScanError(null)
     try {
@@ -205,6 +207,11 @@ export default function POS(): JSX.Element {
       setBarcode('')
       scanRef.current?.focus()
     }
+  }
+
+  const handleScan = async (e: FormEvent): Promise<void> => {
+    e.preventDefault()
+    await lookupBarcode(barcode)
   }
 
   const checkout = async (): Promise<void> => {
@@ -252,12 +259,25 @@ export default function POS(): JSX.Element {
                 aria-label="Barcode scanner input"
                 autoFocus
               />
+              <button type="button" className="pl-btn pl-btn-primary" onClick={() => setScannerOpen(true)} aria-label="Scan with camera" title="Scan with camera">
+                <i className="fa-solid fa-camera" aria-hidden="true" />
+              </button>
               <button type="submit" className="pl-btn pl-btn-ghost" aria-label="Lookup barcode">
                 <i className="fa-solid fa-barcode" aria-hidden="true" />
               </button>
             </form>
             <input className="pl-input" style={{ flex: 1 }} placeholder="Search by name or category…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search products" />
           </div>
+          {scannerOpen && (
+            <BarcodeScanner
+              title="Scan product barcode"
+              onDetected={(code) => {
+                setScannerOpen(false)
+                void lookupBarcode(code)
+              }}
+              onClose={() => setScannerOpen(false)}
+            />
+          )}
           {scanError && <p role="alert" style={{ color: '#e07a7a', fontSize: '.85rem', margin: '-6px 0 10px' }}>{scanError}</p>}
           {products.length === 0 ? (
             <EmptyState icon="fa-solid fa-box-open" title="No products found" hint="Add products or receive a purchase first." />
