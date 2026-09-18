@@ -80,20 +80,7 @@ export default function ProductsPage(): JSX.Element {
                   gap: 14,
                 }}
               >
-                <span
-                  style={{
-                    width: 52,
-                    height: 52,
-                    borderRadius: 14,
-                    display: 'grid',
-                    placeItems: 'center',
-                    background: `${s.color}1c`,
-                    color: s.color,
-                    fontSize: '1.35rem',
-                  }}
-                >
-                  <i className={s.icon} aria-hidden="true" />
-                </span>
+                <i className={s.icon} aria-hidden="true" style={{ color: s.color, fontSize: '1.9rem' }} />
                 <div>
                   <h2 style={{ fontFamily: "'Space Grotesk',sans-serif", fontSize: '1.2rem', marginBottom: 6 }}>{s.name}</h2>
                   <p style={{ color: 'var(--text-dim)', fontSize: '.92rem' }}>{s.tagline}</p>

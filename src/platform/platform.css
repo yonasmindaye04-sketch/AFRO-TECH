@@ -1363,10 +1363,8 @@ label:has(input[type="radio"]) {
 .pl-dash-primary-label { color: var(--text-dim); font-size: .92rem; margin-top: 6px; }
 .pl-dash-primary-sub { color: var(--text-dim); font-size: .82rem; margin-top: 2px; }
 .pl-dash-primary-icon {
-  width: 60px; height: 60px; border-radius: 16px;
-  background: rgba(var(--accent-rgb), .13);
   color: var(--accent); display: grid; place-items: center;
-  font-size: 1.7rem; flex-shrink: 0;
+  font-size: 1.9rem; flex-shrink: 0;
 }
 
 .pl-dash-secondary {
@@ -1393,8 +1391,8 @@ label:has(input[type="radio"]) {
   .pl-dash-primary { padding: 20px 22px; }
 }
 @media (max-width: 520px) {
-  .pl-dash-secondary { grid-template-columns: 1fr; }
-  .pl-dash-primary-icon { display: none; }
+  .pl-dash-secondary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pl-dash-primary-icon { font-size: 1.4rem; }
 }
 
 /* ── Dashboard cards (Stacklane-inspired) ──────────────────── */
@@ -1462,3 +1460,36 @@ label:has(input[type="radio"]) {
 .pl-dash-table tbody tr:last-child td { border-bottom: none; }
 .pl-dash-table tbody tr:hover { background: rgba(var(--accent-rgb), .04); }
 .pl-dash-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ═══════════════════════════════════════════════════════════
+   Mobile compaction — KPIs side-by-side, tight action buttons
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  /* Page head: smaller title, buttons fill one row side-by-side */
+  .pl-page-head { margin-bottom: 14px; }
+  .pl-page-title { font-size: 1.15rem; }
+  .pl-page-sub { font-size: .78rem; }
+  .pl-page-actions { width: 100%; }
+  .pl-page-actions .pl-btn { flex: 1 1 0; justify-content: center; padding: 8px 10px; font-size: .8rem; white-space: nowrap; }
+
+  /* KPI stats: two per row, compact */
+  .pl-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .pl-stat { padding: 10px 12px; gap: 10px; border-radius: 10px; }
+  .pl-stat-icon { width: 24px; height: 24px; font-size: .9rem; }
+  .pl-stat-value { font-size: 1.02rem; }
+  .pl-stat-label { font-size: .68rem; }
+
+  /* Dashboard tiles */
+  .pl-dash-primary { padding: 16px; gap: 14px; border-radius: 14px; }
+  .pl-dash-primary-value { font-size: 1.7rem; }
+  .pl-dash-secondary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .pl-dash-sec-tile { padding: 12px 14px; }
+  .pl-dash-sec-icon { font-size: .95rem; margin-bottom: 6px; }
+  .pl-dash-sec-value { font-size: 1.15rem; }
+  .pl-dash-sec-label { font-size: .7rem; }
+  .pl-dash-card { padding: 14px; }
+
+  /* Toolbars: search fields share the row */
+  .pl-toolbar { gap: 8px; }
+  .pl-toolbar .pl-input, .pl-toolbar .pl-select { min-width: 0; flex: 1 1 140px; }
+}

@@ -120,7 +120,7 @@ export default function Attendance(): JSX.Element {
             </div>
           </Card>
 
-          <div className="pl-stats" style={{ gridTemplateColumns: `repeat(${counts.length}, minmax(140px,1fr))` }}>
+          <div className="pl-stats">
             {summaryQ.data
               ? counts.map(({ s }) => (
                   <StatCard
