@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-09-18
+
+### Platform release — social login, camera barcode scanning, marketing fixes, mobile UI
+
+### Added
+
+#### Authentication
+- **Google sign-in** — full OAuth flow (`/auth/google` + callback, signed state CSRF check); buttons appear automatically when `GOOGLE_CLIENT_ID/SECRET` are configured
+- **Telegram login widget** — HMAC-SHA256 verified (`/auth/telegram-login`) with 24h freshness window
+- **Social account linking** — existing email accounts link automatically; new social users get a one-step workspace setup (`/auth/complete-social` + `/app/social` callback page)
+- `GET /auth/providers` — public endpoint the UI uses to show only configured providers
+- Migration 027 — `users.google_id` / `users.telegram_id` (unique, nullable)
+
+#### Barcode scanning (Pharmacy & Store)
+- **Camera scanning on phones** — new `BarcodeScanner` component built on `@zxing/browser` (EAN-13/8, UPC-A/E, Code 128/39, ITF, Codabar, QR)
+- Rear camera preferred, flashlight toggle, scan beep, duplicate-scan debounce, friendly permission/HTTPS errors
+- Wired into the **POS** (scan → auto-add to cart) and the **Products** form (scan → fill barcode field); hardware keyboard-wedge scanners still supported
+
+#### Marketing module
+- Sub-page navigation — `MarketingNav` tab bar (Overview, Contacts, Audiences, Templates, Campaigns, Analytics) on every marketing page (pages were previously unreachable from the UI)
+- Marketing demo seeder — `npm run seed:marketing` (idempotent): contacts + channel preferences, templates, dynamic/static audiences, completed + draft campaigns with delivery analytics
+- PWA install prompt — `usePwaInstall` hook + navbar install button; Android users install directly from Chrome (no APK, no Play Protect)
+
+#### Demo data
+- `npm run seed:demo` — comprehensive demo data for **all four business types** across every tenant (patients, doctors, visits, students, grades, attendance, fees, products, batches, sales, purchases, expenses, timetables, announcements)
+
+### Fixed
+
+- **Marketing Templates & Campaigns 500s** — templates list used an ambiguous `tenant_id` after joining `users`; campaigns count query referenced a table alias that doesn't exist in that query. Both queries corrected (production-verified)
+- **Duplicate patient/student codes** — `nextCode()` now uses `MAX(trailing digits)+1` per tenant instead of `count(*)+1` (deleted rows can no longer cause collisions); demo seeds continue numbering from the existing MAX; existing duplicates renumbered in both local and cloud databases
+- **Workspace creation failing for pharmacy/store/school** — `departments.type` CHECK constraint (migration 020) didn't include seeded types (`dispensing`, `sales`, `nurse`, `records`…); migration 028 extends the constraint
+- **"Try X free" buttons** on the products page rendered as plain links (platform-only CSS classes); now use the site's `btn-primary` style
+- **Mobile layout** — KPI stats now sit 2-per-row in a compact size, page action buttons share one row, dashboard tiles stay 2-across on small phones, toolbar inputs flex; Attendance page's inline grid (which forced overflow) now uses the responsive grid
+- **Icon background tiles removed** — products page system icons and dashboard primary KPI icons no longer carry colored backgrounds
+
+### Changed
+
+- `.env.example` documents the new `GOOGLE_CLIENT_ID/SECRET` variables
+- README / ARCHITECTURE rewritten to describe the full monorepo (marketing site + platform + API server)
+
+---
+
 ## [2.0.0] - 2026-08-08
 
 ### Major Release - Complete Rebuild

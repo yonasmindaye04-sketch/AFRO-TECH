@@ -98,6 +98,15 @@ export default function Subscription(): JSX.Element {
 
   const pendingTx = useMemo(() => payments.find((p) => p.status === 'pending'), [payments])
 
+  const PERIODS: { months: 1 | 6 | 12; label: string; billedAs: string }[] = [
+    { months: 1, label: '1 Month', billedAs: 'billed every month' },
+    { months: 6, label: '6 Months', billedAs: 'billed every 6 months' },
+    { months: 12, label: 'Annual', billedAs: 'billed once a year' },
+  ]
+
+  const periodPrice = (plan: Plan, months: 1 | 6 | 12): number =>
+    months === 12 ? Number(plan.price_annual) : months === 6 ? Number(plan.price_semiannual) : Number(plan.price_monthly)
+
   const startCheckout = async (plan: Plan, period: 1 | 6 | 12): Promise<void> => {
     setBusy(plan.code + period)
     setError(null)
@@ -201,43 +210,68 @@ export default function Subscription(): JSX.Element {
       ) : !plans?.length ? (
         <p>No plans available for your business type.</p>
       ) : (
-        <div className="pl-grid-3">
-          {plans.map((plan) => (
-            <div className="pl-card" key={plan.id} style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
-                <h3 style={{ marginTop: 0 }}>{plan.name}</h3>
-                {plan.code.endsWith('_pro') && <span className="pl-badge pl-badge-good">Most popular</span>}
+        <>
+          {plans.map((plan) => {
+            const monthly = Number(plan.price_monthly)
+            return (
+              <div key={plan.id} style={{ marginBottom: 24 }}>
+                <div className="pl-card" style={{ marginBottom: 16 }}>
+                  <h3 style={{ marginTop: 0 }}>{plan.name}</h3>
+                  <p style={{ color: 'var(--text-dim)', marginBottom: 4 }}>{plan.description}</p>
+                  {plan.features.length > 0 && (
+                    <ul style={{ listStyle: 'none', padding: 0, margin: '12px 0 0', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 8 }}>
+                      {plan.features.map((f) => (
+                        <li key={f} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                          <i className="fa-solid fa-circle-check" aria-hidden="true" style={{ color: 'var(--accent)' }} />
+                          <span>{f}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <p style={{ color: 'var(--text-dim)', margin: '0 0 8px' }}>
+                  Choose your billing period — <strong>{plan.name}</strong> in all three options, only the duration changes:
+                </p>
+                <div className="pl-grid-3">
+                  {PERIODS.map(({ months, label, billedAs }) => {
+                    const price = periodPrice(plan, months)
+                    const perMonth = price / months
+                    const savePct = monthly > 0 ? Math.round((1 - price / (monthly * months)) * 100) : 0
+                    return (
+                      <div className="pl-card" key={months} style={{ display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                          <h3 style={{ marginTop: 0 }}>{label}</h3>
+                          {months === 12 && <span className="pl-badge pl-badge-good">best value</span>}
+                        </div>
+                        <p style={{ fontSize: 24, fontWeight: 700, margin: '4px 0' }}>
+                          {fmtMoney(price)} <span style={{ fontSize: 14, fontWeight: 400, color: 'var(--text-dim)' }}>ETB</span>
+                        </p>
+                        <p style={{ color: 'var(--text-dim)', margin: '0 0 8px' }}>{billedAs}</p>
+                        <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 12px', display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+                          <li>≈ <strong>{fmtMoney(perMonth)}</strong> ETB / month</li>
+                          {months === 1 ? (
+                            <li>Full flexibility — cancel or switch anytime</li>
+                          ) : (
+                            <li><span className="pl-badge pl-badge-good">save {savePct}%</span> vs monthly</li>
+                          )}
+                        </ul>
+                        <button
+                          type="button"
+                          className={`pl-btn ${months === 12 ? 'pl-btn-primary' : 'pl-btn-ghost'}`}
+                          disabled={busy !== null}
+                          onClick={() => void startCheckout(plan, months)}
+                        >
+                          {busy === plan.code + months ? 'Starting…' : `Choose — ${label}`}
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
-              <p style={{ color: 'var(--text-dim)', minHeight: '2.6em' }}>{plan.description}</p>
-              <ul style={{ listStyle: 'none', padding: 0, margin: '12px 0', display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
-                {plan.features.map((f) => (
-                  <li key={f} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                    <i className="fa-solid fa-circle-check" aria-hidden="true" style={{ color: 'var(--accent)' }} />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-              <ul style={{ listStyle: 'none', padding: 0, margin: '12px 0' }}>
-                <li><strong>{fmtMoney(plan.price_monthly)}</strong> ETB / month</li>
-                <li><strong>{fmtMoney(plan.price_semiannual)}</strong> ETB / 6 months</li>
-                <li><strong>{fmtMoney(plan.price_annual)}</strong> ETB / year <span className="pl-badge pl-badge-good">best value</span></li>
-              </ul>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {([1, 6, 12] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    className={`pl-btn ${m === 12 ? 'pl-btn-primary' : 'pl-btn-ghost'}`}
-                    disabled={busy !== null}
-                    onClick={() => void startCheckout(plan, m)}
-                  >
-                    {busy === plan.code + m ? 'Starting…' : m === 12 ? 'Subscribe — annual (save most)' : m === 6 ? 'Subscribe — 6 months' : 'Subscribe — monthly'}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+            )
+          })}
+        </>
       )}
 
       <p style={{ marginTop: 32, color: 'var(--text-dim)' }}>

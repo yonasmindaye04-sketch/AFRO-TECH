@@ -1,4 +1,4 @@
-# Contributing to AFRO-TECH Portfolio
+﻿# Contributing to AFRO-TECH Portfolio
 
 Thank you for your interest in contributing! This document outlines the process and standards for contributing to the AFRO-TECH portfolio website.
 
@@ -27,19 +27,46 @@ This project follows the [Contributor Covenant](https://www.contributor-covenant
 
 ### Setup
 
+This is a **monorepo**: the web app lives at the root, the API server in `server/`.
+
 ```bash
 # Fork and clone
 git clone https://github.com/YOUR_USERNAME/portfolio-main.git
 cd portfolio-main
 
-# Install dependencies
+# 1) Frontend (web app + marketing site)
 npm install
+npm run dev               # http://localhost:5173 (proxies /api → :4000)
 
-# Start development server
-npm run dev
+# 2) API server (separate terminal)
+cd server
+npm install
+cp .env.example .env     # set DATABASE_URL + JWT_SECRET (see .env.example)
+npm run migrate          # apply SQL migrations (001–028)
+npm run seed             # create the AFRO-TECH platform admin
+npm run dev              # http://localhost:4000
 
-# Open http://localhost:5173
+# Back at the root — optional demo data (all four business types)
+cd .. && cd server
+npm run seed:demo        # patients, students, products, sales, visits…
+npm run seed:marketing   # marketing contacts/audiences/templates/campaigns
 ```
+
+Prerequisites: Node 20+, PostgreSQL 14+ (local or Neon), Redis optional (marketing queue; mock channels work without it).
+
+### Commands reference
+
+| Command | Where | What it does |
+|---------|-------|--------------|
+| `npm run dev` / `build` / `lint` | root | Frontend dev server, production build, ESLint |
+| `npm run dev` | `server/` | API server with tsx watch |
+| `npm run build` / `start` | `server/` | Compile + run the API in production |
+| `npm run migrate` | `server/` | Apply pending SQL migrations |
+| `npm run seed` | `server/` | Create/update the platform admin |
+| `npm run seed:demo` | `server/` | Demo data for all business types (re-runnable) |
+| `npm run seed:marketing` | `server/` | Marketing demo data (re-runnable) |
+
+Before opening a PR: run `npm run lint` and `npm run build` at the root, and `npx tsc -p tsconfig.json --noEmit` in `server/`. If you added a migration, note it in the PR description — it must be applied to the cloud database on release.
 
 ### IDE Setup (VS Code Recommended)
 
@@ -74,11 +101,11 @@ Enable format on save:
 
 ```
 main (protected)
-  │
   ├── feature/xxx-description (new features)
   ├── fix/xxx-description (bug fixes)
   ├── refactor/xxx-description (code improvements)
   ├── docs/xxx-description (documentation)
+  └── chore/xxx-description (maintenance)
   └── chore/xxx-description (maintenance)
 ```
 
@@ -462,17 +489,17 @@ npx @axe-core/playwright test:e2e
 
 ## Performance Requirements
 
-### Budgets (Enforced in CI)
+### Budgets
 
-| Metric | Budget | Tool |
-|--------|--------|------|
-| Total JS | < 200 KB gzipped | webpack-bundle-analyzer |
-| Total CSS | < 50 KB gzipped | - |
-| LCP | < 2.5s | Lighthouse |
-| FID | < 100ms | Lighthouse |
-| CLS | < 0.1 | Lighthouse |
-| TBT | < 200ms | Lighthouse |
-| FCP | < 1.8s | Lighthouse |
+The marketing pages stay lean; the platform app is route-split so heavy pages (POS, dashboards) load on demand. Watch the numbers with `npm run build` (Vite prints per-chunk gzip sizes).
+
+| Metric | Budget | Area |
+|---------|--------|------|
+| Landing bundle | minimal | Marketing pages (home/services/products) |
+| Route chunks | lazy-loaded | Every platform page (`React.lazy` + Vite manual chunks) |
+| Vendor chunk | react + router + lenis separate | `vite.config.ts` |
+| Heavy libs | code-split & loaded on use | e.g. `@zxing/browser` only loads when the camera scanner opens |
+| LCP / CLS / TBT | Lighthouse: 2.5s / 0.1 / 200ms | Marketing site |
 
 ### Performance Checklist
 

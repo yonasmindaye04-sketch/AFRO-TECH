@@ -62,6 +62,19 @@ These features exist in **all four** business systems (pharmacy, store, hospital
 3. Staff sign in with those credentials; owner can disable them anytime
 4. Every login produces a secure token (JWT) that re-validates the user **on every request** — so disabling an account takes effect instantly
 
+### 3.2 Social sign-in
+
+Besides email + password, users can sign in or create an account with:
+
+| Provider | How it works |
+|---|---|
+| **Google** | Standard OAuth redirect flow; buttons appear automatically once the server has `GOOGLE_CLIENT_ID/SECRET` configured |
+| **Telegram** | Official Telegram login widget on the sign-in page; the payload is HMAC-verified server-side against the bot token |
+
+- Matching email → the social identity **links to the existing account**
+- Brand-new social users get a **one-step workspace setup** (pick business type + company name) on first login — then land straight in their dashboard
+- `GET /auth/providers` tells the UI which providers are configured, so buttons never appear when a provider isn't set up
+
 ### 3.2 Roles and permissions
 
 The system uses **fine-grained permissions** in `resource.action` format (e.g. `sales.create`, `inventory.manage`, `grades.record`).
@@ -96,7 +109,7 @@ Permissions are checked **server-side** on every API call — hiding a button in
 Each product holds:
 
 - **Name**, **category**, **unit** (box / strip / pcs / kg…)
-- **Barcode** — for scan-to-sell at the POS
+- **Barcode** — for scan-to-sell at the POS. Capture it by **scanning with the phone camera** (camera button beside the field) or typing; hardware scanners work too
 - **Cost price** and **sell price** per unit
 - **Default margin %** — used to auto-price at the POS (price = cost × (1 + margin))
 - **Low-stock threshold** — triggers the reorder alert
@@ -260,7 +273,7 @@ Everything in §2–§7, plus pharmacy-specific depth:
 - **Margin-based pricing** at POS with per-line margin dropdown (20 % / 25 % / 30 % presets)
 - **Expiry management** with value-at-risk totals and write-offs
 - **Reorder suggestions** (low-stock × typical demand)
-- **Barcode scanning** for fast counter selling
+- **Barcode scanning** for fast counter selling — hardware scanners (keyboard-wedge) or **the phone camera** (rear camera, flashlight toggle, beep on scan)
 
 *Verified behavior:* buy 10 boxes × 30 pills → sell 45 pills at 50 % margin → per-pill price 3.00 ETB, stock 255 remaining (8 full boxes + 15 loose).
 
@@ -271,6 +284,7 @@ Everything in §2–§7, plus pharmacy-specific depth:
 Shares the **entire retail engine** with Pharmacy — POS, purchases, inventory, credit, cash drawer, reports — tuned for general retail:
 
 - Pill mode and expiry are optional
+- **Camera barcode scanning** at the POS and in the product form (works on phones and laptops with a camera)
 - Emphasis on **fast counter billing**, inventory accuracy, khata credit, and supplier dues
 - Same dashboards: revenue, profit, stock value, dead stock, reorder lists
 

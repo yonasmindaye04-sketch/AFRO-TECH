@@ -1,7 +1,18 @@
 # AFRO Suite — Platform Report
 
 **AFRO-TECH · Multi-tenant business systems platform**
-Version 1.3 · August 2026
+Version 1.4 · September 2026
+
+---
+
+## 0. What's new in 1.4
+
+- **Social sign-in** — users can create an account or log in with **Google** (OAuth) or **Telegram** (HMAC-verified login widget). Existing email accounts link automatically; brand-new social users get a one-step workspace setup.
+- **Camera barcode scanning** — the Pharmacy/Store POS and product form now scan barcodes with the **phone/laptop camera** (ZXing: EAN-13/8, UPC, Code 128/39, ITF, QR) with flashlight support and a beep on success. Hardware keyboard-wedge scanners keep working.
+- **Marketing module completed** — sub-page navigation (tab bar across all six marketing pages), production SQL fixes for the Templates and Campaigns lists, and idempotent demo seeding for contacts/audiences/templates/campaigns with delivery analytics.
+- **Code integrity fixes** — sequential codes (`PAT/STU/INV`) are now MAX-based (deletions can no longer cause duplicates), existing duplicates were renumbered, and the `departments.type` CHECK constraint was extended so workspace creation works for all four business types.
+- **Mobile & UI** — compact two-per-row KPIs, side-by-side action buttons, and bare icons without background tiles; the site is installable as a **PWA** (no APK → no Play Protect blocks, see `DEPLOY.md` §9).
+- **Demo data at scale** — `npm run seed:demo` and `npm run seed:marketing` populate every business type across all tenants, re-runnable without duplication.
 
 ---
 

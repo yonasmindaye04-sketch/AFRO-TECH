@@ -1,304 +1,123 @@
 # Architecture Documentation
 
-## High-Level Architecture
+This repo is a **monorepo** with two deployed pieces:
+
+1. **The AFRO-TECH marketing site** (public portfolio/services/products pages)
+2. **The AFRO Suite platform** — a multi-tenant SaaS web app + API server
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Browser                              │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐   │
-│  │  HTML/CSS   │  │  JavaScript  │  │  Web APIs        │   │
-│  │  (SSR/CSR)  │  │  (React 18)  │  │  (Intersection   │   │
-│  └──────┬──────┘  └──────┬───────┘  │   Observer,      │   │
-│         │               │          │   Lenis, etc.)   │   │
-└─────────┼───────────────┼──────────┼──────────────────┘   │
-          │               │          │
-          ▼               ▼          ▼
-┌─────────────────────────────────────────────────────────┐
-│                    Vite Dev Server                      │
-│  ┌────────────┐  ┌──────────┐  ┌────────────────────┐  │
-│  │ HMR        │  │ TypeScript│ │ Build Pipeline    │  │
-│  │ (Hot Module│  │ (tsc)    │ │ (Rollup)           │  │
-│  │ Replacement)│  └──────────┘  └────────────────────┘  │
-│  └────────────┘                                       │
-└─────────────────────────────────────────────────────────┘
+                       ┌────────────────────────────────┐
+                       │           Browser               │
+                       │  Marketing site + /app SPA      │
+                       └───────────────┬────────────────┘
+                                       │ HTTPS
+                       ┌───────────────▼────────────────┐
+                       │        Vercel (static)          │
+                       │  dist/ + vercel.json rewrites   │
+                       │  /api/v1/*  ────────────────┐   │
+                       └─────────────────────────────┼───┘
+                                                     │
+                       ┌─────────────────────────────▼───┐
+                       │   AFRO Suite API (Render/VPS)   │
+                       │   Express 4 · Node 20+          │
+                       │   /api/v1/auth, retail, hospital│
+                       │   school, marketing, billing,    │
+                       │   flow, telegram, admin…        │
+                       └───────┬──────────────┬──────────┘
+                               │              │
+                 ┌─────────────▼───┐   ┌───────▼─────────┐
+                 │   PostgreSQL    │   │ Redis + BullMQ  │
+                 │ (multi-tenant,  │   │ campaign queue  │
+                 │  28 migrations) │   │ + workers       │
+                 └─────────────────┘   └─────────────────┘
 ```
 
-## Component Architecture
+## 1. Frontend (src/)
 
-### App.tsx (Root Component)
-```
-App
-├── ThemeProvider (Context)
-├── BrowserRouter
-│   ├── Routes
-│   │   ├── Route "/" → App (Home)
-│   │   └── Route "/services" → ServicesPage
-│   └── Navbar (Global)
-├── Main Content (App.tsx)
-│   ├── Hero Section
-│   ├── ShowcaseSection (Tabs + Panels)
-│   ├── ServicesSection (Teaser)
-│   ├── ProcessSection (Horizontal map)
-│   ├── WhyUsSection
-│   ├── AboutSection
-│   ├── ReviewsSection
-│   └── ContactSection (Form)
-├── Footer
-└── BackToTop / Toast
-```
+### Marketing site (`/`, `/services`, `/products`)
+- React 18 + TypeScript + Vite; route-level code splitting via `React.lazy`
+- Theme via CSS custom properties + `[data-theme]` on `<html>`
+- Lenis smooth scrolling; IntersectionObserver reveal animations (`useReveal`, `useCountUp`)
+- PWA installable — `usePwaInstall` hook + navbar install button (`beforeinstallprompt`)
 
-### ServicesPage.tsx (Separate Route)
-```
-ServicesPage
-├── Lenis (Smooth scroll)
-├── Navbar
-├── ServicesHero
-├── Pricing Section
-│   ├── Filter Tabs (All/Starter/Pro/Enterprise)
-│   ├── Pricing Grid (PlanCard[])
-│   └── Services Footer
-├── Comparison Table
-├── CTA Section
-└── Footer
-```
+### AFRO Suite app (`/app/*` — `src/platform/`)
+- `index.tsx` — route table, auth gate (`Gate`), trial/suspension blocking
+- `AuthContext.tsx` — JWT persistence, `/auth/me` refresh, 30-min idle logout
+- `Shell.tsx` — sidebar nav per business type (`RETAIL_NAV`, `HOSPITAL_NAV`, `SCHOOL_NAV`) with permission-filtered items
+- Feature folders: `retail/`, `hospital/`, `school/`, `marketing/`, `admin/`, `pages/` (Team, Settings, BotStudio, Subscription)
+- Shared UI kit in `ui.tsx` (PageHeader, DataTable, Modal, Badge, StatCard…) and `ui/BarcodeScanner.tsx` (camera scanning via `@zxing/browser`)
 
-## State Management
+Key flows:
+- **Login**: email/password → JWT; **Google** → `/auth/google` OAuth redirect → `/app/social` callback page; **Telegram** → login widget → HMAC-verified `/auth/telegram-login` → `/app/social`. New social users get a one-step workspace creation form (`/auth/complete-social`).
+- **All data fetching** goes through `api.ts` (`fetch` wrapper with Bearer token) + `useApiData` hook (loading/error/reload).
 
-### React Context (ThemeContext.tsx)
-```typescript
-interface ThemeContextType {
-  dark: boolean;
-  toggle: () => void;
-  // Persists to localStorage + applies data-theme to <html>
-}
-```
+## 2. Backend (server/)
 
-### Local State (useState)
-| Component | State | Purpose |
-|-----------|-------|---------|
-| App | scrollPct, showTop | Scroll progress, back-to-top visibility |
-| App | formData, fieldErrors, submitting, toast | Contact form |
-| ShowcaseSection | active, animKey | Tab selection + animation key |
-| ServicesPage | activeFilter | Pricing filter |
-| Navbar | menuOpen | Mobile menu |
-| All pages | scrollPct, showTop | Scroll tracking |
+### Entry & middleware
+- `index.ts` mounts: `auth`, `tenant`, `users`, `admin`, `retail`, `hospital`, `flow`, `school`, `telegram`, `tenant-bot`, `billing`, `marketing`
+- `middleware/auth.ts` — verifies JWT, reloads user/tenant/**permissions on every request** (owner ⇒ all permissions; staff ⇒ role permissions), auto-expires trials
+- `middleware/validate.ts` — zod body validation + central error handler
+- Route handlers are wrapped in `asyncHandler` (Express 4 doesn't catch async rejections natively)
 
-### Custom Hooks
-| Hook | File | Purpose |
-|------|------|---------|
-| useTheme | useTheme.ts | Theme context consumer |
-| useReveal | useReveal.ts | IntersectionObserver for scroll animations |
-| useCountUp | useCountUp.ts | Number counting animation |
+### Multi-tenancy
+- Every business table carries `tenant_id`; **all queries filter by the caller's tenant from the JWT** — there is no cross-tenant path
+- Sequential per-tenant codes (`PAT-00001`, `STU-00001`, `INV-00001`) via `nextCode()` — **MAX-based** (`MAX(trailing digits) + 1`), so deleted rows can never cause duplicate codes
+- Workspace creation (`/auth/register`, `/auth/complete-social`) also seeds default departments per business type
 
-## Data Flow
+### Route modules (server/src/routes/)
+| Module | Scope |
+|--------|-------|
+| `auth.ts` | register, login, `/me`, change-password, **social login** (providers/google/telegram-login/complete-social) |
+| `retail.ts` | products (+ barcode lookup), purchases, sales (FEFO, pill mode), returns, stock adjustments, expiry, credit khata, cash drawer, reports |
+| `hospital.ts` | patients, doctors, appointments (double-book guard), medical records, invoices, lab tests, queue |
+| `hospitalFlow.ts` | departments, visits (patient journey), service orders, visit billing |
+| `school.ts` | students, classes, attendance, grades, fees, timetable, report cards, announcements, guardian notifications, promotion |
+| `marketing/` | contacts, audiences (dynamic rules/static), templates (versioned), campaigns (multi-channel), webhooks, analytics |
+| `billing.ts` | subscription plans + Chapa checkout/webhooks (mock provider in dev) |
+| `telegram.ts`, `tenant-bots.ts` | platform bot, per-tenant bots, Mini App signed-initData auth |
+| `admin.ts` | AFRO-TECH admin: tenants, grants, suspensions, stats |
 
-### Content Data (src/data.ts)
-```typescript
-// Static content - all in one file for easy editing
-export const services: Service[] = [...];
-export const testimonials: Testimonial[] = [...];
-export const process_steps: ProcessStep[] = [...];
-export const whyUs: WhyUs[] = [...];
-export const whatWeDo: WhatWeDo[] = [...];
-export const showcase: ShowcaseItem[] = [...];
-```
+### Services & workers
+- `services/marketing/*` — template variable engine, audience rule engine, campaign queueing
+- `channels/` — `ResendEmailChannel`, `EthioTelecomSmppChannel` (mock mode for dev) behind a common `MarketingChannel` interface
+- `workers/` — BullMQ workers send queued campaign messages with retries
+- `services/alerts.ts` — scheduled low-stock/expiry/fee/appointment pushes
+- `services/guardianNotifier.ts`, `hospitalNotify.ts` — email + Telegram delivery
 
-### Props Flow (App.tsx → Components)
-```
-App.tsx
-├── data.ts → ShowcaseSection (showcase[])
-├── data.ts → ServicesPage (services[])
-├── data.ts → whatWeDo section (whatWeDo[])
-├── App local state → process_steps, whyUs, testimonials
-└── data.ts → tierLabels, tierColors → ServicesPage
-```
+### Database (server/migrations/ 001–028)
+Highlights: core tenancy (001), retail batches (002), labs + telegram (003/006), RBAC (007), departments/visits/orders (020–024), marketing stack (011–017), cash drawer (025), RBAC extension (026), inventory data model (027a), **social login** identity columns (027b), **departments type CHECK fix** (028 — workspace creation for pharmacy/store/school previously failed on constrained types).
 
-## Styling Architecture
+Migrations are plain SQL, tracked by filename, idempotent (`IF NOT EXISTS`), applied with `npm run migrate`.
 
-### CSS Structure (index.css)
-```
-1. @import (fonts, lenis)
-2. Accessibility (skip link)
-3. Performance (content-visibility)
-4. Design Tokens (CSS Custom Properties)
-   - :root[data-theme="dark"]
-   - :root[data-theme="light"]
-5. Base Reset
-6. Components (in order):
-   - Scroll Progress
-   - Nav
-   - Hero
-   - Buttons
-   - Ticker
-   - Stats
-   - Showcase
-   - Section Shared
-   - Services/Pricing
-   - Process Map
-   - Why Us
-   - About
-   - Testimonials
-   - Contact
-   - Footer
-   - Back to Top
-   - Toast
-7. Animations
-8. Motion System (data-reveal)
-9. Hero Load Sequence
-10. Reduced Motion
-11. Responsive Breakpoints
-12. Form Validation
-13. What We Do Teaser
-14. Services Page Hero
-14. Comparison Table
-15. Services CTA
-```
+### Demo/seed data
+- `seed.ts` — platform admin account
+- `seed-demo.ts` — full demo data for all four business types (patients, students, products, sales, visits, grades…); codes continue from existing MAX so re-runs never duplicate
+- `seed-marketing.ts` — idempotent marketing demo data (contacts + channels, templates, dynamic/static audiences, completed + draft campaigns with delivery analytics)
 
-### CSS Custom Properties Strategy
-- All colors, spacing, transitions as custom properties
-- Theme switching via `[data-theme]` on `<html>`
-- Component-scoped variables via inline styles (`--tier-color`)
-- System fonts as fallbacks
+## 3. Security model
 
-## Routing
+- Short-lived JWTs (`JWT_EXPIRES_IN=8h`), permissions reloaded from DB on every request — disabling an account takes effect immediately
+- OAuth state (signed JWT, 10-min) for Google; HMAC-SHA256 verification + 24h freshness for Telegram login widget and Mini App initData
+- Social accounts: `users.google_id` / `users.telegram_id` (unique, nullable); email match links an existing password account; social-only users get random passwords
+- Security headers in `vercel.json`; rate limiting on credential endpoints; zod validation on all writes
+- `RULES.md` constraints: no emojis in UI, badge/indicator styling discipline, firm theming via CSS variables
 
-### React Router v6
-```typescript
-<BrowserRouter>
-  <Routes>
-    <Route path="/" element={<App />} />
-    <Route path="/services" element={<ServicesPage />} />
-  </Routes>
-</BrowserRouter>
-```
-
-### Navigation Patterns
-- **Home page**: Hash links (`#section-id`) via Navbar
-- **Services page**: Own routing, links to home via `<Link to="/">`
-- **Cross-page**: Navbar handles external navigation via `window.location.assign()`
-
-## Performance Architecture
-
-### Code Splitting
-```
-dist/
-├── index-[hash].js          # Main chunk (App + Navbar + shared)
-├── ServicesPage-[hash].js   # Lazy-loaded via React.lazy (if implemented)
-└── vendor-[hash].js         # React, Router, Lenis
-```
-
-### Bundle Optimization (vite.config.ts)
-```typescript
-build: {
-  rollupOptions: {
-    output: {
-      manualChunks: {
-        vendor: ['react', 'react-dom', 'react-router-dom', 'lenis'],
-        // UI components could be separate
-      }
-    }
-  }
-}
-```
-
-### Asset Handling
-- Images: `content-visibility: auto`, `loading="lazy"`, proper dimensions
-- Fonts: Preload + `font-display: swap` + local fallback
-- CSS: Critical inlined, rest async via `media="print" onload`
-
-## Accessibility Architecture
-
-### ARIA Implementation
-| Component | ARIA Pattern |
-|-----------|--------------|
-| Showcase Tabs | `role="tablist"` + `role="tab"` + `role="tabpanel"` |
-| Mobile Menu | `aria-expanded`, `aria-controls`, `aria-label` |
-| Theme Toggle | `aria-label` with dynamic text |
-| Form Fields | `htmlFor` + `aria-describedby` for errors |
-| Skip Link | `href="#main-content"` |
-| Live Regions | Toast uses `role="alert"` |
-
-### Focus Management
-- Visible focus rings on all interactive elements
-- Focus trap in mobile menu (via CSS)
-- Back-to-top button focusable
-- Form error focus management
-
-## Build & Deploy Pipeline
+## 4. Build & deploy
 
 ```
-┌─────────────┐
-│  git push   │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────────┐
-│  Vercel Build   │
-│  npm run build  │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Vite Build     │
-│  1. tsc         │
-│  2. Rollup      │
-│  3. CSS Extract │
-│  4. Minify      │
-│  5. Hash        │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Vercel Deploy  │
-│  Edge Network   │
-│  Cache Headers  │
-│  HTTPS/HTTP2    │
-└─────────────────┘
+git push ─▶ Vercel (web: npm run build → dist)
+        └─▶ Render (API: server/ npm run build → dist/index.js, migrations on release)
 ```
 
-## Security Considerations
+- Vercel rewrites `/api/v1/*` → API host; SPA fallback to `index.html`
+- Camera features (barcode scanning) require HTTPS — production qualifies
+- PWA: `site.webmanifest` + install prompt; Android APK guidance in `DEPLOY.md` §9 (targetSdkVersion 35 to avoid Play Protect blocks)
 
-### Headers (vercel.json)
-```json
-{
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        {"key": "X-Content-Type-Options", "value": "nosniff"},
-        {"key": "X-Frame-Options", "value": "DENY"},
-        {"key": "Referrer-Policy", "value": "strict-origin-when-cross-origin"}
-      ]
-    }
-  ]
-}
-```
+## 5. Documentation map
 
-### Content Security
-- No inline scripts (except structured data JSON-LD)
-- Font Awesome loaded from CDN with integrity
-- No `dangerouslySetInnerHTML` used
-- Form submission to `/api/contact` (serverless function)
-
-## Monitoring & Analytics
-
-### Recommended Additions
-- **Web Vitals**: `web-vitals` library + send to analytics
-- **Error Boundary**: React Error Boundary + Sentry
-- **Performance**: Lighthouse CI in CI/CD
-- **Real User Monitoring**: Vercel Analytics or Plausible
-
-## Future Extensibility
-
-### Planned Features
-- [ ] Blog/News section (MDX + Contentlayer)
-- [ ] Client Portal (Authentication + Dashboard)
-- [ ] Multi-language (i18n with react-i18next)
-- [ ] CMS Integration (Sanity/Contentful)
-- [ ] Automated SEO audits in CI/CD
-
-### Component Library Extraction
-Potential shared components for reuse:
-- Button, Card, Modal, Toast, FormField, Table
-- Theme provider + hooks
-- Animation utilities (reveal, countUp)
+| Doc | Contents |
+|-----|----------|
+| `FEATURES.md` | Feature guide per system (retail engines, hospital, school, marketing) |
+| `RULES.md` / `.gemini/rules.md` | Agent + contributor rules (UI, SQL, migrations, codes) |
+| `DEPLOY.md` | Deployment, Telegram bot setup, Android/Play Protect |
+| `docs/USER_MANUAL.md` | End-user operations manual |

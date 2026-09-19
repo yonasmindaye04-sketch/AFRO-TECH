@@ -102,6 +102,13 @@ You can access your workspace through two official channels:
 1. **Desktop / Tablet Web Browser:** Modern Chromium-based browsers (Chrome, Edge, Brave) or Safari. Recommended screen resolution: 1280×720 or higher.
 2. **Telegram Mini App:** Access your workspace directly within Telegram on mobile or desktop via your registered company bot without needing to re-enter your password.
 
+### 1.2.1 Signing In & Creating an Account
+* **Email + password** — the standard sign-in form on the login page.
+* **Continue with Google** — a one-tap Google account sign-in (appears automatically when the platform has Google sign-in configured). If your Google email matches an existing account, the two link together.
+* **Telegram login widget** — sign in with your Telegram account, verified securely by the platform's bot.
+* **First-time social users:** after a Google or Telegram sign-in, you complete a one-step workspace setup — choose your business type and company name — and go straight to your dashboard.
+* **Install as an app:** on Android/iOS your browser's menu offers *Install app / Add to Home screen*, which installs AFRO Suite as a full-screen app icon (PWA). No APK download needed.
+
 ### 1.3 Workspace Setup Checklist
 Upon first sign-in as the **Owner**, complete this 10-minute setup checklist:
 - [ ] **Navigate to Settings:** Open the navigation bar and select `Settings`.
@@ -113,11 +120,20 @@ Upon first sign-in as the **Owner**, complete this 10-minute setup checklist:
 
 ### 1.4 Hardware Setup (Barcode Scanners & Thermal Printers)
 
-#### Barcode Scanners
+#### Barcode Scanners — Hardware
 AFRO Suite supports standard 1D and 2D USB/Bluetooth barcode scanners operating in **HID Keyboard Emulation Mode**:
 * Plug the scanner into your PC/POS terminal via USB or pair via Bluetooth.
 * Ensure the scanner is configured to send an **Enter (Carriage Return / `CR` or `CR+LF`)** suffix after every scan. Most scanners come factory-configured this way.
 * When using the POS screen, the scanner will automatically populate the barcode input and immediately trigger item lookup and addition to cart.
+
+#### Barcode Scanners — Phone / Laptop Camera
+No hardware needed — the POS and the product form include a **camera scanner** (button with the camera icon):
+* Tap the camera button, point the rear camera at the product barcode, and it scans automatically — a short beep confirms, and the item is added to the cart (POS) or the code fills the Barcode field (product form).
+* Supported formats: **EAN-13, EAN-8, UPC-A/E, Code 128, Code 39, ITF, Codabar, and QR**.
+* A **flashlight toggle** appears in dim conditions on supported devices.
+* Requirements: camera permission granted, and the app must be opened over **HTTPS** (the production site always qualifies). If access is denied, the app explains how to fix it, and you can always type the barcode manually.
+
+*Tip for pharmacists:* scan each product's manufacturer barcode once into its product record (Products → edit → camera icon next to Barcode). After that, every POS scan rings it up instantly.
 
 #### Thermal Receipt Printers
 Supports ESC/POS compatible thermal printers (58mm and 80mm roll widths):
@@ -197,9 +213,9 @@ Products in AFRO Suite accommodate both traditional packaged retail items and un
    * The system will automatically compute per-pill prices, loose-pill inventory, and pack breakdown math.
 
 ### 3.2 Barcode Configuration & Scanning
-* **Product Setup:** Ensure the barcode in the product record matches the printed physical barcode on the packaging.
+* **Product Setup:** Ensure the barcode in the product record matches the printed physical barcode on the packaging. Use the **camera icon** beside the Barcode field to capture it from the physical package in one tap.
 * **Scanning at POS:**
-  * Click into or focus on the **Scan barcode...** input box at the top left of the POS.
+  * Click into or focus on the **Scan barcode...** input box at the top left of the POS — then scan with your hardware scanner, **or tap the camera button** to scan with the phone/laptop camera.
   * Scan the physical item.
   * The system validates whether stock is available:
     * **If In Stock:** The product is instantly added to the cart, or the existing quantity is incremented by 1.
