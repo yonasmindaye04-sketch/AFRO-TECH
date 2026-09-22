@@ -91,20 +91,17 @@ export default function FlowBoard(): JSX.Element {
 
   return (
     <div>
-      <PageHeader
-        title="Patient Flow"
-        subtitle="Live queue per department"
-        action={
-          <select className="pl-select" value={deptId} onChange={(e) => setDeptId(e.target.value)} style={{ minWidth: 220 }}>
-            <option value="">All departments…</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name} ({d.waiting} waiting, {d.pending_orders} orders)
-              </option>
-            ))}
-          </select>
-        }
-      />
+      <PageHeader title="Patient Flow" subtitle="Live queue per department" />
+      <div className="pl-toolbar">
+        <select className="pl-select" value={deptId} onChange={(e) => setDeptId(e.target.value)} aria-label="Filter by department">
+          <option value="">All departments…</option>
+          {departments.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name} ({d.waiting} waiting, {d.pending_orders} orders)
+            </option>
+          ))}
+        </select>
+      </div>
       {error && <ErrorBox message={error} />}
       {ok && <OkBox message={ok} />}
 

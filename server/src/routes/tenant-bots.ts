@@ -30,7 +30,13 @@ router.post(
     const bot = await getTargetBot(botId, secret)
     if (!bot) return res.status(404).json({ error: 'Unknown bot' }) // don't leak which part was wrong
     if (!bot.is_active) return res.json({ ok: true, ignored: 'inactive' })
-    await handleTenantBotUpdate(bot, req.body ?? {})
+    // Always answer 200 once the update is accepted — a 500 makes Telegram
+    // redeliver the same update and re-run side effects (subscribers, links).
+    try {
+      await handleTenantBotUpdate(bot, req.body ?? {})
+    } catch (err) {
+      console.error(`[bot:${botId}] webhook handler error:`, err instanceof Error ? err.message : err)
+    }
     res.json({ ok: true })
   })
 )

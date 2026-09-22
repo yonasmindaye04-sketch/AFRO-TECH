@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
-import { PageHeader, Card, Badge, ErrorBox, OkBox, Field, Modal, FormRow, DataTable } from '../ui'
+import { PageHeader, Card, Badge, ErrorBox, OkBox, Field, Modal, FormRow, DataTable, SearchInput } from '../ui'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import MarketingNav from './MarketingNav'
 import type { MarketingContact } from './types'
 
@@ -11,6 +12,7 @@ export default function Contacts(): JSX.Element {
   const [ok, setOk] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [showAdd, setShowAdd] = useState(false)
+  const debouncedSearch = useDebouncedValue(search, 300)
 
   const [form, setForm] = useState({
     first_name: '',
@@ -25,7 +27,7 @@ export default function Contacts(): JSX.Element {
 
   const reload = useCallback(async (): Promise<void> => {
     try {
-      const q = search ? `?search=${encodeURIComponent(search)}` : ''
+      const q = debouncedSearch ? `?search=${encodeURIComponent(debouncedSearch)}` : ''
       const r = await api.get<{ contacts: MarketingContact[] }>(`/marketing/contacts${q}`)
       setContacts(r.contacts)
     } catch (err) {
@@ -33,7 +35,7 @@ export default function Contacts(): JSX.Element {
     } finally {
       setLoading(false)
     }
-  }, [search])
+  }, [debouncedSearch])
 
   useEffect(() => {
     void reload()
@@ -89,24 +91,18 @@ export default function Contacts(): JSX.Element {
       {ok && <OkBox message={ok} />}
 
       <Card>
-        <Field label="Search">
-          <input
-            className="pl-input"
-            placeholder="Name, email, or phone…"
+        <div className="pl-toolbar">
+          <SearchInput
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                setLoading(true)
-                void reload()
-              }
-            }}
+            onChange={setSearch}
+            placeholder="Search name, email or phone…"
+            ariaLabel="Search contacts"
           />
-        </Field>
+        </div>
         {loading ? (
           <p>Loading…</p>
         ) : (
-          <DataTable columns={cols} rows={contacts} empty="No contacts yet. Add your first one." />
+          <DataTable columns={cols} rows={contacts} searchable={false} empty="No contacts yet. Add your first one." />
         )}
       </Card>
 

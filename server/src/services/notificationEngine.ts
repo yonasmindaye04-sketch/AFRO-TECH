@@ -1,5 +1,5 @@
 import { query, queryOne } from '../config/db.js'
-import { sendMessage, telegramEnabled } from './telegram.js'
+import { sendMessage, telegramEnabled, escapeHtml } from './telegram.js'
 
 /**
  * Unified notification engine — DB-stored templates, multi-channel,
@@ -173,7 +173,7 @@ export async function sendNotification(opts: SendOpts): Promise<{ sent: number; 
   // Render template
   const subject = template.subject ? renderTemplate(template.subject, data) : ''
   const body = renderTemplate(template.body, data)
-  const fullText = subject ? `<b>${subject}</b>\n\n${body}` : body
+  const fullText = subject ? `<b>${escapeHtml(subject)}</b>\n\n${escapeHtml(body)}` : body
 
   let totalSent = 0
   let totalFailed = 0

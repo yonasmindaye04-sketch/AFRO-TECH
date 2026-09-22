@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { fmtMoney, api } from '../api'
 import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
-import { EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
+import { EmptyState, Field, Modal, PageHeader, SearchInput, Spinner } from '../ui'
 import BarcodeScanner from '../ui/BarcodeScanner'
 import ThermalReceipt from '../ui/ThermalReceipt'
 import type { ReceiptData } from '../utils/receipt'
@@ -266,7 +266,7 @@ export default function POS(): JSX.Element {
                 <i className="fa-solid fa-barcode" aria-hidden="true" />
               </button>
             </form>
-            <input className="pl-input" style={{ flex: 1 }} placeholder="Search by name or category…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search products" />
+            <SearchInput value={search} onChange={setSearch} placeholder="Search by name or category…" ariaLabel="Search products" style={{ flex: 1, maxWidth: 'none' }} />
           </div>
           {scannerOpen && (
             <BarcodeScanner

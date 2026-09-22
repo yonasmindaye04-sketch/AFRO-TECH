@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { PageHeader, Card, Badge, ErrorBox, OkBox, Field, Modal, FormRow, DataTable } from '../ui'
 import MarketingNav from './MarketingNav'
@@ -64,7 +64,7 @@ export default function Templates(): JSX.Element {
         </span>
       ),
     },
-    { key: 'content', header: 'Preview', render: (t: MarketingTemplate) => <span style={{ color: 'var(--text-dim)' }}>{t.content.slice(0, 60)}{t.content.length > 60 ? '…' : ''}</span> },
+    { key: 'content', header: 'Preview', render: (t: MarketingTemplate) => <span style={{ color: 'var(--text-dim)' }}>{t.content.slice(0, 60)}{t.content.length > 60 ? 'â€¦' : ''}</span> },
     {
       key: 'status',
       header: 'Status',
@@ -88,15 +88,15 @@ export default function Templates(): JSX.Element {
       <MarketingNav />
       {error && <ErrorBox message={error} />}
       {ok && <OkBox message={ok} />}
-      <Card>{loading ? <p>Loading…</p> : <DataTable columns={cols} rows={templates} empty="No templates yet." />}</Card>
+      <Card>{loading ? <p>Loadingâ€¦</p> : <DataTable columns={cols} rows={templates} empty="No templates yet." />}</Card>
 
       <Modal open={showAdd} title="New template" onClose={() => setShowAdd(false)} wide>
-        <FormRow onSubmit={submit} submitLabel={busy ? 'Saving…' : 'Save template'} busy={busy} error={error}>
+        <FormRow onSubmit={submit} submitLabel={busy ? 'Savingâ€¦' : 'Save template'} busy={busy} error={error}>
           <Field label="Name">
             <input className="pl-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           </Field>
           <Field label="Channel">
-            <select className="pl-input" value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value })}>
+            <select className="pl-select" value={form.channel} onChange={(e) => setForm({ ...form, channel: e.target.value })}>
               <option value="sms">SMS</option>
               <option value="email">Email</option>
               <option value="whatsapp">WhatsApp</option>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { PageHeader, Card, Badge, ErrorBox, OkBox, Field, Modal, FormRow, DataTable, EmptyState } from '../ui'
 import MarketingNav from './MarketingNav'
@@ -138,7 +138,7 @@ export default function Audiences(): JSX.Element {
       render: (a: MarketingAudience) => <Badge tone={a.type === 'dynamic' ? 'info' : 'neutral'}>{a.type}</Badge>,
     },
     { key: 'members', header: 'Members', render: (a: MarketingAudience) => a.member_count },
-    { key: 'desc', header: 'Description', render: (a: MarketingAudience) => a.description ?? '—' },
+    { key: 'desc', header: 'Description', render: (a: MarketingAudience) => a.description ?? 'â€”' },
     {
       key: 'actions',
       header: '',
@@ -167,11 +167,11 @@ export default function Audiences(): JSX.Element {
       {error && !editor && <ErrorBox message={error} />}
       {ok && <OkBox message={ok} />}
       <Card>
-        {loading ? <p>Loading…</p> : <DataTable columns={cols} rows={audiences} empty="No audiences yet." />}
+        {loading ? <p>Loadingâ€¦</p> : <DataTable columns={cols} rows={audiences} empty="No audiences yet." />}
       </Card>
 
       <Modal open={editor !== null} title={editor === 'new' ? 'New audience' : 'Edit audience'} onClose={() => setEditor(null)} wide>
-        <FormRow onSubmit={submit} submitLabel={busy ? 'Saving…' : 'Save audience'} busy={busy} error={error}>
+        <FormRow onSubmit={submit} submitLabel={busy ? 'Savingâ€¦' : 'Save audience'} busy={busy} error={error}>
           <Field label="Name">
             <input className="pl-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           </Field>
@@ -179,7 +179,7 @@ export default function Audiences(): JSX.Element {
             <input className="pl-input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </Field>
           <Field label="Type">
-            <select className="pl-input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as 'dynamic' | 'static' })}>
+            <select className="pl-select" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as 'dynamic' | 'static' })}>
               <option value="dynamic">Dynamic (rules auto-update members)</option>
               <option value="static">Static (manually chosen contacts)</option>
             </select>
@@ -195,14 +195,14 @@ export default function Audiences(): JSX.Element {
               </div>
               {rules.map((r, i) => (
                 <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.4fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-                  <select className="pl-input" value={r.field} onChange={(e) => updateRule(i, { field: e.target.value })}>
+                  <select className="pl-select" value={r.field} onChange={(e) => updateRule(i, { field: e.target.value })}>
                     {CONTACT_FIELDS.map((f) => (
                       <option key={f.value} value={f.value}>
                         {f.label}
                       </option>
                     ))}
                   </select>
-                  <select className="pl-input" value={r.operator} onChange={(e) => updateRule(i, { operator: e.target.value, value: ['IS NULL', 'IS NOT NULL'].includes(e.target.value) ? '' : r.value })}>
+                  <select className="pl-select" value={r.operator} onChange={(e) => updateRule(i, { operator: e.target.value, value: ['IS NULL', 'IS NOT NULL'].includes(e.target.value) ? '' : r.value })}>
                     {OPERATORS.map((o) => (
                       <option key={o.value} value={o.value}>
                         {o.label}
@@ -210,9 +210,9 @@ export default function Audiences(): JSX.Element {
                     ))}
                   </select>
                   {['IS NULL', 'IS NOT NULL'].includes(r.operator) ? (
-                    <span style={{ color: 'var(--text-dim)', fontSize: '.85rem' }}>—</span>
+                    <span style={{ color: 'var(--text-dim)', fontSize: '.85rem' }}>â€”</span>
                   ) : (
-                    <input className="pl-input" placeholder={['IN', 'NOT IN'].includes(r.operator) ? 'value1, value2, …' : 'value'} value={r.value} onChange={(e) => updateRule(i, { value: e.target.value })} />
+                    <input className="pl-input" placeholder={['IN', 'NOT IN'].includes(r.operator) ? 'value1, value2, â€¦' : 'value'} value={r.value} onChange={(e) => updateRule(i, { value: e.target.value })} />
                   )}
                   <button type="button" className="pl-icon-btn danger" onClick={() => setRules((rs) => rs.filter((_, idx) => idx !== i))} aria-label="Remove rule">
                     <i className="fa-solid fa-trash" />

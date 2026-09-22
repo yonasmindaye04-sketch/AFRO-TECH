@@ -162,7 +162,13 @@ router.post(
         const header = req.headers['x-telegram-bot-api-secret-token']
         if (header !== WEBHOOK_SECRET) throw new AppError(401, 'Bad webhook secret', 'BAD_SECRET')
       }
-      await handleUpdate(req.body ?? {})
+      // Always answer 200 once the update is accepted — a 500 makes Telegram
+      // redeliver the same update and re-run side effects (link codes, etc.).
+      try {
+        await handleUpdate(req.body ?? {})
+      } catch (err) {
+        console.error('[telegram] webhook handler error:', err instanceof Error ? err.message : err)
+      }
       res.json({ ok: true })
     })
   )

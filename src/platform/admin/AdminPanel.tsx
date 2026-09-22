@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { fmtDate, fmtMoney, api } from '../api'
 import { useApiData } from '../hooks/useApiData'
-import { Badge, DataTable, EmptyState, PageHeader, StatCard } from '../ui'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
+import { Badge, DataTable, EmptyState, PageHeader, SearchInput, StatCard } from '../ui'
 
 interface TenantRow {
   id: string
@@ -45,8 +46,9 @@ const statusTone = (s: TenantRow['status']): 'good' | 'warn' | 'bad' | 'neutral'
 export default function AdminPanel(): JSX.Element {
   const [search, setSearch] = useState('')
   const [showAudit, setShowAudit] = useState(false)
+  const debouncedSearch = useDebouncedValue(search, 300)
   const statsQ = useApiData<AdminStats>('/admin/stats')
-  const tenantsQ = useApiData<{ tenants: TenantRow[]; total: number }>(`/admin/tenants?search=${encodeURIComponent(search)}&limit=100`)
+  const tenantsQ = useApiData<{ tenants: TenantRow[]; total: number }>(`/admin/tenants?search=${encodeURIComponent(debouncedSearch)}&limit=100`)
   const auditQ = useApiData<{ logs: AuditRow[] }>(showAudit ? '/admin/audit?limit=60' : null)
 
   const setStatus = async (t: TenantRow, status: TenantRow['status']): Promise<void> => {
@@ -105,7 +107,12 @@ export default function AdminPanel(): JSX.Element {
       </div>
 
       <div className="pl-toolbar">
-        <input className="pl-input pl-search-lg" placeholder="Search company name…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search companies" />
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search company name…"
+          ariaLabel="Search companies"
+        />
         <span style={{ color: 'var(--text-dim)', fontSize: '.85rem' }}>{tenantsQ.data?.total ?? 0} companies</span>
         <button type="button" className="pl-btn pl-btn-ghost pl-btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setShowAudit((v) => !v)}>
           <i className="fa-solid fa-clipboard-list" aria-hidden="true" /> {showAudit ? 'Hide audit log' : 'Platform audit log'}
@@ -161,6 +168,7 @@ export default function AdminPanel(): JSX.Element {
       ) : (
         <DataTable
           rows={tenantsQ.data.tenants}
+          searchable={false}
           columns={[
             {
               key: 'name',

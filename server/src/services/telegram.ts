@@ -9,6 +9,11 @@ const MINI_APP_URL = process.env.TELEGRAM_WEBAPP_URL || `${APP_URL}/app`
 
 export const telegramEnabled = (): boolean => BOT_TOKEN.length > 0
 
+/** Escape user-supplied text for Telegram's HTML parse mode (bare <, >, & break messages with a 400). */
+export function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 async function api<T = unknown>(method: string, body?: Record<string, unknown>): Promise<T | null> {
   if (!BOT_TOKEN) return null
   try {
@@ -132,7 +137,7 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
     await sendMessage(
       chatId,
       user
-        ? `<b>${user.full_name}</b> — AFRO-TECH assistant for <b>${user.tenant_name ?? 'AFRO-TECH'}</b>.\n\n` +
+        ? `<b>${escapeHtml(user.full_name)}</b> — AFRO-TECH assistant for <b>${escapeHtml(user.tenant_name ?? 'AFRO-TECH')}</b>.\n\n` +
             `Commands:\n/today — daily summary\n/lowstock — products to reorder\n/expiring — batches expiring soon\n/shift — your open cash drawer\n/unlink — disconnect this chat\n\n` +
             `Or open the app: ${MINI_APP_URL}`
         : `Welcome to the <b>AFRO-TECH Suite</b> assistant!\n\n` +
@@ -173,7 +178,7 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
     if (!student) {
       await sendMessage(
         chatId,
-        `❌ No active student found with code "<b>${rawCode}</b>".\nPlease check the code and try again.\nExample: <code>/parent STU-00001</code>`
+        `❌ No active student found with code "<b>${escapeHtml(rawCode)}</b>".\nPlease check the code and try again.\nExample: <code>/parent STU-00001</code>`
       )
       return
     }
@@ -188,10 +193,10 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
     await sendMessage(
       chatId,
       `✅ <b>Successfully Linked as Guardian!</b>\n\n` +
-      `👤 <b>Student:</b> ${student.first_name} ${student.last_name}\n` +
-      `🆔 <b>Code:</b> <code>${student.code}</code>\n` +
-      `🏫 <b>School:</b> ${student.tenant_name || 'School'}\n` +
-      `📚 <b>Class:</b> ${student.class_name || 'Not assigned'}\n\n` +
+      `👤 <b>Student:</b> ${escapeHtml(`${student.first_name} ${student.last_name}`)}\n` +
+      `🆔 <b>Code:</b> <code>${escapeHtml(student.code)}</code>\n` +
+      `🏫 <b>School:</b> ${escapeHtml(student.tenant_name || 'School')}\n` +
+      `📚 <b>Class:</b> ${escapeHtml(student.class_name || 'Not assigned')}\n\n` +
       `You will now receive important school announcements, notices, and fee receipts directly in this chat.\n\n` +
       `Commands for parents:\n` +
       `/child — View linked student info\n` +
@@ -229,7 +234,7 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
     const list = students
       .map(
         (s) =>
-          `• <b>${s.first_name} ${s.last_name}</b> (Code: <code>${s.code}</code>)\n  Class: ${s.class_name || 'N/A'} | School: ${s.tenant_name || 'School'}`
+          `• <b>${escapeHtml(`${s.first_name} ${s.last_name}`)}</b> (Code: <code>${escapeHtml(s.code)}</code>)\n  Class: ${escapeHtml(s.class_name || 'N/A')} | School: ${escapeHtml(s.tenant_name || 'School')}`
       )
       .join('\n\n')
 
@@ -266,7 +271,7 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
       .map((f) => {
         const remaining = Math.max(0, Number(f.amount) - Number(f.paid_amount))
         const statusEmoji = f.status === 'paid' ? '✅ Paid' : remaining > 0 ? `⚠️ Due: ${remaining.toFixed(2)} ETB` : 'Pending'
-        return `• <b>${f.title}</b> (${f.student_name})\n  Total: ${Number(f.amount).toFixed(2)} ETB | Paid: ${Number(f.paid_amount).toFixed(2)} ETB\n  Status: ${statusEmoji}${f.due_date ? ` (Due: ${f.due_date.toString().slice(0, 10)})` : ''}`
+        return `• <b>${escapeHtml(f.title)}</b> (${escapeHtml(f.student_name)})\n  Total: ${Number(f.amount).toFixed(2)} ETB | Paid: ${Number(f.paid_amount).toFixed(2)} ETB\n  Status: ${statusEmoji}${f.due_date ? ` (Due: ${f.due_date.toString().slice(0, 10)})` : ''}`
       })
       .join('\n\n')
 
@@ -292,7 +297,7 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
       [row.user_id]
     )
     logAudit({ userId: row.user_id, userName: user?.full_name, action: 'telegram.link', entity: 'user', entityId: row.user_id, details: { telegram: tgUser.id } })
-    await sendMessage(chatId, `Linked! You'll receive alerts for <b>${user?.tenant_name ?? 'your workspace'}</b>.\nTry /today or open ${MINI_APP_URL}`)
+    await sendMessage(chatId, `Linked! You'll receive alerts for <b>${escapeHtml(user?.tenant_name ?? 'your workspace')}</b>.\nTry /today or open ${MINI_APP_URL}`)
     return
   }
 
@@ -331,7 +336,7 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
               [user.tenant_id]
             )
       const label = user.business_type === 'hospital' ? 'appointments today' : 'attendance entries today'
-      await sendMessage(chatId, `<b>${user.tenant_name}</b>\n${stats?.today ?? 0} ${label}.`)
+      await sendMessage(chatId, `<b>${escapeHtml(user.tenant_name ?? '')}</b>\n${stats?.today ?? 0} ${label}.`)
       return
     }
     const s = await queryOne<{ total: string; count: string }>(
@@ -339,7 +344,7 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
        WHERE tenant_id = $1 AND status = 'completed' AND created_at >= CURRENT_DATE`,
       [user.tenant_id]
     )
-    await sendMessage(chatId, `<b>${user.tenant_name} — today</b>\n${s?.count ?? 0} sales · ${Number(s?.total ?? 0).toFixed(2)} ETB`)
+    await sendMessage(chatId, `<b>${escapeHtml(user.tenant_name ?? '')} — today</b>\n${s?.count ?? 0} sales · ${Number(s?.total ?? 0).toFixed(2)} ETB`)
     return
   }
 
@@ -362,7 +367,7 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
       await sendMessage(chatId, 'Stock levels look healthy — nothing to reorder.')
       return
     }
-    await sendMessage(chatId, `<b>Low stock — reorder these:</b>\n${rows.map((r) => `• ${r.name} — ${r.sellable} left (min ${r.threshold})`).join('\n')}`)
+    await sendMessage(chatId, `<b>Low stock — reorder these:</b>\n${rows.map((r) => `• ${escapeHtml(r.name)} — ${r.sellable} left (min ${r.threshold})`).join('\n')}`)
     return
   }
 
@@ -380,7 +385,7 @@ async function handleCommand(chatId: number, text: string, tgUser: TgUser): Prom
     }
     await sendMessage(
       chatId,
-      `⏳ <b>Expiring within 60 days:</b>\n${rows.map((r) => `• ${r.name} — ${r.quantity} units, ${new Date(r.expiry_date).toLocaleDateString('en-GB')}`).join('\n')}\n\nWrite them off from the Expiry page.`
+      `⏳ <b>Expiring within 60 days:</b>\n${rows.map((r) => `• ${escapeHtml(r.name)} — ${r.quantity} units, ${new Date(r.expiry_date).toLocaleDateString('en-GB')}`).join('\n')}\n\nWrite them off from the Expiry page.`
     )
     return
   }
@@ -421,6 +426,8 @@ export function startPolling(): void {
   console.log('[telegram] long-polling started')
   let consecutiveFailures = 0
   const tick = async (): Promise<void> => {
+    // getUpdates conflicts with any active webhook (409) — clear it first.
+    await api('deleteWebhook', { drop_pending_updates: false })
     while (polling) {
       const updates = await api<Array<{ update_id: number; message?: { chat: { id: number }; text?: string; from?: TgUser } }>>('getUpdates', {
         offset: pollingOffset,

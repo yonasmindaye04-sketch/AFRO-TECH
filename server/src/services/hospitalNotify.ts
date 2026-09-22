@@ -1,5 +1,5 @@
 import { query } from '../config/db.js'
-import { sendMessage, telegramEnabled } from './telegram.js'
+import { sendMessage, telegramEnabled, escapeHtml } from './telegram.js'
 
 /**
  * Department connectivity notifications:
@@ -54,7 +54,7 @@ export async function notifyOrderCreated(opts: {
   const urgency = opts.orderType === 'injection' ? 'Injection' : opts.orderType === 'lab_test' ? 'Lab test' : 'Service order'
   await notifyUsers(
     chats,
-    `<b>New ${urgency.toLowerCase()} order</b>\nPatient: <b>${opts.patientName}</b>\n${opts.doctorName ? `Ordered by: ${opts.doctorName}\n` : ''}Open the department queue to process it.`
+    `<b>New ${urgency.toLowerCase()} order</b>\nPatient: <b>${escapeHtml(opts.patientName)}</b>\n${opts.doctorName ? `Ordered by: ${escapeHtml(opts.doctorName)}\n` : ''}Open the department queue to process it.`
   )
 }
 
@@ -72,7 +72,7 @@ export async function notifyOrderCompleted(opts: {
   const chatIds = rows.map((r) => r.chat_id)
   await notifyUsers(
     chatIds,
-    `<b>Order result ready</b>\n${opts.orderType} for <b>${opts.patientName}</b> is complete — review it in the patient's journey.`
+    `<b>Order result ready</b>\n${escapeHtml(opts.orderType)} for <b>${escapeHtml(opts.patientName)}</b> is complete — review it in the patient's journey.`
   )
 }
 

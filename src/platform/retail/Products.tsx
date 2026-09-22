@@ -56,7 +56,6 @@ export default function Products(): JSX.Element {
   const isPharmacy = me?.tenant?.business_type === 'pharmacy'
 
   const { data, loading, reload } = useApiData<{ products: Product[] }>('/retail/products')
-  const [search, setSearch] = useState('')
   const [modal, setModal] = useState<{ open: boolean; editing: Product | null }>({ open: false, editing: null })
   const [form, setForm] = useState<FormState>(EMPTY)
   const [busy, setBusy] = useState(false)
@@ -115,7 +114,7 @@ export default function Products(): JSX.Element {
     }
   }
 
-  const rows = (data?.products ?? []).filter((p) => !search || `${p.name} ${p.category}`.toLowerCase().includes(search.toLowerCase()))
+  const rows = data?.products ?? []
 
   return (
     <div>
@@ -129,13 +128,6 @@ export default function Products(): JSX.Element {
         }
       />
       <div className="pl-toolbar">
-        <input
-          className="pl-input"
-          placeholder="Search products…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search products"
-        />
         <span style={{ color: 'var(--text-dim)', fontSize: '.85rem' }}>{rows.length} items</span>
       </div>
 
@@ -144,11 +136,13 @@ export default function Products(): JSX.Element {
       ) : (
         <DataTable
           rows={rows}
+          searchPlaceholder="Search products…"
           empty="No products yet — add your first product or receive stock from a purchase."
           columns={[
             {
               key: 'name',
               header: 'Product',
+              searchText: (p) => `${p.name} ${p.category}`,
               render: (p) => (
                 <div>
                   <strong>{p.name}</strong>

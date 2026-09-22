@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { api } from '../api'
 import { useApiData } from '../hooks/useApiData'
-import { Badge, DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
+import { Badge, DataTable, EmptyState, Field, Modal, PageHeader, SearchInput, Spinner } from '../ui'
 
 interface Student {
   id: string
@@ -43,8 +44,9 @@ const empty = {
 export default function Students(): JSX.Element {
   const [search, setSearch] = useState('')
   const [classFilter, setClassFilter] = useState('')
+  const debouncedSearch = useDebouncedValue(search, 300)
   const qs = new URLSearchParams()
-  if (search) qs.set('search', search)
+  if (debouncedSearch) qs.set('search', debouncedSearch)
   if (classFilter) qs.set('class_id', classFilter)
   const { data, loading, reload } = useApiData<{ students: Student[] }>(`/school/students?${qs.toString()}`)
   const classesQ = useApiData<{ classes: ClassOpt[] }>('/school/classes')
@@ -180,12 +182,11 @@ export default function Students(): JSX.Element {
         }
       />
       <div className="pl-toolbar">
-        <input
-          className="pl-input"
-          placeholder="Search by name or ID…"
+        <SearchInput
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search students"
+          onChange={setSearch}
+          placeholder="Search by name or ID…"
+          ariaLabel="Search students"
         />
         <select className="pl-select" value={classFilter} onChange={(e) => setClassFilter(e.target.value)} aria-label="Filter by class">
           <option value="">All classes</option>
@@ -204,6 +205,7 @@ export default function Students(): JSX.Element {
       ) : (
         <DataTable
           rows={data.students}
+          searchable={false}
           columns={[
             { key: 'code', header: 'ID', render: (s) => <strong>{s.code}</strong>, width: '100px' },
             {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { PageHeader, Card, Badge, ErrorBox, OkBox, Field, Modal, FormRow, DataTable } from '../ui'
 import MarketingNav from './MarketingNav'
@@ -99,7 +99,7 @@ export default function Campaigns(): JSX.Element {
     setOk(null)
     try {
       const r = await api.post<{ queued: number }>(`/marketing/campaigns/${id}/send`)
-      setOk(`Campaign started — ${r.queued} message${r.queued === 1 ? '' : 's'} queued.`)
+      setOk(`Campaign started â€” ${r.queued} message${r.queued === 1 ? '' : 's'} queued.`)
       await reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send')
@@ -108,7 +108,7 @@ export default function Campaigns(): JSX.Element {
 
   const cols = [
     { key: 'name', header: 'Name', render: (c: MarketingCampaign) => <strong>{c.name}</strong> },
-    { key: 'audience', header: 'Audience', render: (c: MarketingCampaign) => c.audience_name ?? '—' },
+    { key: 'audience', header: 'Audience', render: (c: MarketingCampaign) => c.audience_name ?? 'â€”' },
     { key: 'channels', header: 'Channels', render: (c: MarketingCampaign) => c.channel_count ?? 0 },
     {
       key: 'status',
@@ -149,10 +149,10 @@ export default function Campaigns(): JSX.Element {
       <MarketingNav />
       {error && !editor && <ErrorBox message={error} />}
       {ok && <OkBox message={ok} />}
-      <Card>{loading ? <p>Loading…</p> : <DataTable columns={cols} rows={campaigns} empty="No campaigns yet." />}</Card>
+      <Card>{loading ? <p>Loadingâ€¦</p> : <DataTable columns={cols} rows={campaigns} empty="No campaigns yet." />}</Card>
 
       <Modal open={editor} title="New campaign" onClose={() => setEditor(false)} wide>
-        <FormRow onSubmit={submit} submitLabel={busy ? 'Creating…' : 'Create campaign'} busy={busy} error={error}>
+        <FormRow onSubmit={submit} submitLabel={busy ? 'Creatingâ€¦' : 'Create campaign'} busy={busy} error={error}>
           <Field label="Campaign name">
             <input className="pl-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           </Field>
@@ -161,8 +161,8 @@ export default function Campaigns(): JSX.Element {
           </Field>
 
           <Field label="Audience" hint={audiences.length === 0 ? 'Create an audience first (Audiences tab).' : undefined}>
-            <select className="pl-input" value={form.audience_id} onChange={(e) => setForm({ ...form, audience_id: e.target.value })} required>
-              <option value="">Select audience…</option>
+            <select className="pl-select" value={form.audience_id} onChange={(e) => setForm({ ...form, audience_id: e.target.value })} required>
+              <option value="">Select audienceâ€¦</option>
               {audiences.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name} ({a.member_count} members)
@@ -191,8 +191,8 @@ export default function Campaigns(): JSX.Element {
                   </option>
                 ))}
               </select>
-              <select className="pl-input" value={c.template_id} onChange={(e) => updateChannel(i, { template_id: e.target.value })} required>
-                <option value="">Select template…</option>
+              <select className="pl-select" value={c.template_id} onChange={(e) => updateChannel(i, { template_id: e.target.value })} required>
+                <option value="">Select templateâ€¦</option>
                 {templatesFor(c.channel).map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}

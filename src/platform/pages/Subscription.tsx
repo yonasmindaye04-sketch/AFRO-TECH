@@ -44,6 +44,8 @@ declare global {
   }
 }
 
+type TabKey = 'plans' | 'your-plan' | 'payment-history'
+
 export default function Subscription(): JSX.Element {
   const [plans, setPlans] = useState<Plan[] | null>(null)
   const [subscription, setSubscription] = useState<Subscription | null>(null)
@@ -53,6 +55,7 @@ export default function Subscription(): JSX.Element {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
+  const [tab, setTab] = useState<TabKey>('plans')
 
   const load = async (): Promise<void> => {
     setError(null)
@@ -98,10 +101,10 @@ export default function Subscription(): JSX.Element {
 
   const pendingTx = useMemo(() => payments.find((p) => p.status === 'pending'), [payments])
 
-  const PERIODS: { months: 1 | 6 | 12; label: string; billedAs: string }[] = [
-    { months: 1, label: '1 Month', billedAs: 'billed every month' },
-    { months: 6, label: '6 Months', billedAs: 'billed every 6 months' },
-    { months: 12, label: 'Annual', billedAs: 'billed once a year' },
+  const PERIODS: { months: 1 | 6 | 12; label: string }[] = [
+    { months: 1, label: 'monthly' },
+    { months: 6, label: '6month' },
+    { months: 12, label: 'annual' },
   ]
 
   const periodPrice = (plan: Plan, months: 1 | 6 | 12): number =>
@@ -134,10 +137,26 @@ export default function Subscription(): JSX.Element {
 
   return (
     <div className="pl-page">
+      {/* ── Header with tabs ── */}
       <div className="pl-page-head">
         <div>
-          <h1 className="pl-page-title">Subscription & Billing</h1>
-          <p className="pl-page-sub">Manage your plan, payment method, and renewal cycle.</p>
+          <h1 className="pl-page-title">Subscription &amp; Billing</h1>
+        </div>
+        <div className="sub-tabs">
+          <button
+            type="button"
+            className={`sub-tab ${tab === 'your-plan' ? 'sub-tab-active' : ''}`}
+            onClick={() => setTab(tab === 'your-plan' ? 'plans' : 'your-plan')}
+          >
+            Your plan
+          </button>
+          <button
+            type="button"
+            className={`sub-tab ${tab === 'payment-history' ? 'sub-tab-active' : ''}`}
+            onClick={() => setTab(tab === 'payment-history' ? 'plans' : 'payment-history')}
+          >
+            Payment history
+          </button>
         </div>
       </div>
 
@@ -149,27 +168,29 @@ export default function Subscription(): JSX.Element {
         </div>
       )}
 
-      <div className="pl-grid-2">
+      {/* ── Tab: Your Plan ── */}
+      {tab === 'your-plan' && (
         <div className="pl-card">
           <h2 style={{ marginTop: 0 }}>Your plan</h2>
           {loading ? (
             <p>Loading…</p>
           ) : subscription ? (
-            <>
-              <table className="pl-table">
-                <tbody>
-                  <tr><td>Status</td><td><span className={`pl-badge pl-badge-${subscription.status === 'active' ? 'good' : subscription.status === 'expired' ? 'bad' : 'warn'}`}>{subscription.status}</span></td></tr>
-                  <tr><td>Plan</td><td>{subscription.plan_name}</td></tr>
-                  <tr><td>Current period</td><td>{fmtDate(subscription.current_period_start)} → {fmtDate(subscription.current_period_end)}</td></tr>
-                  <tr><td>Access valid until</td><td><strong>{fmtDate(accessUntil ?? undefined)}</strong></td></tr>
-                </tbody>
-              </table>
-            </>
+            <table className="pl-table">
+              <tbody>
+                <tr><td>Status</td><td><span className={`pl-badge pl-badge-${subscription.status === 'active' ? 'good' : subscription.status === 'expired' ? 'bad' : 'warn'}`}>{subscription.status}</span></td></tr>
+                <tr><td>Plan</td><td>{subscription.plan_name}</td></tr>
+                <tr><td>Current period</td><td>{fmtDate(subscription.current_period_start)} → {fmtDate(subscription.current_period_end)}</td></tr>
+                <tr><td>Access valid until</td><td><strong>{fmtDate(accessUntil ?? undefined)}</strong></td></tr>
+              </tbody>
+            </table>
           ) : (
             <p>No active subscription. Choose a plan below to unlock the full platform.</p>
           )}
         </div>
+      )}
 
+      {/* ── Tab: Payment History ── */}
+      {tab === 'payment-history' && (
         <div className="pl-card">
           <h2 style={{ marginTop: 0 }}>Payment history</h2>
           {loading ? (
@@ -202,83 +223,71 @@ export default function Subscription(): JSX.Element {
             </div>
           )}
         </div>
-      </div>
+      )}
 
-      <h2>Plans</h2>
-      {loading ? (
-        <p>Loading plans…</p>
-      ) : !plans?.length ? (
-        <p>No plans available for your business type.</p>
-      ) : (
+      {/* ── Tab: Plans (default — 3 pricing cards) ── */}
+      {tab === 'plans' && (
         <>
-          {plans.map((plan) => {
-            const monthly = Number(plan.price_monthly)
-            return (
-              <div key={plan.id} style={{ marginBottom: 24 }}>
-                <div className="pl-card" style={{ marginBottom: 16 }}>
-                  <h3 style={{ marginTop: 0 }}>{plan.name}</h3>
-                  <p style={{ color: 'var(--text-dim)', marginBottom: 4 }}>{plan.description}</p>
-                  {plan.features.length > 0 && (
-                    <ul style={{ listStyle: 'none', padding: 0, margin: '12px 0 0', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 8 }}>
-                      {plan.features.map((f) => (
-                        <li key={f} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                          <i className="fa-solid fa-circle-check" aria-hidden="true" style={{ color: 'var(--accent)' }} />
-                          <span>{f}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-
-                <p style={{ color: 'var(--text-dim)', margin: '0 0 8px' }}>
-                  Choose your billing period — <strong>{plan.name}</strong> in all three options, only the duration changes:
-                </p>
+          {loading ? (
+            <p>Loading plans…</p>
+          ) : !plans?.length ? (
+            <p>No plans available for your business type.</p>
+          ) : (
+            plans.map((plan) => (
+              <div key={plan.id}>
                 <div className="pl-grid-3">
-                  {PERIODS.map(({ months, label, billedAs }) => {
+                  {PERIODS.map(({ months, label }) => {
                     const price = periodPrice(plan, months)
                     const perMonth = price / months
+                    const monthly = Number(plan.price_monthly)
                     const savePct = monthly > 0 ? Math.round((1 - price / (monthly * months)) * 100) : 0
                     return (
-                      <div className="pl-card" key={months} style={{ display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
-                          <h3 style={{ marginTop: 0 }}>{label}</h3>
-                          {months === 12 && <span className="pl-badge pl-badge-good">best value</span>}
+                    <div className="pl-card" key={months}>
+                      <div className="sub-plan-card">
+                        <div className="sub-period-label">{label}</div>
+
+                        <div className="sub-price">
+                          <div className="sub-price-total">{fmtMoney(price)} ETB</div>
+                          <div className="sub-price-per">
+                            {months === 1 ? 'billed every month' : `≈ ${fmtMoney(perMonth)} ETB / month · billed every ${months} months`}
+                          </div>
+                          {savePct > 0 && <span className="sub-save-badge">save {savePct}% vs monthly</span>}
                         </div>
-                        <p style={{ fontSize: 24, fontWeight: 700, margin: '4px 0' }}>
-                          {fmtMoney(price)} <span style={{ fontSize: 14, fontWeight: 400, color: 'var(--text-dim)' }}>ETB</span>
-                        </p>
-                        <p style={{ color: 'var(--text-dim)', margin: '0 0 8px' }}>{billedAs}</p>
-                        <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 12px', display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
-                          <li>≈ <strong>{fmtMoney(perMonth)}</strong> ETB / month</li>
-                          {months === 1 ? (
-                            <li>Full flexibility — cancel or switch anytime</li>
-                          ) : (
-                            <li><span className="pl-badge pl-badge-good">save {savePct}%</span> vs monthly</li>
-                          )}
-                        </ul>
+
+                        <div className="sub-features-box">
+                          <div className="sub-features-header">{plan.name}</div>
+                          <ul className="sub-features-list">
+                            {plan.features.map((f) => (
+                              <li key={f}>{f}</li>
+                            ))}
+                          </ul>
+                        </div>
+
                         <button
                           type="button"
                           className={`pl-btn ${months === 12 ? 'pl-btn-primary' : 'pl-btn-ghost'}`}
+                          style={{ width: '100%', justifyContent: 'center' }}
                           disabled={busy !== null}
                           onClick={() => void startCheckout(plan, months)}
                         >
-                          {busy === plan.code + months ? 'Starting…' : `Choose — ${label}`}
+                          {busy === plan.code + months ? 'Starting…' : 'Subscribe'}
                         </button>
                       </div>
+                    </div>
                     )
                   })}
                 </div>
               </div>
-            )
-          })}
+            ))
+          )}
+
+          <p style={{ marginTop: 32, color: 'var(--text-dim)' }}>
+            Payments are processed securely by <a href="https://chapa.co" target="_blank" rel="noreferrer">Chapa</a>.
+            If you have questions or a pending payment that didn't complete, contact{' '}
+            <a href="mailto:yonasmindaye04@gmail.com">yonasmindaye04@gmail.com</a> or Telegram @yona64.
+          </p>
         </>
       )}
-
-      <p style={{ marginTop: 32, color: 'var(--text-dim)' }}>
-        Payments are processed securely by <a href="https://chapa.co" target="_blank" rel="noreferrer">Chapa</a>.
-        If you have questions or a pending payment that didn't complete, contact{' '}
-        <a href="mailto:yonasmindaye04@gmail.com">yonasmindaye04@gmail.com</a> or Telegram @yona64.
-      </p>
     </div>
   )
 }

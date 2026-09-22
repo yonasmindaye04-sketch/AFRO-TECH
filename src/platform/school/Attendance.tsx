@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { api, fmtDate } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { Card, EmptyState, Field, PageHeader, Spinner, StatCard } from '../ui'
@@ -66,8 +66,8 @@ export default function Attendance(): JSX.Element {
       <PageHeader title="Attendance" subtitle="Take the daily register per class" />
       <div className="pl-toolbar">
         <Field label="">
-          <select className="pl-select" value={classId} onChange={(e) => setClassId(e.target.value)} aria-label="Class">
-            <option value="">Select class…</option>
+          <select className="pl-select" value={classId} onChange={(e) => setClassId(e.target.value)} aria-label="Filter by class">
+            <option value="">Select classâ€¦</option>
             {(classesQ.data?.classes ?? []).map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -83,7 +83,7 @@ export default function Attendance(): JSX.Element {
       {!classId ? (
         <EmptyState icon="fa-solid fa-chalkboard-user" title="Choose a class" hint="Select a class above to take its register." />
       ) : rosterQ.loading ? (
-        <Spinner label="Loading roster…" />
+        <Spinner label="Loading rosterâ€¦" />
       ) : roster.length === 0 ? (
         <EmptyState icon="fa-solid fa-user-graduate" title="No active students in this class" hint="Add students to this class first." />
       ) : (
@@ -112,10 +112,10 @@ export default function Attendance(): JSX.Element {
             <div className="pl-form-actions">
               {saved && <span style={{ color: '#34d399', fontSize: '.87rem', marginRight: 'auto' }}>Register saved for {fmtDate(date)}</span>}
               <span style={{ marginRight: 12, color: 'var(--text-dim)', fontSize: '.87rem' }}>
-                {pct}% present · {counts.find((c) => c.s === 'absent')?.n ?? 0} absent
+                {pct}% present Â· {counts.find((c) => c.s === 'absent')?.n ?? 0} absent
               </span>
               <button type="button" className="pl-btn pl-btn-primary" disabled={busy} onClick={save}>
-                <i className="fa-solid fa-floppy-disk" aria-hidden="true" /> {busy ? 'Saving…' : 'Save register'}
+                <i className="fa-solid fa-floppy-disk" aria-hidden="true" /> {busy ? 'Savingâ€¦' : 'Save register'}
               </button>
             </div>
           </Card>

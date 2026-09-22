@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent, type ReactNode } from 'react'
+import { useState, useEffect, useDeferredValue, type FormEvent, type ReactNode } from 'react'
 
 /* ── Layout helpers ─────────────────────────────────────── */
 
@@ -71,6 +71,39 @@ export function OkBox({ message }: { message: string }): JSX.Element {
   )
 }
 
+/* ── Search ─────────────────────────────────────────────── */
+
+/** Shared search input: same icon, padding, and placeholder style everywhere. */
+export function SearchInput({
+  value,
+  onChange,
+  placeholder,
+  ariaLabel,
+  className = '',
+  style,
+}: {
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  ariaLabel?: string
+  className?: string
+  style?: React.CSSProperties
+}): JSX.Element {
+  return (
+    <span className={`pl-search ${className}`} style={style}>
+      <i className="fa-solid fa-search" aria-hidden="true" />
+      <input
+        type="text"
+        className="pl-input"
+        placeholder={placeholder ?? 'Search…'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={ariaLabel ?? placeholder ?? 'Search'}
+      />
+    </span>
+  )
+}
+
 /* ── Table ──────────────────────────────────────────────── */
 
 export interface Column<T> {
@@ -78,34 +111,48 @@ export interface Column<T> {
   header: string
   render: (row: T) => ReactNode
   width?: string
+  /** Optional text extractor used for search matching; defaults to the row's value for `key`. */
+  searchText?: (row: T) => string
 }
 
-export function DataTable<T>({ columns, rows, empty, searchable = true }: { columns: Column<T>[]; rows: T[]; empty?: string; searchable?: boolean }): JSX.Element {
+export function DataTable<T>({
+  columns,
+  rows,
+  empty,
+  searchable = true,
+  searchPlaceholder,
+}: {
+  columns: Column<T>[]
+  rows: T[]
+  empty?: string
+  searchable?: boolean
+  searchPlaceholder?: string
+}): JSX.Element {
   const [searchQuery, setSearchQuery] = useState('')
+  const deferredQuery = useDeferredValue(searchQuery)
 
   if (!rows.length && !searchQuery) return <EmptyState title={empty ?? 'Nothing here yet'} />
 
-  const filteredRows = !searchQuery.trim() ? rows : rows.filter(row => {
-    const q = searchQuery.toLowerCase()
-    return JSON.stringify(row).toLowerCase().includes(q)
-  })
+  const filteredRows = !deferredQuery.trim()
+    ? rows
+    : rows.filter((row) => {
+        const q = deferredQuery.toLowerCase()
+        return columns.some((c) => {
+          const text = c.searchText ? c.searchText(row) : String((row as Record<string, unknown>)[c.key] ?? '')
+          return text.toLowerCase().includes(q)
+        })
+      })
 
   return (
     <div className="pl-table-container" style={{ display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
       {searchable && rows.length > 0 && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <div style={{ position: 'relative', width: '100%', maxWidth: '260px' }}>
-            <i className="fa-solid fa-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
-            <input
-              type="text"
-              className="pl-input"
-              style={{ paddingLeft: 32, width: '100%' }}
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              aria-label="Search"
-            />
-          </div>
+          <SearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder={searchPlaceholder ?? 'Search…'}
+            style={{ width: '100%', maxWidth: '260px' }}
+          />
         </div>
       )}
       <div className="pl-table-wrap">

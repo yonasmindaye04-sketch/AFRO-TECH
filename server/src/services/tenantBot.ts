@@ -1,6 +1,7 @@
 import { pool, query, queryOne } from '../config/db.js'
 import { logAudit } from '../utils/audit.js'
 import { AppError } from '../utils/helpers.js'
+import { escapeHtml } from './telegram.js'
 
 /* ── Generic per-bot Telegram client ─────────────────────── */
 async function tgApi<T>(token: string, method: string, body?: Record<string, unknown>): Promise<T> {
@@ -205,7 +206,7 @@ export async function handleTenantBotUpdate(botRow: TenantBotRow, update: { upda
 interface Runtime {
   tenantBotId: string
   token: string
-  interval: ReturnType<typeof setInterval>
+  stopped: boolean
   offset: number
 }
 const running = new Map<string, Runtime>() // tenant_bots.id -> runtime
@@ -230,7 +231,7 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
     `SELECT name, business_type FROM tenants WHERE id = $1`,
     [botRow.tenant_id]
   )
-  const tenantName = tenant?.name ?? 'Workspace'
+  const tenantName = escapeHtml(tenant?.name ?? 'Workspace')
   const businessType = tenant?.business_type ?? 'store'
 
   // Check if sender is a linked staff member / owner of THIS specific company
@@ -296,7 +297,7 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
 
     await tgApi(botRow.bot_token, 'sendMessage', {
       chat_id: chatId,
-      text: `✅ <b>Linked!</b>\n\nWelcome, <b>${user.full_name}</b> (${user.role}). You are now connected to <b>${tenantName}</b>.\n\n` +
+      text: `✅ <b>Linked!</b>\n\nWelcome, <b>${escapeHtml(user.full_name)}</b> (${user.role}). You are now connected to <b>${tenantName}</b>.\n\n` +
         `Available staff commands:\n` +
         `/today — Daily sales & activity summary\n` +
         `/lowstock — Items needing reorder\n` +
@@ -351,7 +352,7 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
     if (!student) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `❌ No active student found with code "<b>${rawCode}</b>" at <b>${tenantName}</b>.\nPlease check the student code and try again.`,
+        text: `❌ No active student found with code "<b>${escapeHtml(rawCode)}</b>" at <b>${tenantName}</b>.\nPlease check the student code and try again.`,
         parse_mode: 'HTML',
       })
       return
@@ -406,7 +407,7 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
     }
 
     const list = students
-      .map((s) => `• <b>${s.first_name} ${s.last_name}</b> (Code: <code>${s.code}</code>)\n  Class: ${s.class_name || 'N/A'}`)
+      .map((s) => `• <b>${escapeHtml(`${s.first_name} ${s.last_name}`)}</b> (Code: <code>${escapeHtml(s.code)}</code>)\n  Class: ${escapeHtml(s.class_name || 'N/A')}`)
       .join('\n\n')
 
     await tgApi(botRow.bot_token, 'sendMessage', {
@@ -448,7 +449,7 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
       .map((f) => {
         const remaining = Math.max(0, Number(f.amount) - Number(f.paid_amount))
         const statusEmoji = f.status === 'paid' ? '✅ Paid' : remaining > 0 ? `⚠️ Due: ${remaining.toFixed(2)} ETB` : 'Pending'
-        return `• <b>${f.title}</b> (${f.student_name})\n  Total: ${Number(f.amount).toFixed(2)} ETB | Paid: ${Number(f.paid_amount).toFixed(2)} ETB\n  Status: ${statusEmoji}${f.due_date ? ` (Due: ${f.due_date.toString().slice(0, 10)})` : ''}`
+        return `• <b>${escapeHtml(f.title)}</b> (${escapeHtml(f.student_name)})\n  Total: ${Number(f.amount).toFixed(2)} ETB | Paid: ${Number(f.paid_amount).toFixed(2)} ETB\n  Status: ${statusEmoji}${f.due_date ? ` (Due: ${f.due_date.toString().slice(0, 10)})` : ''}`
       })
       .join('\n\n')
 
@@ -479,7 +480,7 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
           await query(`DELETE FROM telegram_link_codes WHERE code = $1`, [linkCodeArg])
           await tgApi(botRow.bot_token, 'sendMessage', {
             chat_id: chatId,
-            text: `✅ <b>Linked!</b>\n\nWelcome, <b>${user.full_name}</b> (${user.role}) to <b>${tenantName}</b>.\n\nTry /today, /lowstock, or tap the menu button below to open your workspace.`,
+            text: `✅ <b>Linked!</b>\n\nWelcome, <b>${escapeHtml(user.full_name)}</b> (${user.role}) to <b>${tenantName}</b>.\n\nTry /today, /lowstock, or tap the menu button below to open your workspace.`,
             parse_mode: 'HTML',
           })
           return
@@ -490,7 +491,7 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
     if (linkedUser) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `<b>${linkedUser.full_name}</b> — <b>${tenantName}</b> Assistant\n\n` +
+        text: `<b>${escapeHtml(linkedUser.full_name)}</b> — <b>${tenantName}</b> Assistant\n\n` +
           `Staff Commands:\n` +
           `/today — daily summary\n` +
           `/lowstock — items to reorder\n` +
@@ -593,7 +594,7 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
     }
     await tgApi(botRow.bot_token, 'sendMessage', {
       chat_id: chatId,
-      text: `⚠️ <b>Low Stock Items for ${tenantName}:</b>\n\n${rows.map((r) => `• <b>${r.name}</b> — ${r.sellable} left (min: ${r.threshold})`).join('\n')}`,
+      text: `⚠️ <b>Low Stock Items for ${tenantName}:</b>\n\n${rows.map((r) => `• <b>${escapeHtml(r.name)}</b> — ${r.sellable} left (min: ${r.threshold})`).join('\n')}`,
       parse_mode: 'HTML',
     })
     return
@@ -617,7 +618,7 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
     }
     await tgApi(botRow.bot_token, 'sendMessage', {
       chat_id: chatId,
-      text: `⏳ <b>Expiring within 60 days (${tenantName}):</b>\n\n${rows.map((r) => `• <b>${r.name}</b> — ${r.quantity} units (expires ${new Date(r.expiry_date).toLocaleDateString('en-GB')})`).join('\n')}`,
+      text: `⏳ <b>Expiring within 60 days (${tenantName}):</b>\n\n${rows.map((r) => `• <b>${escapeHtml(r.name)}</b> — ${r.quantity} units (expires ${new Date(r.expiry_date).toLocaleDateString('en-GB')})`).join('\n')}`,
       parse_mode: 'HTML',
     })
     return
@@ -651,7 +652,9 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
   if (custom) {
     await tgApi(botRow.bot_token, 'sendMessage', {
       chat_id: chatId,
-      text: custom.response,
+      // Owner-authored responses may contain stray < or & that Telegram
+      // rejects with a 400 under parse_mode HTML — escape to guarantee delivery.
+      text: escapeHtml(custom.response.replace(/\\n/g, '\n')),
       disable_web_page_preview: true,
       parse_mode: 'HTML',
     })
@@ -688,44 +691,47 @@ async function pollLoop(botId: string): Promise<void> {
   const row = await getTenantBotByBotId(botId)
   if (!row || !row.is_active) return
   const offsetRow = await queryOne<{ last_update_id: number }>(`SELECT last_update_id FROM bot_polling_state WHERE bot_id = $1`, [botId])
-  const runtime: Runtime = { tenantBotId: botId, token: row.bot_token, offset: offsetRow?.last_update_id ?? 0, interval: 0 as unknown as ReturnType<typeof setInterval> }
+  const runtime: Runtime = { tenantBotId: botId, token: row.bot_token, stopped: false, offset: offsetRow?.last_update_id ?? 0 }
   running.set(botId, runtime)
   logAudit({ userId: 'system', userName: 'system', action: 'bot.start', entity: 'tenant_bot', entityId: botId })
   let failures = 0
-  const tick = async (): Promise<void> => {
-    if (!running.has(botId)) return
+
+  // Sequential loop: each getUpdates long-poll (25s) completes before the
+  // next one starts. Never overlap polls — Telegram answers concurrent
+  // getUpdates for the same bot with 409 Conflict.
+  while (!runtime.stopped) {
     try {
       const updates = await tgApi<Array<{ update_id: number }>>(row.bot_token, 'getUpdates', { offset: runtime.offset, timeout: 25 })
       failures = 0
       for (const upd of updates) {
+        if (runtime.stopped) break
         runtime.offset = (upd.update_id ?? runtime.offset) + 1
         try { await handleUpdate(row, upd as { update_id: number; message?: { chat: { id: number }; text?: string; from?: { id: number; first_name?: string; username?: string } } }) } catch (err) { console.warn(`[bot:${botId}] handler error:`, err instanceof Error ? err.message : err) }
         await pool.query(`INSERT INTO bot_polling_state (bot_id, last_update_id) VALUES ($1, $2) ON CONFLICT (bot_id) DO UPDATE SET last_update_id = $2, updated_at = now()`, [botId, runtime.offset])
       }
     } catch (err) {
+      if (runtime.stopped) break
       failures++
       console.warn(`[bot:${botId}] poll error #${failures}:`, err instanceof Error ? err.message : err)
       if (failures >= 10) {
         console.warn(`[bot:${botId}] too many failures — stopping. Check token validity.`)
-        await stopTenantBot(botId)
+        running.delete(botId)
         await query(`UPDATE tenant_bots SET is_active = false WHERE id = $1`, [botId])
         return
       }
       await new Promise((r) => setTimeout(r, failures * 3000))
     }
   }
-  runtime.interval = setInterval(tick, 500)
-  void tick()
 }
 
 export async function startTenantBot(botId: string): Promise<void> {
   await pool.query(`INSERT INTO bot_polling_state (bot_id) VALUES ($1) ON CONFLICT (bot_id) DO NOTHING`, [botId])
-  void pollLoop(botId)
+  void pollLoop(botId).catch((err) => console.error(`[bot:${botId}] poll loop crashed:`, err instanceof Error ? err.message : err))
 }
 
 export async function stopTenantBot(botId: string): Promise<void> {
   const rt = running.get(botId)
-  if (rt) { clearInterval(rt.interval); running.delete(botId) }
+  if (rt) { rt.stopped = true; running.delete(botId) }
 }
 
 export async function startAllTenantBots(): Promise<void> {

@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer'
 import { pool, query, queryOne } from '../config/db.js'
-import { sendMessage as sendSystemTelegramMessage, telegramEnabled } from './telegram.js'
+import { escapeHtml } from './telegram.js'
 
 export interface GuardianNoticePayload {
   tenantId: string
@@ -143,11 +143,14 @@ export async function sendGuardianTelegram({
   }
 
   const formattedMessage =
-    `🏫 <b>${schoolName}</b>\n` +
-    (studentName ? `👤 <i>Student: ${studentName}</i>\n\n` : '\n') +
+    `🏫 <b>${escapeHtml(schoolName)}</b>\n` +
+    (studentName ? `👤 <i>Student: ${escapeHtml(studentName)}</i>\n\n` : '\n') +
     `${message}`
 
-  // 1. Check if tenant has their own active bot in tenant_bots
+  // 1. Deliver via the tenant's own bot. Do NOT fall back to the system bot:
+  //    the guardian's chat belongs to the tenant bot, and the platform bot
+  //    has never seen that chat — Telegram would reject it with 403 anyway.
+  let tenantBotFound = false
   if (tenantId) {
     try {
       const tenantBot = await queryOne<{ bot_token: string; is_active: boolean }>(
@@ -155,6 +158,7 @@ export async function sendGuardianTelegram({
         [tenantId]
       )
       if (tenantBot?.bot_token) {
+        tenantBotFound = true
         const res = await fetch(`https://api.telegram.org/bot${tenantBot.bot_token}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -169,26 +173,20 @@ export async function sendGuardianTelegram({
         if (json.ok) {
           return { success: true }
         }
-        console.warn(`[guardian-telegram] Tenant bot sendMessage failed:`, json.description)
+        return { success: false, error: `Tenant bot sendMessage failed: ${json.description ?? 'unknown'}` }
       }
     } catch (err) {
-      console.warn(`[guardian-telegram] Tenant bot error:`, err)
-    }
-  }
-
-  // 2. Fallback to system Telegram bot
-  if (telegramEnabled()) {
-    try {
-      await sendSystemTelegramMessage(targetChatId, formattedMessage)
-      return { success: true }
-    } catch (err) {
-      console.warn(`[guardian-telegram] System bot send failed:`, err)
       return { success: false, error: err instanceof Error ? err.message : String(err) }
     }
   }
 
-  console.log(`[guardian-telegram-simulated] Chat: ${targetChatId} | Message: ${formattedMessage}`)
-  return { success: true, simulated: true }
+  // 2. No tenant bot configured — simulate (dev mode) instead of pretending the notice was delivered.
+  if (!tenantBotFound) {
+    console.log(`[guardian-telegram-simulated] Chat: ${targetChatId} | Message: ${formattedMessage}`)
+    return { success: true, simulated: true }
+  }
+
+  return { success: false, error: 'No active tenant bot to deliver this notification' }
 }
 
 /**
@@ -333,7 +331,7 @@ export async function broadcastAnnouncementToGuardians({
     if (sendTelegram && s.guardian_telegram_chat_id) {
       const tgRes = await sendGuardianTelegram({
         chatId: s.guardian_telegram_chat_id,
-        message: `📢 <b>${title}</b>\n\n${body}`,
+        message: `📢 <b>${escapeHtml(title)}</b>\n\n${escapeHtml(body)}`,
         tenantId,
         schoolName,
         studentName: studentFullName,
@@ -460,7 +458,7 @@ export async function notifySingleGuardian({
     if (student.guardian_telegram_chat_id) {
       const res = await sendGuardianTelegram({
         chatId: student.guardian_telegram_chat_id,
-        message: `📌 <b>${title}</b>\n\n${message}`,
+        message: `📌 <b>${escapeHtml(title)}</b>\n\n${escapeHtml(message)}`,
         tenantId,
         schoolName,
         studentName: studentFullName,

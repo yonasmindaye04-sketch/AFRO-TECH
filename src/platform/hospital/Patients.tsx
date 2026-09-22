@@ -21,7 +21,6 @@ const empty = { first_name: '', last_name: '', gender: 'male', dob: '', phone: '
 
 export default function Patients(): JSX.Element {
   const { data, loading, reload } = useApiData<{ patients: Patient[] }>('/hospital/patients')
-  const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(empty)
   const [busy, setBusy] = useState(false)
@@ -52,9 +51,7 @@ export default function Patients(): JSX.Element {
     }
   }
 
-  const rows = (data?.patients ?? []).filter(
-    (p) => !search || `${p.first_name} ${p.last_name} ${p.code} ${p.phone ?? ''}`.toLowerCase().includes(search.toLowerCase())
-  )
+  const rows = data?.patients ?? []
 
   return (
     <div>
@@ -68,7 +65,6 @@ export default function Patients(): JSX.Element {
         }
       />
       <div className="pl-toolbar">
-        <input className="pl-input" placeholder="Search name, file # or phone…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search patients" />
         <span style={{ color: 'var(--text-dim)', fontSize: '.85rem' }}>{rows.length} patients</span>
       </div>
 
@@ -79,11 +75,13 @@ export default function Patients(): JSX.Element {
       ) : (
         <DataTable
           rows={rows}
+          searchPlaceholder="Search name, file # or phone…"
           columns={[
             { key: 'code', header: 'File #', render: (p) => <strong>{p.code}</strong>, width: '110px' },
             {
               key: 'name',
               header: 'Patient',
+              searchText: (p) => `${p.first_name} ${p.last_name} ${p.code}`,
               render: (p) => (
                 <div>
                   <strong>{p.first_name} {p.last_name}</strong>

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+﻿import { useEffect, useState, type FormEvent } from 'react'
 import { api } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
@@ -79,8 +79,8 @@ export default function Timetable(): JSX.Element {
         }
       />
       <div className="pl-toolbar">
-        <select className="pl-select" value={classId} onChange={(e) => setClassId(e.target.value)} aria-label="Class">
-          <option value="">Select class…</option>
+        <select className="pl-select" value={classId} onChange={(e) => setClassId(e.target.value)} aria-label="Filter by class">
+          <option value="">Select classâ€¦</option>
           {(classesQ.data?.classes ?? []).map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -108,8 +108,8 @@ export default function Timetable(): JSX.Element {
                     </button>
                     <strong>{s.subject}</strong>
                     <small>
-                      {s.start_time.slice(0, 5)}–{s.end_time.slice(0, 5)}
-                      {s.teacher_name ? ` · ${s.teacher_name}` : ''}
+                      {s.start_time.slice(0, 5)}â€“{s.end_time.slice(0, 5)}
+                      {s.teacher_name ? ` Â· ${s.teacher_name}` : ''}
                     </small>
                   </div>
                 ))}
@@ -146,7 +146,7 @@ export default function Timetable(): JSX.Element {
           </div>
           <Field label="Teacher">
             <select className="pl-select" value={form.teacher_id} onChange={(e) => setForm((f) => ({ ...f, teacher_id: e.target.value }))}>
-              <option value="">— unassigned —</option>
+              <option value="">â€” unassigned â€”</option>
               {(teachersQ.data?.teachers ?? []).map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.full_name}
@@ -157,7 +157,7 @@ export default function Timetable(): JSX.Element {
           {error && <p role="alert" style={{ color: '#e07a7a', fontSize: '.87rem' }}>{error}</p>}
           <div className="pl-form-actions">
             <button type="submit" className="pl-btn pl-btn-primary" disabled={busy}>
-              {busy ? 'Saving…' : 'Add period'}
+              {busy ? 'Savingâ€¦' : 'Add period'}
             </button>
           </div>
         </form>

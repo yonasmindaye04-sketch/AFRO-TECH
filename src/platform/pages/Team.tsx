@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+﻿import { useState, type FormEvent } from 'react'
 import { fmtDate, api } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
@@ -63,7 +63,7 @@ export default function Team(): JSX.Element {
     <div>
       <PageHeader
         title="Team"
-        subtitle="Give your staff their own login — they see the same company data"
+        subtitle="Give your staff their own login â€” they see the same company data"
         action={
           <button type="button" className="pl-btn pl-btn-primary" onClick={() => setOpen(true)}>
             <i className="fa-solid fa-user-plus" aria-hidden="true" /> Add staff member
@@ -137,20 +137,20 @@ export default function Team(): JSX.Element {
             <input className="pl-input" type="email" required value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
           </Field>
           <Field label="Job Role">
-            <select className="pl-input" value={form.role_id} onChange={(e) => setForm(f => ({ ...f, role_id: e.target.value }))}>
+            <select className="pl-select" value={form.role_id} onChange={(e) => setForm(f => ({ ...f, role_id: e.target.value }))}>
               <option value="">-- Generic Staff --</option>
               {rolesData?.roles.map(r => (
                 <option key={r.id} value={r.id} title={r.description}>{formatJobRole(r.name)}</option>
               ))}
             </select>
           </Field>
-          <Field label="Temporary password" hint="At least 8 characters — share it privately">
+          <Field label="Temporary password" hint="At least 8 characters â€” share it privately">
             <input className="pl-input" type="password" required minLength={8} value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
           </Field>
           {error && <p role="alert" style={{ color: '#e07a7a', fontSize: '.87rem' }}>{error}</p>}
           <div className="pl-form-actions">
             <button type="submit" className="pl-btn pl-btn-primary" disabled={busy}>
-              {busy ? 'Creating…' : 'Create login'}
+              {busy ? 'Creatingâ€¦' : 'Create login'}
             </button>
           </div>
         </form>
