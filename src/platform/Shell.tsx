@@ -53,6 +53,8 @@ const SCHOOL_NAV: NavItem[] = [
   { to: '/app/classes', icon: 'fa-solid fa-chalkboard', label: 'Classes & Teachers' },
   { to: '/app/timetable', icon: 'fa-solid fa-calendar-week', label: 'Timetable' },
   { to: '/app/attendance', icon: 'fa-solid fa-clipboard-check', label: 'Attendance' },
+  { to: '/app/teaching', icon: 'fa-solid fa-person-chalkboard', label: 'My Teaching' },
+  { to: '/app/teaching-performance', icon: 'fa-solid fa-chalkboard-user', label: 'Teaching Activity' },
   { to: '/app/grades', icon: 'fa-solid fa-star-half-stroke', label: 'Grades' },
   { to: '/app/report-cards', icon: 'fa-solid fa-award', label: 'Report Cards' },
   { to: '/app/fees', icon: 'fa-solid fa-money-bill-wave', label: 'Fees' },
@@ -188,6 +190,12 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
       case '/app/attendance':
         // Attendance: attendance.view
         return permissions.includes('attendance.view')
+      case '/app/teaching':
+        // My Teaching (teacher self-service): teaching.own
+        return permissions.includes('teaching.own')
+      case '/app/teaching-performance':
+        // Teaching Activity dashboard: teaching.view
+        return permissions.includes('teaching.view')
       case '/app/grades':
         // Grades: grades.view
         return permissions.includes('grades.view')

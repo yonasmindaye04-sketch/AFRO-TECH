@@ -42,6 +42,9 @@ const Fees = lazy(() => import('./school/Fees'))
 const Timetable = lazy(() => import('./school/Timetable'))
 const ReportCards = lazy(() => import('./school/ReportCards'))
 const Announcements = lazy(() => import('./school/Announcements'))
+const Teaching = lazy(() => import('./school/Teaching'))
+const TeachingPerformance = lazy(() => import('./school/TeachingPerformance'))
+const TeacherDetail = lazy(() => import('./school/TeacherDetail'))
 const SchoolReports = lazy(() => import('./school/SchoolReports'))
 
 const AdminPanel = lazy(() => import('./admin/AdminPanel'))
@@ -161,6 +164,9 @@ function Inner(): JSX.Element {
             <Route path="classes" element={<Classes />} />
             <Route path="timetable" element={<Timetable />} />
             <Route path="attendance" element={<Attendance />} />
+<Route path="teaching" element={<Teaching />} />
+<Route path="teaching-performance" element={<TeachingPerformance />} />
+<Route path="teaching/teachers/:id" element={<TeacherDetail />} />
             <Route path="grades" element={<Grades />} />
             <Route path="report-cards" element={<ReportCards />} />
             <Route path="fees" element={<Fees />} />

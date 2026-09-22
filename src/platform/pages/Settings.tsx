@@ -506,6 +506,12 @@ export default function Settings(): JSX.Element {
                 </Field>
               )}
 
+              {isSchool && (
+                <Field label="Teaching grace period (minutes)" hint="Minutes after a class start before a teacher is marked late (default 10)">
+                  <input className="pl-input" type="number" min={0} max={120} value={settings['teaching.grace_period_minutes'] ?? ''} onChange={set('teaching.grace_period_minutes')} placeholder="10" />
+                </Field>
+              )}
+
               {!isSchool && (
                 <Field label="POS margin presets" hint="Comma-separated percentages shown in the New Sale screen (e.g. 20,25,30)">
                   <input className="pl-input" value={settings.margin_presets ?? ''} onChange={set('margin_presets')} placeholder="20,25,30" />

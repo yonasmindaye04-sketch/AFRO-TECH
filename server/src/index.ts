@@ -17,12 +17,14 @@ import retailRoutes from './routes/retail.js'
 import hospitalRoutes from './routes/hospital.js'
 import hospitalFlowRoutes from './routes/hospitalFlow.js'
 import schoolRoutes from './routes/school.js'
+import teachingRoutes from './routes/teaching.js'
 import telegramRoutes from './routes/telegram.js'
 import billingRoutes from './routes/billing.js'
 import tenantBotRoutes from './routes/tenant-bots.js'
 import marketingRoutes from './routes/marketing/index.js'
 import { startPolling, telegramEnabled, setWebhook } from './services/telegram.js'
 import { startAlertScheduler } from './services/alerts.js'
+import { startTeachingMonitor } from './services/teachingMonitor.js'
 import { startAllTenantBots } from './services/tenantBot.js'
 import { startWorkers, stopWorkers } from './workers/index.js'
 import { closeQueues } from './config/queue.js'
@@ -72,6 +74,7 @@ app.use('/api/v1/retail', retailRoutes)
 app.use('/api/v1/hospital', hospitalRoutes)
 app.use('/api/v1/flow', hospitalFlowRoutes)
 app.use('/api/v1/school', schoolRoutes)
+app.use('/api/v1/teaching', teachingRoutes)
 app.use('/api/v1/telegram', telegramRoutes)
 app.use('/api/v1/billing', billingRoutes)
 app.use('/api/v1/tenant-bot', tenantBotRoutes)
@@ -133,6 +136,7 @@ app.listen(port, async () => {
     }
   }
   startAlertScheduler()
+  startTeachingMonitor()
   void startAllTenantBots().catch((err) => console.warn('[tenant-bots] startup failed:', err instanceof Error ? err.message : err))
   await startWorkers()
 })
