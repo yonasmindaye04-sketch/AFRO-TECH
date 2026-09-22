@@ -21,6 +21,7 @@ interface TenantSettings {
   academic_year?: string
   margin_presets?: string
   auto_print_receipt?: boolean
+  'teaching.grace_period_minutes'?: number
 }
 interface TelegramConfig {
   enabled: boolean
