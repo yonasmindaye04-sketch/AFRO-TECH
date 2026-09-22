@@ -1,4 +1,4 @@
-﻿# AFRO SUITE — Development Rules
+# AFRO SUITE — Development Rules
 
 These rules apply to **all agents and contributors** working on this codebase. Read before making any changes.
 
@@ -14,12 +14,12 @@ These rules apply to **all agents and contributors** working on this codebase. R
 
 ---
 
-## 2. No Background or Border on Status Badges
+## 2. No Background or Border on Indicators & Badges
 
-Status indicators (`.pl-badge`) must use **bold colored text only**. No backgrounds, no borders, no padding beyond what is needed for inline flow, no dot pseudo-element (`::before`).
+All indicators, tags, and status badges (e.g., `.pl-badge`, "save X%" labels) must use **bold colored text only**. No low-opacity background colors, no backgrounds at all, no borders, no padding beyond what is needed for inline flow, and no dot pseudo-element (`::before`).
 
-- Correct: bold green text for "paid", bold red text for "unpaid"
-- Wrong: pill-shaped badge with background color and a colored dot
+- Correct: bold green text for "paid", bold red text for "unpaid", bold green text for "save 9%"
+- Wrong: pill-shaped badge with a light background color (e.g., `rgba(x, x, x, 0.12)`) and a colored dot
 
 ---
 

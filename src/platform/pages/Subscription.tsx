@@ -281,9 +281,9 @@ export default function Subscription(): JSX.Element {
           })()}
 
           <p style={{ marginTop: 32, color: 'var(--text-dim)' }}>
-            Payments are processed securely by <a href="https://chapa.co" target="_blank" rel="noreferrer">Chapa</a>.
+            Payments are processed securely by <a href="https://chapa.co" target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>Chapa</a>.
             If you have questions or a pending payment that didn't complete, contact{' '}
-            <a href="mailto:yonasmindaye04@gmail.com">yonasmindaye04@gmail.com</a> or Telegram @yona64.
+            <a href="mailto:yonasmindaye04@gmail.com" style={{ color: 'inherit' }}>yonasmindaye04@gmail.com</a> or Telegram @yona64.
           </p>
         </>
       )}

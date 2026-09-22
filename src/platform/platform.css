@@ -1594,12 +1594,12 @@ label:has(input[type="radio"]) {
 .sub-save-badge {
   display: inline-block;
   margin-top: 6px;
-  font-size: .78rem;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: rgba(52, 211, 153, .12);
+  font-size: .85rem;
+  font-weight: 700;
+  color: #059669;
+}
+[data-theme="dark"] .sub-save-badge {
   color: #34d399;
-  border: 1px solid rgba(52, 211, 153, .35);
 }
 
 @media (max-width: 560px) {
