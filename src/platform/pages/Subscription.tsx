@@ -232,16 +232,16 @@ export default function Subscription(): JSX.Element {
             <p>Loading plans…</p>
           ) : !plans?.length ? (
             <p>No plans available for your business type.</p>
-          ) : (
-            plans.map((plan) => (
-              <div key={plan.id}>
-                <div className="pl-grid-3">
-                  {PERIODS.map(({ months, label }) => {
-                    const price = periodPrice(plan, months)
-                    const perMonth = price / months
-                    const monthly = Number(plan.price_monthly)
-                    const savePct = monthly > 0 ? Math.round((1 - price / (monthly * months)) * 100) : 0
-                    return (
+          ) : (() => {
+            const plan = plans[0]
+            return (
+              <div className="pl-grid-3">
+                {PERIODS.map(({ months, label }) => {
+                  const price = periodPrice(plan, months)
+                  const perMonth = price / months
+                  const monthly = Number(plan.price_monthly)
+                  const savePct = monthly > 0 ? Math.round((1 - price / (monthly * months)) * 100) : 0
+                  return (
                     <div className="pl-card" key={months}>
                       <div className="sub-plan-card">
                         <div className="sub-period-label">{label}</div>
@@ -274,12 +274,11 @@ export default function Subscription(): JSX.Element {
                         </button>
                       </div>
                     </div>
-                    )
-                  })}
-                </div>
+                  )
+                })}
               </div>
-            ))
-          )}
+            )
+          })()}
 
           <p style={{ marginTop: 32, color: 'var(--text-dim)' }}>
             Payments are processed securely by <a href="https://chapa.co" target="_blank" rel="noreferrer">Chapa</a>.
