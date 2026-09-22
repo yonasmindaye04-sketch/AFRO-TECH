@@ -75,13 +75,13 @@ export default function BotStudio(): JSX.Element {
         setWelcomeMessage(r.bot.welcome_message)
         setAutoReply(r.bot.auto_reply)
         setLimitPerDay(r.bot.broadcast_limit_per_day)
-        setCommands(r.bot.commands || [])
+        setCommands(Array.isArray(r.bot.commands) ? r.bot.commands : [])
         const [s, h] = await Promise.all([
           api.get<{ subscribers: Subscriber[] }>('/tenant-bot/subscribers'),
           api.get<{ broadcasts: Broadcast[] }>('/tenant-bot/broadcasts'),
         ])
-        setSubscribers(s.subscribers)
-        setBroadcasts(h.broadcasts)
+        setSubscribers(Array.isArray(s.subscribers) ? s.subscribers : [])
+        setBroadcasts(Array.isArray(h.broadcasts) ? h.broadcasts : [])
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')
