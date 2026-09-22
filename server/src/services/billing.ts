@@ -1,21 +1,68 @@
-import crypto from 'crypto'
+﻿import crypto from 'crypto'
 import type { PoolClient } from 'pg'
 import { pool } from '../config/db.js'
 import { AppError } from '../utils/helpers.js'
+import { telebirrConfigured, telebirrInitialize, telebirrQueryStatus } from './payments/telebirr.js'
+import { mpesaConfigured, mpesaInitialize, mpesaQueryStatus } from './payments/mpesa.js'
+import { cbeConfigured, cbeInitialize } from './payments/cbe.js'
 
-/* ── Provider selection ───────────────────────────────────────
-   Chapa (chapa.co) is the primary provider. If no secret key is
-   configured and we are outside production, a mock provider lets
-   the whole flow be tested end-to-end locally. */
+/* â”€â”€ Provider selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   Chapa (chapa.co) remains the default provider. Telebirr, M-Pesa
+   (Safaricom ET) and CBE Birr are ported from the yekis project and
+   can be selected per-checkout via the `provider` parameter. If no
+   provider at all is configured and we are outside production, a
+   mock provider lets the whole flow be tested end-to-end locally. */
 
 const CHAPA_SECRET = process.env.CHAPA_SECRET_KEY || ''
 const CHAPA_WEBHOOK_SECRET = process.env.CHAPA_WEBHOOK_SECRET || ''
 const CHAPA_API = 'https://api.chapa.co/v1'
 
-export type PaymentProvider = 'chapa' | 'mock'
+export type PaymentProvider = 'chapa' | 'telebirr' | 'mpesa' | 'cbe' | 'mock'
 
-export function paymentsProvider(): PaymentProvider {
+export function isPaymentProvider(v: unknown): v is PaymentProvider {
+  return v === 'chapa' || v === 'telebirr' || v === 'mpesa' || v === 'cbe' || v === 'mock'
+}
+
+/** True when a provider has the credentials it needs to accept payments. */
+export function providerConfigured(provider: PaymentProvider): boolean {
+  switch (provider) {
+    case 'chapa': return Boolean(CHAPA_SECRET)
+    case 'telebirr': return telebirrConfigured()
+    case 'mpesa': return mpesaConfigured()
+    case 'cbe': return cbeConfigured()
+    case 'mock': return process.env.NODE_ENV !== 'production'
+  }
+}
+
+/** Providers exposed to the checkout UI, with availability flags. */
+export function listProviders(): { id: PaymentProvider; name: string; configured: boolean }[] {
+  return [
+    { id: 'chapa', name: 'Chapa', configured: providerConfigured('chapa') },
+    { id: 'telebirr', name: 'Telebirr', configured: providerConfigured('telebirr') },
+    { id: 'mpesa', name: 'M-Pesa', configured: providerConfigured('mpesa') },
+    { id: 'cbe', name: 'CBE Birr (bank transfer)', configured: providerConfigured('cbe') },
+  ]
+}
+
+/**
+ * Resolve the provider for a checkout: an explicitly requested provider is
+ * validated for availability; otherwise the default (first configured, with
+ * Chapa preferred) is used.
+ */
+export function resolveProvider(requested?: string): PaymentProvider {
+  if (requested !== undefined) {
+    if (!isPaymentProvider(requested)) {
+      throw new AppError(400, 'Unknown payment provider. Supported: chapa, telebirr, mpesa, cbe.', 'BAD_PROVIDER')
+    }
+    if (!providerConfigured(requested)) {
+      throw new AppError(503, `${requested} payments are not configured yet. Contact AFRO-TECH.`, 'PAYMENTS_NOT_CONFIGURED')
+    }
+    return requested
+  }
   if (CHAPA_SECRET) return 'chapa'
+  if (telebirrConfigured()) return 'telebirr'
+  if (mpesaConfigured()) return 'mpesa'
+  if (cbeConfigured()) return 'cbe'
   if (process.env.NODE_ENV === 'production')
     throw new AppError(503, 'Online payments are not configured yet. Contact AFRO-TECH.', 'PAYMENTS_NOT_CONFIGURED')
   return 'mock'
@@ -34,6 +81,8 @@ export interface CheckoutInput {
 
 export interface VerifyResult {
   success: boolean
+  /** true = provider has no final answer yet; do not mark the payment failed. */
+  pending?: boolean
   providerRef: string | null
   amount: number | null
   currency: string | null
@@ -41,7 +90,7 @@ export interface VerifyResult {
   failureReason: string | null
 }
 
-/* ── Chapa ────────────────────────────────────────────────── */
+/* â”€â”€ Chapa â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 async function chapaRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${CHAPA_API}${path}`, {
@@ -116,9 +165,9 @@ function timingSafeEqBuffer(a: Buffer, b: Buffer): boolean {
   return crypto.timingSafeEqual(a, b)
 }
 
-/* ── Settlement: the single, idempotent activation path ──────
+/* â”€â”€ Settlement: the single, idempotent activation path â”€â”€â”€â”€â”€â”€
    Used by verify, webhook and manual confirmation. Safe to call
-   repeatedly for the same payment — the row lock + status check
+   repeatedly for the same payment â€” the row lock + status check
    guarantee subscription time is granted exactly once. */
 
 export interface PaymentRow {
@@ -215,4 +264,93 @@ export async function markPaymentFailed(paymentId: string, reason: string): Prom
      WHERE id = $1 AND status = 'pending'`,
     [paymentId, reason.slice(0, 300)]
   )
+}
+
+/* -- Multi-provider dispatch (Telebirr / M-Pesa / CBE ported from yekis) -- */
+
+export interface ProviderCheckoutResult {
+  /** Hosted checkout URL to redirect the customer to; null for mock/CBE manual flows. */
+  checkoutUrl: string | null
+  /** Provider-side reference (Telebirr merch_order_id); stored on payments.provider_ref. */
+  providerRef: string | null
+}
+
+function telebirrNotifyUrl(): string | undefined {
+  if (process.env.TELEBIRR_NOTIFY_URL) return process.env.TELEBIRR_NOTIFY_URL
+  const base = (process.env.BACKEND_PUBLIC_URL || '').replace(/\/$/, '')
+  return base ? `${base}/api/v1/billing/webhook/telebirr` : undefined
+}
+
+/** Initiate a checkout with the chosen provider. */
+export async function initializeCheckout(provider: PaymentProvider, input: CheckoutInput): Promise<ProviderCheckoutResult> {
+  switch (provider) {
+    case 'chapa':
+      return { checkoutUrl: await chapaInitialize(input), providerRef: null }
+    case 'telebirr': {
+      const r = await telebirrInitialize({
+        txRef: input.txRef,
+        amount: input.amount,
+        currency: input.currency,
+        title: `AFRO Suite - ${input.planName}`,
+        notifyUrl: telebirrNotifyUrl(),
+        returnUrl: input.returnUrl,
+      })
+      return { checkoutUrl: r.checkoutUrl, providerRef: r.providerRef }
+    }
+    case 'mpesa': {
+      const r = await mpesaInitialize({ txRef: input.txRef, amount: input.amount, currency: input.currency, title: `AFRO Suite - ${input.planName}` })
+      return { checkoutUrl: r.checkoutUrl, providerRef: r.providerRef }
+    }
+    case 'cbe': {
+      const r = await cbeInitialize({ txRef: input.txRef, amount: input.amount, currency: input.currency, title: `AFRO Suite - ${input.planName}` })
+      return { checkoutUrl: r.checkoutUrl, providerRef: r.providerRef }
+    }
+    case 'mock':
+      return { checkoutUrl: null, providerRef: `mock-${input.txRef}` }
+  }
+}
+
+/**
+ * Verify/query a payment\'s status with its own provider.
+ * `pending: true` means "no final answer yet" (do NOT mark the payment failed).
+ */
+export async function verifyByProvider(provider: PaymentProvider, txRef: string, providerRef: string | null): Promise<VerifyResult> {
+  switch (provider) {
+    case 'chapa':
+      return chapaVerify(txRef)
+    case 'telebirr': {
+      if (!providerRef) return { success: false, pending: true, providerRef: null, amount: null, currency: null, payerEmail: null, failureReason: 'Awaiting Telebirr confirmation' }
+      const r = await telebirrQueryStatus(providerRef)
+      if (!r || r.status === 'PENDING') {
+        return { success: false, pending: true, providerRef, amount: null, currency: null, payerEmail: null, failureReason: 'Awaiting Telebirr confirmation' }
+      }
+      return {
+        success: r.status === 'SUCCESS',
+        providerRef,
+        amount: null,
+        currency: null,
+        payerEmail: null,
+        failureReason: r.status === 'FAILED' ? 'Telebirr reports the payment failed or was cancelled' : null,
+      }
+    }
+    case 'mpesa': {
+      const r = await mpesaQueryStatus(txRef)
+      if (!r || r.status === 'PENDING') {
+        return { success: false, pending: true, providerRef, amount: null, currency: null, payerEmail: null, failureReason: 'Awaiting M-Pesa confirmation' }
+      }
+      return {
+        success: r.status === 'SUCCESS',
+        providerRef,
+        amount: null,
+        currency: null,
+        payerEmail: null,
+        failureReason: r.status === 'FAILED' ? 'M-Pesa reports the payment failed or was cancelled' : null,
+      }
+    }
+    case 'cbe':
+      // No queryable API yet - the payment is confirmed by webhook or manual admin action.
+      return { success: false, pending: true, providerRef, amount: null, currency: null, payerEmail: null, failureReason: 'Awaiting CBE Birr transfer confirmation' }
+    case 'mock':
+      return { success: false, pending: true, providerRef, amount: null, currency: null, payerEmail: null, failureReason: 'In mock mode, complete the payment from the developer console' }
+  }
 }

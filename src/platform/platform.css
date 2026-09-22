@@ -22,6 +22,8 @@
 .pl-auth-alt { text-align: center; margin-top: 18px; font-size: .9rem; color: var(--text-dim); }
 .pl-auth-alt a { color: var(--accent); text-decoration: none; font-weight: 600; }
 .pl-auth-alt a:hover { text-decoration: underline; }
+.pl-back-link { position: absolute; top: 24px; left: 24px; color: var(--text-dim); text-decoration: none; font-weight: 600; font-size: .9rem; transition: color .2s; }
+.pl-back-link:hover { color: var(--text); }
 
 .pl-type-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .pl-type-opt {

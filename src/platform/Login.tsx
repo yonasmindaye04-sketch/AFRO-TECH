@@ -16,6 +16,7 @@ export default function Login(): JSX.Element {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [tgStatus, setTgStatus] = useState<'idle' | 'working' | 'failed'>('idle')
@@ -64,6 +65,10 @@ export default function Login(): JSX.Element {
 
   return (
     <div className="pl-auth">
+      <Link to="/" className="pl-back-link">
+        ← Back to afrotech website
+      </Link>
+      
       <div className="pl-auth-card">
         <div className="pl-auth-brand">
           AFRO<span>SUITE</span>
@@ -83,7 +88,38 @@ export default function Login(): JSX.Element {
               <input className="pl-input" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </Field>
             <Field label="Password">
-              <input className="pl-input" type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+              <div style={{ position: 'relative' }}>
+                <input
+                  className="pl-input"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  style={{ paddingRight: 40 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute',
+                    right: 12,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-dim)',
+                    cursor: 'pointer',
+                    padding: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  <i className={`fa-solid ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`} aria-hidden="true" />
+                </button>
+              </div>
             </Field>
             {error && (
               <p role="alert" style={{ color: '#e07a7a', fontSize: '.87rem', margin: '0 0 12px' }}>
@@ -118,9 +154,6 @@ export default function Login(): JSX.Element {
         <p className="pl-auth-alt">
           New to AFRO-TECH systems?{' '}
           <Link to="/app/register">Start your free 45-day trial</Link>
-        </p>
-        <p className="pl-auth-alt" style={{ marginTop: 8 }}>
-          <Link to="/">← Back to afrotech website</Link>
         </p>
       </div>
     </div>

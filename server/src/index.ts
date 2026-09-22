@@ -28,6 +28,7 @@ import { startTeachingMonitor } from './services/teachingMonitor.js'
 import { startAllTenantBots } from './services/tenantBot.js'
 import { startWorkers, stopWorkers } from './workers/index.js'
 import { closeQueues } from './config/queue.js'
+import { startPaymentReconcileSweep, stopPaymentReconcileSweep } from './services/paymentReconcile.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -139,11 +140,13 @@ app.listen(port, async () => {
   startTeachingMonitor()
   void startAllTenantBots().catch((err) => console.warn('[tenant-bots] startup failed:', err instanceof Error ? err.message : err))
   await startWorkers()
+  startPaymentReconcileSweep()
 })
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, async () => {
     await stopWorkers()
+    stopPaymentReconcileSweep()
     await closeQueues()
     await pool.end().catch(() => undefined)
     process.exit(0)
