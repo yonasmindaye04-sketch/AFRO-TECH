@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { Analytics } from '@vercel/analytics/react'
 import Router from './Router.tsx'
 import './index.css'
 
@@ -11,5 +12,6 @@ if (!rootElement) {
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <Router />
+    <Analytics />
   </React.StrictMode>
 )
