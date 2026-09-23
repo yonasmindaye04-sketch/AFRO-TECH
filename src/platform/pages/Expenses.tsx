@@ -128,14 +128,12 @@ export default function Expenses(): JSX.Element {
 
   return (
     <div className="pl-page">
-      <PageHeader title="Expenses" sub="Track and manage all business expenses">
-        <button type="button" className="pl-btn pl-btn-ghost" onClick={exportCsv} disabled={exporting}>
+      <PageHeader title="Expenses" subtitle="Track and manage all business expenses" action={<><button type="button" className="pl-btn pl-btn-ghost" onClick={exportCsv} disabled={exporting}>
           <i className="fa-solid fa-download" aria-hidden="true" /> {exporting ? 'Exporting...' : 'CSV'}
         </button>
         <button type="button" className="pl-btn pl-btn-primary" onClick={openNew}>
           <i className="fa-solid fa-plus" aria-hidden="true" /> Add Expense
-        </button>
-      </PageHeader>
+        </button></>} />
 
       {/* Summary Stats */}
       {summary && (
@@ -181,23 +179,23 @@ export default function Expenses(): JSX.Element {
       ) : (
         <DataTable
           columns={[
-            { key: 'spent_at', title: 'Date', render: (r) => fmtDate(r.spent_at) },
-            { key: 'category', title: 'Category' },
-            { key: 'description', title: 'Description', render: (r) => r.description || '—' },
-            { key: 'amount', title: 'Amount', render: (r) => `${fmtMoney(r.amount)} ETB`, align: 'right' },
+            { key: 'spent_at', header: 'Date', render: (r) => fmtDate(r.spent_at) },
+            { key: 'category', header: 'Category', render: (r) => r.category },
+            { key: 'description', header: 'Description', render: (r) => r.description || '—' },
+            { key: 'amount', header: 'Amount', render: (r) => `${fmtMoney(r.amount)} ETB` },
             {
               key: 'status',
-              title: 'Status',
+              header: 'Status',
               render: (r) => (
                 <span style={{ fontWeight: 700, color: r.status === 'approved' ? '#059669' : r.status === 'rejected' ? '#dc2626' : '#d97706' }}>
                   {r.status}
                 </span>
               ),
             },
-            { key: 'recorded_by_name', title: 'By', render: (r) => r.recorded_by_name || '—' },
+            { key: 'recorded_by_name', header: 'By', render: (r) => r.recorded_by_name || '—' },
             {
               key: 'actions',
-              title: '',
+              header: '',
               render: (r) => (
                 <div style={{ display: 'flex', gap: 6 }}>
                   {r.status === 'pending' && (

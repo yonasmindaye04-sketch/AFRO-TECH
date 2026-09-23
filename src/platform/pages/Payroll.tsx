@@ -20,7 +20,7 @@ interface Employee {
 
 interface PayrollRun {
   id: string
-  period_title: string
+  period_header: string
   frequency: string
   status: 'draft' | 'approved' | 'paid'
   total_gross: string
@@ -49,7 +49,7 @@ interface RunDetail extends PayrollRun {
 
 interface Payslip {
   id: string
-  period_title: string
+  period_header: string
   frequency: string
   status: string
   employee_name: string
@@ -67,13 +67,12 @@ type Tab = 'employees' | 'run' | 'history' | 'my-payslips'
 
 export default function Payroll(): JSX.Element {
   const { me } = useAuth()
-  const isManager = me?.role === 'owner' || me?.role === 'admin'
+  const isManager = me?.role === 'owner'
   const [tab, setTab] = useState<Tab>(isManager ? 'employees' : 'my-payslips')
 
   return (
     <div className="pl-page">
-      <PageHeader title="Payroll" sub="Employee salaries, payroll runs and payslips">
-        <div className="sub-tabs">
+      <PageHeader title="Payroll" subtitle="Employee salaries, payroll runs and payslips" action={<><div className="sub-tabs">
           {isManager && (
             <>
               <button type="button" className={`sub-tab ${tab === 'employees' ? 'sub-tab-active' : ''}`} onClick={() => setTab('employees')}>Employees</button>
@@ -82,8 +81,7 @@ export default function Payroll(): JSX.Element {
             </>
           )}
           <button type="button" className={`sub-tab ${tab === 'my-payslips' ? 'sub-tab-active' : ''}`} onClick={() => setTab('my-payslips')}>My Payslips</button>
-        </div>
-      </PageHeader>
+        </div></>} />
 
       {tab === 'employees' && isManager && <EmployeesTab />}
       {tab === 'run' && isManager && <RunPayrollTab />}
@@ -147,16 +145,16 @@ function EmployeesTab(): JSX.Element {
       ) : (
         <DataTable
           columns={[
-            { key: 'full_name', title: 'Employee' },
-            { key: 'role', title: 'Role' },
-            { key: 'base_salary', title: 'Base Salary', render: (r) => r.base_salary ? `${fmtMoney(r.base_salary)} ETB` : '—', align: 'right' },
-            { key: 'allowances', title: 'Allowances', render: (r) => {
+            { key: 'full_name', header: 'Employee', render: (r) => r.full_name },
+            { key: 'role', header: 'Role', render: (r) => r.role },
+            { key: 'base_salary', header: 'Base Salary', render: (r) => r.base_salary ? `${fmtMoney(r.base_salary)} ETB` : '—' },
+            { key: 'allowances', header: 'Allowances', render: (r) => {
               const total = (r.transport_allow ?? 0) + (r.housing_allow ?? 0) + (r.other_allow ?? 0)
               return total > 0 ? `${fmtMoney(total)} ETB` : '—'
-            }, align: 'right' },
-            { key: 'pension_pct', title: 'Pension %', render: (r) => r.pension_pct != null ? `${r.pension_pct}%` : '—' },
+            } },
+            { key: 'pension_pct', header: 'Pension %', render: (r) => r.pension_pct != null ? `${r.pension_pct}%` : '—' },
             {
-              key: 'actions', title: '', render: (r) => (
+              key: 'actions', header: '', render: (r) => (
                 <button type="button" className="pl-btn-icon" title="Set salary" onClick={() => openEdit(r)}>
                   <i className="fa-solid fa-pen" />
                 </button>
@@ -213,7 +211,7 @@ function RunPayrollTab(): JSX.Element {
     setError(null)
     setResult(null)
     try {
-      const res = await api.post<{ run: RunDetail }>('/payroll/run', { period_title: periodLabel, frequency })
+      const res = await api.post<{ run: RunDetail }>('/payroll/run', { period_header: periodLabel, frequency })
       setResult(res.run)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate payroll')
@@ -266,13 +264,13 @@ function RunPayrollTab(): JSX.Element {
           {result.items && result.items.length > 0 && (
             <DataTable
               columns={[
-                { key: 'employee_name', title: 'Employee' },
-                { key: 'base_salary', title: 'Base', render: (r) => fmtMoney(r.base_salary), align: 'right' },
-                { key: 'allowances', title: 'Allowances', render: (r) => fmtMoney(r.allowances), align: 'right' },
-                { key: 'gross', title: 'Gross', render: (r) => fmtMoney(r.gross), align: 'right' },
-                { key: 'income_tax', title: 'Tax', render: (r) => fmtMoney(r.income_tax), align: 'right' },
-                { key: 'pension_employee', title: 'Pension', render: (r) => fmtMoney(r.pension_employee), align: 'right' },
-                { key: 'net_pay', title: 'Net Pay', render: (r) => <strong>{fmtMoney(r.net_pay)} ETB</strong>, align: 'right' },
+                { key: 'employee_name', header: 'Employee', render: (r) => r.employee_name },
+                { key: 'base_salary', header: 'Base', render: (r) => fmtMoney(r.base_salary) },
+                { key: 'allowances', header: 'Allowances', render: (r) => fmtMoney(r.allowances) },
+                { key: 'gross', header: 'Gross', render: (r) => fmtMoney(r.gross) },
+                { key: 'income_tax', header: 'Tax', render: (r) => fmtMoney(r.income_tax) },
+                { key: 'pension_employee', header: 'Pension', render: (r) => fmtMoney(r.pension_employee) },
+                { key: 'net_pay', header: 'Net Pay', render: (r) => <strong>{fmtMoney(r.net_pay)} ETB</strong> },
               ]}
               rows={result.items}
             />
@@ -339,20 +337,20 @@ function HistoryTab(): JSX.Element {
       ) : (
         <DataTable
           columns={[
-            { key: 'period_label', title: 'Period' },
-            { key: 'frequency', title: 'Frequency' },
-            { key: 'total_gross', title: 'Gross', render: (r) => `${fmtMoney(r.total_gross)} ETB`, align: 'right' },
-            { key: 'total_net', title: 'Net', render: (r) => `${fmtMoney(r.total_net)} ETB`, align: 'right' },
-            { key: 'item_count', title: 'Staff', align: 'center' },
+            { key: 'period_label', header: 'Period', render: (r) => r.period_label },
+            { key: 'frequency', header: 'Frequency', render: (r) => r.frequency },
+            { key: 'total_gross', header: 'Gross', render: (r) => `${fmtMoney(r.total_gross)} ETB` },
+            { key: 'total_net', header: 'Net', render: (r) => `${fmtMoney(r.total_net)} ETB` },
+            { key: 'item_count', header: 'Staff', render: (r) => String(r.item_count) },
             {
-              key: 'status', title: 'Status', render: (r) => (
+              key: 'status', header: 'Status', render: (r) => (
                 <span style={{ fontWeight: 700, color: r.status === 'paid' ? '#059669' : r.status === 'approved' ? '#2563eb' : '#d97706' }}>
                   {r.status}
                 </span>
               ),
             },
             {
-              key: 'actions', title: '', render: (r) => (
+              key: 'actions', header: '', render: (r) => (
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button type="button" className="pl-btn-icon" title="View" onClick={() => void viewRun(r.id)}><i className="fa-solid fa-eye" /></button>
                   {r.status === 'draft' && <button type="button" className="pl-btn-icon" title="Approve" disabled={busy} onClick={() => void approve(r.id)}><i className="fa-solid fa-check" /></button>}
@@ -368,16 +366,16 @@ function HistoryTab(): JSX.Element {
       )}
 
       {detail && (
-        <Modal open={true} title={`Payroll — ${detail.period_label}`} onClose={() => setDetail(null)}>
+        <Modal open={true} title={`Payroll — ${(detail as any).period_label}`} onClose={() => setDetail(null)}>
           <DataTable
             columns={[
-              { key: 'employee_name', title: 'Employee' },
-              { key: 'base_salary', title: 'Base', render: (r) => fmtMoney(r.base_salary), align: 'right' },
-              { key: 'allowances', title: 'Allow.', render: (r) => fmtMoney(r.allowances), align: 'right' },
-              { key: 'gross', title: 'Gross', render: (r) => fmtMoney(r.gross), align: 'right' },
-              { key: 'income_tax', title: 'Tax', render: (r) => fmtMoney(r.income_tax), align: 'right' },
-              { key: 'pension_employee', title: 'Pension', render: (r) => fmtMoney(r.pension_employee), align: 'right' },
-              { key: 'net_pay', title: 'Net', render: (r) => <strong>{fmtMoney(r.net_pay)}</strong>, align: 'right' },
+              { key: 'employee_name', header: 'Employee', render: (r) => r.employee_name },
+              { key: 'base_salary', header: 'Base', render: (r) => fmtMoney(r.base_salary) },
+              { key: 'allowances', header: 'Allow.', render: (r) => fmtMoney(r.allowances) },
+              { key: 'gross', header: 'Gross', render: (r) => fmtMoney(r.gross) },
+              { key: 'income_tax', header: 'Tax', render: (r) => fmtMoney(r.income_tax) },
+              { key: 'pension_employee', header: 'Pension', render: (r) => fmtMoney(r.pension_employee) },
+              { key: 'net_pay', header: 'Net', render: (r) => <strong>{fmtMoney(r.net_pay)}</strong> },
             ]}
             rows={detail.items ?? []}
           />
@@ -401,15 +399,15 @@ function MyPayslipsTab(): JSX.Element {
   ) : (
     <DataTable
       columns={[
-        { key: 'period_label', title: 'Period' },
-        { key: 'base_salary', title: 'Base', render: (r) => `${fmtMoney(r.base_salary)} ETB`, align: 'right' },
-        { key: 'allowances', title: 'Allowances', render: (r) => `${fmtMoney(r.allowances)} ETB`, align: 'right' },
-        { key: 'gross', title: 'Gross', render: (r) => `${fmtMoney(r.gross)} ETB`, align: 'right' },
-        { key: 'income_tax', title: 'Tax', render: (r) => `${fmtMoney(r.income_tax)} ETB`, align: 'right' },
-        { key: 'pension_employee', title: 'Pension', render: (r) => `${fmtMoney(r.pension_employee)} ETB`, align: 'right' },
-        { key: 'net_pay', title: 'Net Pay', render: (r) => <strong style={{ color: '#059669' }}>{fmtMoney(r.net_pay)} ETB</strong>, align: 'right' },
+        { key: 'period_label', header: 'Period', render: (r) => r.period_label },
+        { key: 'base_salary', header: 'Base', render: (r) => `${fmtMoney(r.base_salary)} ETB` },
+        { key: 'allowances', header: 'Allowances', render: (r) => `${fmtMoney(r.allowances)} ETB` },
+        { key: 'gross', header: 'Gross', render: (r) => `${fmtMoney(r.gross)} ETB` },
+        { key: 'income_tax', header: 'Tax', render: (r) => `${fmtMoney(r.income_tax)} ETB` },
+        { key: 'pension_employee', header: 'Pension', render: (r) => `${fmtMoney(r.pension_employee)} ETB` },
+        { key: 'net_pay', header: 'Net Pay', render: (r) => <strong style={{ color: '#059669' }}>{fmtMoney(r.net_pay)} ETB</strong> },
         {
-          key: 'status', title: 'Status', render: (r) => (
+          key: 'status', header: 'Status', render: (r) => (
             <span style={{ fontWeight: 700, color: r.status === 'paid' ? '#059669' : r.status === 'approved' ? '#2563eb' : '#d97706' }}>
               {r.status}
             </span>
