@@ -337,7 +337,7 @@ function HistoryTab(): JSX.Element {
       ) : (
         <DataTable
           columns={[
-            { key: 'period_label', header: 'Period', render: (r) => r.period_label },
+            { key: 'period_label', header: 'Period', render: (r: any) => r.period_label },
             { key: 'frequency', header: 'Frequency', render: (r) => r.frequency },
             { key: 'total_gross', header: 'Gross', render: (r) => `${fmtMoney(r.total_gross)} ETB` },
             { key: 'total_net', header: 'Net', render: (r) => `${fmtMoney(r.total_net)} ETB` },
@@ -399,7 +399,7 @@ function MyPayslipsTab(): JSX.Element {
   ) : (
     <DataTable
       columns={[
-        { key: 'period_label', header: 'Period', render: (r) => r.period_label },
+        { key: 'period_label', header: 'Period', render: (r: any) => r.period_label },
         { key: 'base_salary', header: 'Base', render: (r) => `${fmtMoney(r.base_salary)} ETB` },
         { key: 'allowances', header: 'Allowances', render: (r) => `${fmtMoney(r.allowances)} ETB` },
         { key: 'gross', header: 'Gross', render: (r) => `${fmtMoney(r.gross)} ETB` },
