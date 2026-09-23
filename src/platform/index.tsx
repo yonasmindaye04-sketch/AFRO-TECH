@@ -52,6 +52,8 @@ const Team = lazy(() => import('./pages/Team'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Subscription = lazy(() => import('./pages/Subscription'))
 const BotStudio = lazy(() => import('./pages/BotStudio'))
+const Expenses = lazy(() => import('./pages/Expenses'))
+const Payroll = lazy(() => import('./pages/Payroll'))
 const MarketingDashboard = lazy(() => import('./marketing/MarketingDashboard'))
 const Contacts = lazy(() => import('./marketing/Contacts'))
 const Audiences = lazy(() => import('./marketing/Audiences'))
@@ -173,6 +175,8 @@ function Inner(): JSX.Element {
             <Route path="announcements" element={<Announcements />} />
             <Route path="school-reports" element={<SchoolReports />} />
             {/* shared */}
+            <Route path="expenses" element={<Expenses />} />
+            <Route path="payroll" element={<Payroll />} />
             <Route path="users" element={me?.role === 'owner' ? <Team /> : <Navigate to="/app" replace />} />
             <Route path="settings" element={me?.role === 'owner' ? <Settings /> : <Navigate to="/app" replace />} />
             <Route path="subscription" element={me?.role === 'owner' ? <Subscription /> : <Navigate to="/app" replace />} />

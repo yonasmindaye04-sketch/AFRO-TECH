@@ -29,7 +29,8 @@ const RETAIL_NAV: NavItem[] = [
   { to: '/app/suppliers', icon: 'fa-solid fa-truck-field', label: 'Suppliers' },
   { to: '/app/customers', icon: 'fa-solid fa-users', label: 'Customers' },
   { to: '/app/credit', icon: 'fa-solid fa-hand-holding-dollar', label: 'Credit (Khata)' },
-  { to: '/app/finance', icon: 'fa-solid fa-coins', label: 'Expenses' },
+  { to: '/app/expenses', icon: 'fa-solid fa-file-invoice-dollar', label: 'Expenses' },
+  { to: '/app/payroll', icon: 'fa-solid fa-money-check-dollar', label: 'Payroll' },
   { to: '/app/reports', icon: 'fa-solid fa-chart-line', label: 'Reports' },
 ]
 
@@ -44,6 +45,8 @@ const HOSPITAL_NAV: NavItem[] = [
   { to: '/app/labs', icon: 'fa-solid fa-flask-vial', label: 'Laboratory' },
   { to: '/app/doctors', icon: 'fa-solid fa-user-doctor', label: 'Doctors' },
   { to: '/app/billing', icon: 'fa-solid fa-file-invoice-dollar', label: 'Billing' },
+  { to: '/app/expenses', icon: 'fa-solid fa-coins', label: 'Expenses' },
+  { to: '/app/payroll', icon: 'fa-solid fa-money-check-dollar', label: 'Payroll' },
   { to: '/app/hospital-reports', icon: 'fa-solid fa-chart-line', label: 'Reports' },
 ]
 
@@ -59,6 +62,8 @@ const SCHOOL_NAV: NavItem[] = [
   { to: '/app/report-cards', icon: 'fa-solid fa-award', label: 'Report Cards' },
   { to: '/app/fees', icon: 'fa-solid fa-money-bill-wave', label: 'Fees' },
   { to: '/app/announcements', icon: 'fa-solid fa-bullhorn', label: 'Announcements' },
+  { to: '/app/expenses', icon: 'fa-solid fa-coins', label: 'Expenses' },
+  { to: '/app/payroll', icon: 'fa-solid fa-money-check-dollar', label: 'Payroll' },
   { to: '/app/school-reports', icon: 'fa-solid fa-chart-line', label: 'Reports' },
 ]
 

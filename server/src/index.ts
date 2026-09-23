@@ -22,6 +22,8 @@ import telegramRoutes from './routes/telegram.js'
 import billingRoutes from './routes/billing.js'
 import tenantBotRoutes from './routes/tenant-bots.js'
 import marketingRoutes from './routes/marketing/index.js'
+import expensesRoutes from './routes/expenses.js'
+import payrollRoutes from './routes/payroll.js'
 import { startPolling, telegramEnabled, setWebhook } from './services/telegram.js'
 import { startAlertScheduler } from './services/alerts.js'
 import { startTeachingMonitor } from './services/teachingMonitor.js'
@@ -80,6 +82,8 @@ app.use('/api/v1/telegram', telegramRoutes)
 app.use('/api/v1/billing', billingRoutes)
 app.use('/api/v1/tenant-bot', tenantBotRoutes)
 app.use('/api/v1/marketing', marketingRoutes)
+app.use('/api/v1/expenses', expensesRoutes)
+app.use('/api/v1/payroll', payrollRoutes)
 
 /* ── Contact form (works on VPS — no Vercel functions needed) */
 app.post('/api/contact', async (req, res) => {
