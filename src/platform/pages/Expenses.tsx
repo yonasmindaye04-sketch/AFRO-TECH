@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { api, fmtDate, fmtMoney } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { Card, DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
+import ReceiptScanner, { type ScannedExpense } from '../ui/ReceiptScanner'
 
 interface Expense {
   id: string
@@ -42,6 +43,17 @@ export default function Expenses(): JSX.Element {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [scanOpen, setScanOpen] = useState(false)
+
+  const applyScan = (f: ScannedExpense): void => {
+    setForm((prev) => ({
+      ...prev,
+      amount: f.amount ?? prev.amount,
+      spent_at: f.date ?? prev.spent_at,
+      description: f.description ?? prev.description,
+    }))
+    setScanOpen(false)
+  }
 
   const expenses = data?.expenses ?? []
   const summary = summaryQ.data
@@ -226,6 +238,11 @@ export default function Expenses(): JSX.Element {
       {open && (
         <Modal open={true} title={editId ? 'Edit Expense' : 'New Expense'} onClose={() => setOpen(false)}>
           <form onSubmit={submit}>
+            {!editId && (
+              <button type="button" className="pl-btn pl-btn-ghost" style={{ width: '100%', marginBottom: 12, borderStyle: 'dashed' }} onClick={() => setScanOpen(true)}>
+                <i className="fa-solid fa-camera" aria-hidden="true" /> Scan receipt — auto-fill
+              </button>
+            )}
             <Field label="Category">
               <select className="pl-input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                 {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -268,6 +285,9 @@ export default function Expenses(): JSX.Element {
           </form>
         </Modal>
       )}
+
+      {/* Receipt OCR scanner (Telegram WebView & mobile friendly) */}
+      {scanOpen && <ReceiptScanner onApply={applyScan} onClose={() => setScanOpen(false)} />}
     </div>
   )
 }

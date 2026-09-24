@@ -937,7 +937,8 @@ footer .logo-text { font-size:1.15rem; }
   .ui-nav-item { padding:8px 14px; font-size:.78rem; }
 }
 
-@media(max-width:768px){
+/* ── Tablet & below: collapse nav into hamburger drawer ── */
+@media(max-width:1024px){
   .hamburger { display:flex; background:transparent; border:none; color:var(--text); width:36px; height:36px; border-radius:50%; cursor:pointer; align-items:center; justify-content:center; font-size:1.1rem; }
   .hamburger:hover { color:var(--accent); }
   .nav-links {
@@ -952,7 +953,17 @@ footer .logo-text { font-size:1.15rem; }
   .nav-links.open { transform:translateX(0); }
   .nav-links a { padding:14px 0; border-bottom:1px solid var(--border); width:100%; font-size:.98rem; }
   .nav-links a::after { display:none; }
+  /* keep the toggle (X) visible & clickable above the open drawer */
+  .nav-right { position:relative; z-index:1002; }
+}
 
+/* ── Small laptops: tighten link spacing so nothing overflows ── */
+@media(min-width:1025px) and (max-width:1280px){
+  nav { padding:20px 4%; }
+  .nav-links { gap:1.5rem; }
+}
+
+@media(max-width:768px){
   /* ── HERO mobile ── */
   #hero {
     flex-direction:column; align-items:center; text-align:center;

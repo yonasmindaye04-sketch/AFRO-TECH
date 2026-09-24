@@ -38,6 +38,21 @@ interface PaymentRow {
   failure_reason: string | null
 }
 
+interface ProviderInfo {
+  id: string
+  name: string
+  configured: boolean
+}
+
+/** Display label + short description per payment provider. */
+const PROVIDER_META: Record<string, { label: string; hint: string }> = {
+  chapa: { label: 'Chapa', hint: 'Cards, bank transfer & mobile money' },
+  telebirr: { label: 'Telebirr', hint: 'Pay directly with the Telebirr app' },
+  mpesa: { label: 'M-Pesa', hint: 'Safaricom Ethiopia mobile money' },
+  cbe: { label: 'CBE Birr', hint: 'Manual bank transfer — confirmed by our team' },
+  mock: { label: 'Test mode', hint: 'No real payment (development only)' },
+}
+
 declare global {
   interface Window {
     __billing_refresh?: () => void
@@ -56,6 +71,8 @@ export default function Subscription(): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
   const [tab, setTab] = useState<TabKey>('plans')
+  const [providers, setProviders] = useState<ProviderInfo[]>([])
+  const [provider, setProvider] = useState<string>('')
 
   const load = async (): Promise<void> => {
     setError(null)
@@ -75,6 +92,18 @@ export default function Subscription(): JSX.Element {
       setLoading(false)
     }
   }
+
+  // Available payment providers (independent of plan state)
+  useEffect(() => {
+    api.get<{ providers: ProviderInfo[] }>('/billing/providers')
+      .then((res) => {
+        const available = res.providers.filter((pr) => pr.configured)
+        setProviders(res.providers)
+        if (!provider && available.length) setProvider(available[0].id)
+      })
+      .catch(() => undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     void load()
@@ -115,18 +144,23 @@ export default function Subscription(): JSX.Element {
     setError(null)
     const idempotencyKey = `${plan.code}-${period}-${crypto.randomUUID().slice(0, 8)}`
     try {
-      const res = await api.post<{ checkout_url: string | null; tx_ref: string; mock: boolean }>(
+      const res = await api.post<{ checkout_url: string | null; tx_ref: string; mock: boolean; provider?: string }>(
         '/billing/checkout',
-        { plan_code: plan.code, period_months: period },
+        { plan_code: plan.code, period_months: period, provider: provider || undefined },
         { 'Idempotency-Key': idempotencyKey }
       )
+      const providerName = PROVIDER_META[res.provider ?? provider]?.label ?? 'the selected provider'
       if (res.mock) {
         setError('Development mode: use the MOCKS section in the admin panel to confirm this payment.')
         void load()
       } else if (res.checkout_url) {
         window.location.href = res.checkout_url
+      } else if (res.provider === 'cbe') {
+        // Manual bank transfer: no hosted checkout — the team confirms the transfer.
+        setOk(`Manual transfer initiated — reference ${res.tx_ref}. Pay ${period} month(s) via CBE Birr / bank transfer quoting this reference; your workspace is activated once the payment is confirmed by AFRO-TECH.`)
+        void load()
       } else {
-        setError('Checkout unavailable. Try again.')
+        setError(`No checkout link available for ${providerName} right now. Try another payment method.`)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Checkout failed')
@@ -164,7 +198,8 @@ export default function Subscription(): JSX.Element {
       {ok && <div className="pl-ok-box" role="status"><i className="fa-solid fa-circle-check" /> {ok}</div>}
       {pendingTx && !ok && (
         <div className="pl-warn-box" style={{ marginBottom: 16 }}>
-          <i className="fa-solid fa-hourglass-half" /> A payment is pending: <strong>{pendingTx.tx_ref}</strong> — complete it in Chapa or contact support.
+          <i className="fa-solid fa-hourglass-half" /> A payment is pending: <strong>{pendingTx.tx_ref}</strong> — complete it with{' '}
+          {PROVIDER_META[pendingTx.provider]?.label ?? pendingTx.provider} or contact support.
         </div>
       )}
 
@@ -201,7 +236,7 @@ export default function Subscription(): JSX.Element {
             <div className="pl-table-wrap">
               <table className="pl-table">
                 <thead>
-                  <tr><th>Date</th><th>Ref</th><th>Plan</th><th>Amount</th><th>Period</th><th>Status</th></tr>
+                  <tr><th>Date</th><th>Ref</th><th>Plan</th><th>Method</th><th>Amount</th><th>Period</th><th>Status</th></tr>
                 </thead>
                 <tbody>
                   {payments.map((p) => (
@@ -209,6 +244,7 @@ export default function Subscription(): JSX.Element {
                       <td>{fmtDate(p.created_at)}</td>
                       <td><code>{p.tx_ref.slice(0, 16)}…</code></td>
                       <td>{p.plan_name ?? '—'}</td>
+                      <td>{PROVIDER_META[p.provider]?.label ?? p.provider}</td>
                       <td>{fmtMoney(p.amount)} {p.currency}</td>
                       <td>{p.period_months}mo</td>
                       <td>
@@ -228,6 +264,32 @@ export default function Subscription(): JSX.Element {
       {/* ── Tab: Plans (default — 3 pricing cards) ── */}
       {tab === 'plans' && (
         <>
+          {/* Payment method picker — only shown when more than one provider is live */}
+          {providers.filter((p) => p.configured).length > 1 && (
+            <div className="pl-card sub-provider-picker">
+              <div className="sub-provider-picker-label">
+                <i className="fa-solid fa-wallet" /> Payment method
+              </div>
+              <div className="sub-provider-options" role="radiogroup" aria-label="Payment method">
+                {providers.filter((p) => p.configured).map((p) => {
+                  const meta = PROVIDER_META[p.id] ?? { label: p.name, hint: '' }
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className={`sub-provider-option${provider === p.id ? ' sub-provider-option-active' : ''}`}
+                      onClick={() => setProvider(p.id)}
+                      role="radio"
+                      aria-checked={provider === p.id}
+                    >
+                      <span className="sub-provider-name">{meta.label}</span>
+                      {meta.hint && <span className="sub-provider-hint">{meta.hint}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
           {loading ? (
             <p>Loading plans…</p>
           ) : !plans?.length ? (
@@ -281,7 +343,7 @@ export default function Subscription(): JSX.Element {
           })()}
 
           <p style={{ marginTop: 32, color: 'var(--text-dim)' }}>
-            Payments are processed securely by <a href="https://chapa.co" target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>Chapa</a>.
+            Pay securely with Chapa, Telebirr, M-Pesa or CBE Birr — whichever is enabled for your plan above.
             If you have questions or a pending payment that didn't complete, contact{' '}
             <a href="mailto:yonasmindaye04@gmail.com" style={{ color: 'inherit' }}>yonasmindaye04@gmail.com</a> or Telegram @yona64.
           </p>

@@ -11,7 +11,7 @@ export default function Navbar() {
   const { canInstall, promptInstall } = usePwaInstall();
 
   useEffect(() => {
-    const h = () => { if (window.innerWidth > 768) setMenuOpen(false); };
+    const h = () => { if (window.innerWidth > 1024) setMenuOpen(false); };
     window.addEventListener('resize', h);
     return () => window.removeEventListener('resize', h);
   }, []);

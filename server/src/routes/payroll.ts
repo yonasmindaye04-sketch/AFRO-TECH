@@ -124,7 +124,7 @@ router.post('/run', validateBody(runSchema), asyncHandler(async (req, res) => {
         [tId, period_label]
     );
     if (existing) {
-        throw new AppError('Payroll run already exists for this period', 400);
+        throw new AppError(400, 'Payroll run already exists for this period', 'BAD_STATE');
     }
     
     // Get active salaries
@@ -133,7 +133,7 @@ router.post('/run', validateBody(runSchema), asyncHandler(async (req, res) => {
         [tId]
     );
     if (!salaries.length) {
-        throw new AppError('No active employee salaries found', 400);
+        throw new AppError(400, 'No active employee salaries found', 'BAD_STATE');
     }
     
     const client = await pool.connect();
@@ -221,7 +221,7 @@ router.get('/runs/:id', asyncHandler(async (req, res) => {
     
     const run = await queryOne(`SELECT * FROM payroll_runs WHERE id = $1 AND tenant_id = $2`, [runId, tId]);
     if (!run) {
-        throw new AppError('Payroll run not found', 404);
+        throw new AppError(404, 'Payroll run not found', 'NOT_FOUND');
     }
     
     const items = await query(
@@ -240,8 +240,8 @@ router.patch('/runs/:id/approve', asyncHandler(async (req, res) => {
     const runId = req.params.id;
     
     const run = await queryOne(`SELECT status FROM payroll_runs WHERE id = $1 AND tenant_id = $2`, [runId, tId]);
-    if (!run) throw new AppError('Payroll run not found', 404);
-    if (run.status !== 'draft') throw new AppError('Only draft runs can be approved', 400);
+    if (!run) throw new AppError(404, 'Payroll run not found', 'NOT_FOUND');
+    if (run.status !== 'draft') throw new AppError(400, 'Only draft runs can be approved', 'BAD_STATE');
     
     const updated = await queryOne(
         `UPDATE payroll_runs SET status = 'approved', approved_by = $1, approved_at = CURRENT_TIMESTAMP WHERE id = $2 AND tenant_id = $3 RETURNING *`,
@@ -255,8 +255,8 @@ router.patch('/runs/:id/paid', asyncHandler(async (req, res) => {
     const runId = req.params.id;
     
     const run = await queryOne(`SELECT status FROM payroll_runs WHERE id = $1 AND tenant_id = $2`, [runId, tId]);
-    if (!run) throw new AppError('Payroll run not found', 404);
-    if (run.status !== 'approved') throw new AppError('Only approved runs can be marked as paid', 400);
+    if (!run) throw new AppError(404, 'Payroll run not found', 'NOT_FOUND');
+    if (run.status !== 'approved') throw new AppError(400, 'Only approved runs can be marked as paid', 'BAD_STATE');
     
     const updated = await queryOne(
         `UPDATE payroll_runs SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND tenant_id = $2 RETURNING *`,
@@ -270,8 +270,8 @@ router.delete('/runs/:id', asyncHandler(async (req, res) => {
     const runId = req.params.id;
     
     const run = await queryOne(`SELECT status FROM payroll_runs WHERE id = $1 AND tenant_id = $2`, [runId, tId]);
-    if (!run) throw new AppError('Payroll run not found', 404);
-    if (run.status !== 'draft') throw new AppError('Only draft runs can be deleted', 400);
+    if (!run) throw new AppError(404, 'Payroll run not found', 'NOT_FOUND');
+    if (run.status !== 'draft') throw new AppError(400, 'Only draft runs can be deleted', 'BAD_STATE');
     
     const client = await pool.connect();
     try {
@@ -301,7 +301,7 @@ router.get('/runs/:id/export', asyncHandler(async (req, res) => {
     );
     
     if (!items.length) {
-        throw new AppError('No items found to export', 404);
+        throw new AppError(404, 'No items found to export', 'NOT_FOUND');
     }
     
     const headers = ['Full Name', 'Base Salary', 'Transport', 'Housing', 'Other', 'Gross', 'Taxable', 'Income Tax', 'Pension (Emp)', 'Pension (Employer)', 'Net Pay'];
@@ -325,8 +325,8 @@ router.get('/runs/:id/export', asyncHandler(async (req, res) => {
     }
     
     res.header('Content-Type', 'text/csv');
-    res.attachment(\`payroll_export_\${runId}.csv\`);
-    res.send(csvRows.join('\\n'));
+    res.attachment(`payroll_export_${runId}.csv`);
+    res.send(csvRows.join('\n'));
 }));
 
 export default router;

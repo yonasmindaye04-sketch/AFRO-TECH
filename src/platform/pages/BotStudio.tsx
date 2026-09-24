@@ -27,8 +27,20 @@ interface Subscriber {
   first_name: string | null
   last_name: string | null
   is_active: boolean
+  language: string
   subscribed_at: string
   last_seen_at: string | null
+}
+
+interface Receipt {
+  id: string
+  chat_id: string
+  sender_name: string | null
+  caption: string | null
+  file_id: string
+  status: 'pending' | 'confirmed' | 'rejected'
+  review_note: string | null
+  created_at: string
 }
 
 interface Broadcast {
@@ -52,6 +64,9 @@ export default function BotStudio(): JSX.Element {
   const [bot, setBot] = useState<TenantBot | null | undefined>(undefined)
   const [subscribers, setSubscribers] = useState<Subscriber[]>([])
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([])
+  const [receipts, setReceipts] = useState<Receipt[]>([])
+  const [reviewing, setReviewing] = useState<string | null>(null)
+  const [viewPhoto, setViewPhoto] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
 
@@ -76,12 +91,14 @@ export default function BotStudio(): JSX.Element {
         setAutoReply(r.bot.auto_reply)
         setLimitPerDay(r.bot.broadcast_limit_per_day)
         setCommands(Array.isArray(r.bot.commands) ? r.bot.commands : [])
-        const [s, h] = await Promise.all([
+        const [s, h, rc] = await Promise.all([
           api.get<{ subscribers: Subscriber[] }>('/tenant-bot/subscribers'),
           api.get<{ broadcasts: Broadcast[] }>('/tenant-bot/broadcasts'),
+          api.get<{ receipts: Receipt[] }>('/tenant-bot/receipts'),
         ])
         setSubscribers(Array.isArray(s.subscribers) ? s.subscribers : [])
         setBroadcasts(Array.isArray(h.broadcasts) ? h.broadcasts : [])
+        setReceipts(Array.isArray(rc.receipts) ? rc.receipts : [])
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')
@@ -175,6 +192,20 @@ export default function BotStudio(): JSX.Element {
       setError(err instanceof Error ? err.message : 'Could not send')
     } finally {
       setBroadcasting(false)
+    }
+  }
+
+  const reviewReceipt = async (id: string, status: 'confirmed' | 'rejected'): Promise<void> => {
+    setReviewing(id)
+    setError(null)
+    try {
+      await api.post(`/tenant-bot/receipts/${id}/review`, { status })
+      setOk(status === 'confirmed' ? 'Receipt confirmed — customer notified.' : 'Receipt rejected — customer notified.')
+      await reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not review receipt')
+    } finally {
+      setReviewing(null)
     }
   }
 
@@ -621,6 +652,78 @@ export default function BotStudio(): JSX.Element {
      </Card>
 
       <Card>
+        <h2 style={{ marginTop: 0 }}>Payment receipts ({receipts.filter((r) => r.status === 'pending').length} pending)</h2>
+        <p style={{ color: 'var(--text-dim)', fontSize: '.88rem' }}>
+          Customers can send a photo of their Telebirr / CBE Birr / bank transfer receipt to the bot (menu → "Submit payment receipt" or <code>/receipt</code>). Review and confirm payments here.
+        </p>
+        {!receipts.length ? (
+          <EmptyState
+            icon="fa-solid fa-receipt"
+            title="No receipts yet"
+            hint="When customers send payment proof photos to the bot, they appear here for review."
+          />
+        ) : (
+          <div className="pl-table-wrap">
+            <table className="pl-table">
+              <thead>
+                <tr>
+                  <th>Received</th>
+                  <th>From</th>
+                  <th>Caption</th>
+                  <th>Photo</th>
+                  <th>Status</th>
+                  <th style={{ width: 160 }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {receipts.map((r) => (
+                  <tr key={r.id}>
+                    <td>{fmtDateTime(r.created_at)}</td>
+                    <td>{r.sender_name ?? '—'} <br /><code style={{ fontSize: '.76rem' }}>{r.chat_id}</code></td>
+                    <td style={{ maxWidth: 220 }}>{r.caption ?? '—'}</td>
+                    <td>
+                      <button className="pl-btn pl-btn-ghost" style={{ padding: '4px 10px' }} onClick={() => setViewPhoto(`/api/v1/tenant-bot/receipts/${r.id}/photo`)}>
+                        <i className="fa-solid fa-image" /> View
+                      </button>
+                    </td>
+                    <td>
+                      <Badge tone={r.status === 'confirmed' ? 'good' : r.status === 'rejected' ? 'bad' : 'warn'}>
+                        {r.status}
+                      </Badge>
+                    </td>
+                    <td>
+                      {r.status === 'pending' ? (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            className="pl-btn pl-btn-primary"
+                            style={{ padding: '4px 10px' }}
+                            disabled={reviewing === r.id}
+                            onClick={() => void reviewReceipt(r.id, 'confirmed')}
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            className="pl-btn pl-btn-ghost"
+                            style={{ padding: '4px 10px' }}
+                            disabled={reviewing === r.id}
+                            onClick={() => void reviewReceipt(r.id, 'rejected')}
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      ) : (
+                        <span style={{ color: 'var(--text-dim)', fontSize: '.82rem' }}>{r.review_note ?? '—'}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card>
         <h2 style={{ marginTop: 0 }}>Subscribers ({subscribers.length})</h2>
         {!subscribers.length ? (
           <EmptyState
@@ -636,10 +739,11 @@ export default function BotStudio(): JSX.Element {
                   <th>Name</th>
                   <th>Username</th>
                   <th>Chat ID</th>
+                  <th>Language</th>
                   <th>Subscribed</th>
                   <th>Status</th>
-               </tr>
-             </thead>
+                </tr>
+              </thead>
               <tbody>
                 {subscribers.map((s) => (
                   <tr key={s.id}>
@@ -650,19 +754,48 @@ export default function BotStudio(): JSX.Element {
                     <td>
                       <code>{s.chat_id}</code>
                    </td>
+                    <td>{s.language === 'am' ? 'አማርኛ' : 'English'}</td>
                     <td>{fmtDate(s.subscribed_at)}</td>
                     <td>
                       <Badge tone={s.is_active ? 'good' : 'neutral'}>
                         {s.is_active ? 'active' : 'inactive'}
-                     </Badge>
-                   </td>
-                 </tr>
+                      </Badge>
+                    </td>
+                  </tr>
                 ))}
              </tbody>
            </table>
          </div>
         )}
      </Card>
+
+      {viewPhoto && (
+        <div
+          className="pl-modal-backdrop"
+          onMouseDown={(e) => e.target === e.currentTarget && setViewPhoto(null)}
+        >
+          <div className="pl-modal" role="dialog" aria-modal="true" style={{ maxWidth: 560 }}>
+            <div className="pl-modal-head">
+              <h2>Receipt photo</h2>
+              <button
+                className="pl-icon-btn"
+                onClick={() => setViewPhoto(null)}
+                aria-label="Close"
+              >
+                <i className="fa-solid fa-xmark" />
+             </button>
+            </div>
+            <div className="pl-modal-body" style={{ textAlign: 'center' }}>
+              <img
+                src={viewPhoto}
+                alt="Payment receipt"
+                style={{ maxWidth: '100%', borderRadius: 8 }}
+                onError={(e) => { (e.target as HTMLImageElement).alt = 'Could not load photo' }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirming && (
         <div

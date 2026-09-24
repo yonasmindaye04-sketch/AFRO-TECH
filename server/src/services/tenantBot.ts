@@ -2,6 +2,7 @@ import { pool, query, queryOne } from '../config/db.js'
 import { logAudit } from '../utils/audit.js'
 import { AppError } from '../utils/helpers.js'
 import { escapeHtml } from './telegram.js'
+import { bt, isBotLang, type BotLang } from './botI18n.js'
 
 /* ── Generic per-bot Telegram client ─────────────────────── */
 async function tgApi<T>(token: string, method: string, body?: Record<string, unknown>): Promise<T> {
@@ -66,13 +67,14 @@ export interface SubscriberRow {
   first_name: string | null
   last_name: string | null
   is_active: boolean
+  language: string
   subscribed_at: Date
   last_seen_at: Date | null
 }
 
 export async function listSubscribers(botId: string): Promise<SubscriberRow[]> {
   return query<SubscriberRow>(
-    `SELECT id, chat_id, username, first_name, last_name, is_active, subscribed_at, last_seen_at
+    `SELECT id, chat_id, username, first_name, last_name, is_active, language, subscribed_at, last_seen_at
      FROM bot_subscribers WHERE bot_id = $1 ORDER BY subscribed_at DESC`,
     [botId]
   )
@@ -140,6 +142,8 @@ export async function sendBroadcast(tenantId: string, botId: string, message: st
     } catch (err) {
       failed++
       fails.push(err instanceof Error ? err.message : String(err))
+      // Blocked/deactivated chats burn the daily budget — deactivate them (ported from yekis)
+      if (isBlockedError(err)) await deactivateSubscriber(botId, chat_id).catch(() => undefined)
     }
     await new Promise((r) => setTimeout(r, 50))
   }
@@ -172,24 +176,51 @@ export function tenantBotWebhookUrl(bot: Pick<TenantBotRow, 'id' | 'webhook_secr
   return `${publicApiUrl()}${tenantBotWebhookPath(bot)}`
 }
 
+/** The Mini App URL with company context (used by the menu button + in-line buttons). */
+export function tenantBotAppUrl(bot: Pick<TenantBotRow, 'id' | 'tenant_id'>): string {
+  const baseAppUrl = (process.env.TELEGRAM_WEBAPP_URL || `${(process.env.PUBLIC_URL || '').replace(/\/$/, '')}/app`)
+  return `${baseAppUrl}${baseAppUrl.includes('?') ? '&' : '?'}tenant_id=${bot.tenant_id}&bot_id=${bot.id}`
+}
+
+/** Publish the bot's command list so Telegram shows the "/" autocomplete (ported from yekis bot startBot). */
+async function registerBotCommands(bot: TenantBotRow, lang: BotLang): Promise<void> {
+  const commands: Array<{ command: string; description: string }> = [
+    { command: 'start', description: lang === 'am' ? 'ጀምር' : 'Get started' },
+    { command: 'menu', description: lang === 'am' ? 'ዋና ሜኑ' : 'Main menu' },
+    { command: 'help', description: lang === 'am' ? 'እርዳታ' : 'Help' },
+    { command: 'language', description: lang === 'am' ? 'ቋንቋ ቀይር' : 'Change language' },
+    { command: 'receipt', description: lang === 'am' ? 'የክፍያ ደረሰኝ ላክ' : 'Submit payment receipt' },
+    { command: 'today', description: 'Daily summary (staff)' },
+    { command: 'lowstock', description: 'Low stock (staff)' },
+    { command: 'expiring', description: 'Expiring items (staff)' },
+    { command: 'shift', description: 'My shift (staff)' },
+    { command: 'parent', description: lang === 'am' ? 'ልጅዎን ያገናኙ' : 'Link your child (parents)' },
+    { command: 'child', description: lang === 'am' ? 'ልጆቼ' : 'Linked students (parents)' },
+    { command: 'myfees', description: lang === 'am' ? 'የክፍያ ሁኔታ' : 'Fee status (parents)' },
+  ]
+  await tgApi(bot.bot_token, 'setMyCommands', { commands }).catch(() => undefined)
+  const desc = (bot.description || `${bot.display_name ?? 'Assistant'} — announcements, receipts & info`).slice(0, 255)
+  await tgApi(bot.bot_token, 'setMyDescription', { description: desc }).catch(() => undefined)
+}
+
 /** Register the bot's webhook with Telegram + set its menu button to the Mini App. */
 export async function registerBotWebhook(bot: TenantBotRow): Promise<void> {
   const url = tenantBotWebhookUrl(bot)
   await tgApi(bot.bot_token, 'setWebhook', {
     url,
     secret_token: bot.webhook_secret,
-    allowed_updates: ['message'],
+    allowed_updates: ['message', 'callback_query'],
     drop_pending_updates: true,
   })
   // Menu button opens the tenant's workspace inside Telegram with company context
-  const baseAppUrl = (process.env.TELEGRAM_WEBAPP_URL || `${(process.env.PUBLIC_URL || '').replace(/\/$/, '')}/app`)
-  const appUrl = `${baseAppUrl}${baseAppUrl.includes('?') ? '&' : '?'}tenant_id=${bot.tenant_id}&bot_id=${bot.id}`
+  const appUrl = tenantBotAppUrl(bot)
   const tenant = await queryOne<{ name: string }>(`SELECT name FROM tenants WHERE id = $1`, [bot.tenant_id])
   const buttonText = bot.display_name || (tenant?.name ? `Open ${tenant.name}` : 'Open Workspace')
 
   await tgApi(bot.bot_token, 'setChatMenuButton', {
     menu_button: { type: 'web_app', text: buttonText, web_app: { url: appUrl } },
   }).catch(() => undefined) // not fatal — web_apps need HTTPS endpoints
+  await registerBotCommands(bot, 'en')
   await pool.query(`UPDATE tenant_bots SET transport = 'webhook', updated_at = now() WHERE id = $1`, [bot.id])
 }
 
@@ -199,9 +230,69 @@ export async function clearBotWebhook(bot: TenantBotRow): Promise<void> {
   await pool.query(`UPDATE tenant_bots SET transport = 'polling', updated_at = now() WHERE id = $1`, [bot.id])
 }
 
+/* ── Inbound update shape (message or callback_query / photos) ── */
+
+export interface TgFrom { id: number; first_name?: string; username?: string; language_code?: string }
+export interface TgPhotoSize { file_id: string; width: number; height: number; file_size?: number }
+export interface TgIncomingMessage {
+  chat: { id: number }
+  text?: string
+  caption?: string
+  photo?: TgPhotoSize[]
+  from?: TgFrom
+}
+export interface TgCallbackQuery {
+  id: string
+  data?: string
+  from: TgFrom
+  message?: { message_id: number; chat: { id: number } }
+}
+export interface TenantBotUpdate {
+  update_id: number
+  message?: TgIncomingMessage
+  callback_query?: TgCallbackQuery
+}
+
+/* ── Lightweight per-chat rate limiting (ported from yekis rateLimit middleware,
+      adapted to a plain in-memory window — bounded because it's keyed by chat) ── */
+const RATE_LIMIT_MESSAGE = 20 // messages per window per chat
+const RATE_LIMIT_CALLBACK = 40
+const RATE_WINDOW_MS = 60_000
+const rateBuckets = new Map<string, { count: number; resetAt: number }>()
+function rateLimitHit(chatId: number, kind: 'message' | 'callback'): boolean {
+  const key = `${kind}:${chatId}`
+  const now = Date.now()
+  let b = rateBuckets.get(key)
+  if (!b || b.resetAt < now) {
+    b = { count: 0, resetAt: now + RATE_WINDOW_MS }
+    rateBuckets.set(key, b)
+    // Occasional sweep so the map can't grow unbounded
+    if (rateBuckets.size > 5000) {
+      for (const [k, v] of rateBuckets) if (v.resetAt < now) rateBuckets.delete(k)
+    }
+  }
+  const limit = kind === 'message' ? RATE_LIMIT_MESSAGE : RATE_LIMIT_CALLBACK
+  b.count += 1
+  return b.count > limit
+}
+
+/** 403 "bot was blocked" / "user is deactivated" — subscriber must be deactivated (ported from yekis). */
+function isBlockedError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /Forbidden|bot was blocked|user is deactivated|chat not found/i.test(msg)
+}
+
 /** Handle one Telegram update for a tenant bot (called from webhook route or polling loop). */
-export async function handleTenantBotUpdate(botRow: TenantBotRow, update: { update_id: number; message?: { chat: { id: number }; text?: string; from?: { id: number; first_name?: string; username?: string } } }): Promise<void> {
-  return handleUpdate(botRow, update)
+export async function handleTenantBotUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Promise<void> {
+  if (update.callback_query) {
+    await handleCallbackQuery(botRow, update.callback_query).catch((err) =>
+      console.warn(`[bot:${botRow.id}] callback handler error:`, err instanceof Error ? err.message : err)
+    )
+    return
+  }
+  if (update.message) {
+    return handleUpdate(botRow, update)
+  }
 }
 interface Runtime {
   tenantBotId: string
@@ -213,18 +304,151 @@ const running = new Map<string, Runtime>() // tenant_bots.id -> runtime
 
 export function botIsRunning(botId: string): boolean { return running.has(botId) }
 
-async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; message?: { chat: { id: number }; text?: string; from?: { id: number; first_name?: string; username?: string } } }): Promise<void> {
-  const msg = update.message
-  if (!msg?.text || !msg.from || !msg.chat) return
+/** Resolve the subscriber's stored language preference (defaults from Telegram locale). */
+async function subscriberLang(botId: string, chatId: number, fromLangCode?: string): Promise<BotLang> {
+  const row = await queryOne<{ language: string | null }>(
+    `SELECT language FROM bot_subscribers WHERE bot_id = $1 AND chat_id = $2`,
+    [botId, chatId]
+  )
+  if (row && isBotLang(row.language)) return row.language
+  return fromLangCode === 'am' ? 'am' : 'en'
+}
+
+async function setSubscriberLang(botId: string, chatId: number, lang: BotLang): Promise<void> {
+  await query(`UPDATE bot_subscribers SET language = $3 WHERE bot_id = $1 AND chat_id = $2`, [botId, chatId, lang])
+}
+
+/** Build the bottom-keyboard (main menu) for a chat — staff vs parents vs customers (ported from yekis mainMenu keyboard). */
+function mainMenuKeyboard(bot: TenantBotRow, opts: { linked: boolean; hasStudents: boolean; lang: BotLang }): { inline_keyboard: Array<Array<Record<string, unknown>>> } {
+  const rows: Array<Array<Record<string, unknown>>> = []
+  if (opts.linked) {
+    rows.push([{ text: bt(opts.lang, 'btn_today'), callback_data: 'menu:today' }])
+    rows.push([
+      { text: bt(opts.lang, 'btn_lowstock'), callback_data: 'menu:lowstock' },
+      { text: bt(opts.lang, 'btn_shift'), callback_data: 'menu:shift' },
+    ])
+    rows.push([{ text: bt(opts.lang, 'btn_receipt'), callback_data: 'menu:receipt' }])
+  } else if (opts.hasStudents) {
+    rows.push([
+      { text: bt(opts.lang, 'btn_child'), callback_data: 'menu:child' },
+      { text: bt(opts.lang, 'btn_fees'), callback_data: 'menu:myfees' },
+    ])
+    rows.push([{ text: bt(opts.lang, 'btn_receipt'), callback_data: 'menu:receipt' }])
+  } else {
+    rows.push([{ text: bt(opts.lang, 'btn_receipt'), callback_data: 'menu:receipt' }])
+  }
+  rows.push([
+    { text: bt(opts.lang, 'btn_language'), callback_data: 'menu:language' },
+    { text: bt(opts.lang, 'btn_open_app'), web_app: { url: tenantBotAppUrl(bot) } },
+  ])
+  return { inline_keyboard: rows }
+}
+
+/* ── Callback-query handling (inline keyboard taps) — ported from yekis callbacks.ts ── */
+async function handleCallbackQuery(botRow: TenantBotRow, cq: TgCallbackQuery): Promise<void> {
+  const chatId = cq.message?.chat.id ?? cq.from.id
+  if (rateLimitHit(chatId, 'callback')) {
+    await tgApi(botRow.bot_token, 'answerCallbackQuery', { callback_query_id: cq.id })
+    return
+  }
+  const data = cq.data ?? ''
+
+  const answer = (text?: string): Promise<unknown> => tgApi(botRow.bot_token, 'answerCallbackQuery', { callback_query_id: cq.id, text })
+
+  if (data === 'menu:language') {
+    await answer()
+    await tgApi(botRow.bot_token, 'sendMessage', {
+      chat_id: chatId,
+      text: bt(await subscriberLang(botRow.id, chatId, cq.from?.language_code), 'lang_prompt'),
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'English', callback_data: 'lang:en' }],
+          [{ text: 'አማርኛ (Amharic)', callback_data: 'lang:am' }],
+        ],
+      },
+    })
+    return
+  }
+
+  if (data === 'lang:en' || data === 'lang:am') {
+    const lang: BotLang = data === 'lang:am' ? 'am' : 'en'
+    await upsertSubscriber(botRow.id, botRow.tenant_id, chatId, cq.from?.first_name ?? 'there', cq.from?.username)
+    await setSubscriberLang(botRow.id, chatId, lang)
+    await answer(bt(lang, lang === 'am' ? 'lang_saved_am' : 'lang_saved_en'))
+    await tgApi(botRow.bot_token, 'sendMessage', { chat_id: chatId, text: bt(lang, lang === 'am' ? 'lang_saved_am' : 'lang_saved_en') })
+    return
+  }
+
+  if (data === 'menu:receipt') {
+    await answer()
+    await upsertSubscriber(botRow.id, botRow.tenant_id, chatId, cq.from?.first_name ?? 'there', cq.from?.username)
+    await query(`UPDATE bot_subscribers SET pending_action = 'awaiting_receipt' WHERE bot_id = $1 AND chat_id = $2`, [botRow.id, chatId])
+    const lang = await subscriberLang(botRow.id, chatId, cq.from?.language_code)
+    await tgApi(botRow.bot_token, 'sendMessage', { chat_id: chatId, text: bt(lang, 'receipt_ask'), parse_mode: 'HTML' })
+    return
+  }
+
+  // Command buttons — re-dispatch through the regular text pipeline
+  if (data.startsWith('menu:')) {
+    await answer()
+    const cmd = data.slice(5)
+    const from = cq.from
+    await handleUpdate(botRow, {
+      update_id: 0,
+      message: { chat: { id: chatId }, text: `/${cmd}`, from },
+    })
+    return
+  }
+
+  await answer()
+}
+
+/**
+ * Handle a photo photo-receipt submission (ported from the yekis topup/kyc scenes,
+ * adapted to a single-step flow keyed on bot_subscribers.pending_action).
+ */
+async function handleReceiptPhoto(botRow: TenantBotRow, msg: TgIncomingMessage, pending: string | null): Promise<void> {
   const chatId = msg.chat.id
-  const fullText = msg.text.trim()
-  const [rawCmd, ...args] = fullText.split(/\s+/)
-  const cmd = rawCmd.toLowerCase().replace(/@.*$/, '')
+  const lang = await subscriberLang(botRow.id, chatId, msg.from?.language_code)
+  if (pending !== 'awaiting_receipt' || !msg.photo?.length) return
+  const largest = msg.photo[msg.photo.length - 1]!
+  await query(
+    `INSERT INTO bot_receipt_submissions (bot_id, tenant_id, chat_id, sender_name, file_id, caption)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [botRow.id, botRow.tenant_id, chatId, msg.from?.first_name ?? null, largest.file_id, msg.caption ?? null]
+  )
+  await query(`UPDATE bot_subscribers SET pending_action = NULL WHERE bot_id = $1 AND chat_id = $2`, [botRow.id, chatId])
+  logAudit({ userId: 'system', userName: 'telegram-bot', action: 'bot.receipt.submitted', entity: 'tenant_bot', entityId: botRow.id, details: { chat_id: chatId } })
+  await tgApi(botRow.bot_token, 'sendMessage', { chat_id: chatId, text: bt(lang, 'receipt_received'), parse_mode: 'HTML' })
+}
+
+async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Promise<void> {
+  const msg = update.message
+  if (!msg?.from || !msg.chat) return
+  const chatId = msg.chat.id
+
+  if (rateLimitHit(chatId, 'message')) return // drop — silent throttle
+
   const firstName = msg.from.first_name || 'there'
   const username = msg.from.username || undefined
 
   // Upsert the subscriber on every contact (handles re-subscribe too)
   await upsertSubscriber(botRow.id, botRow.tenant_id, chatId, firstName, username)
+  const sub = await queryOne<{ language: string | null; pending_action: string | null }>(
+    `SELECT language, pending_action FROM bot_subscribers WHERE bot_id = $1 AND chat_id = $2`,
+    [botRow.id, chatId]
+  )
+  const lang: BotLang = isBotLang(sub?.language) ? sub.language : msg.from.language_code === 'am' ? 'am' : 'en'
+
+  // Photo? → receipt intake if in the receipt scene
+  if (msg.photo?.length) {
+    await handleReceiptPhoto(botRow, msg, sub?.pending_action ?? null)
+    return
+  }
+  const fullText = msg.text?.trim()
+  if (!fullText) return
+  const [rawCmd, ...args] = fullText.split(/\s+/)
+  const cmd = rawCmd.toLowerCase().replace(/@.*$/, '')
 
   // Fetch company info
   const tenant = await queryOne<{ name: string; business_type: string }>(
@@ -253,7 +477,7 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
     if (!code) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `To link your account, send: <code>/link CODE</code>\n\nGenerate your 6-character code in your <b>${tenantName}</b> web app under Settings → Telegram.`,
+        text: escapeHtml(bt(lang, 'link_prompt')).replace('/link CODE', '<code>/link CODE</code>'),
         parse_mode: 'HTML',
       })
       return
@@ -461,10 +685,10 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
     return
   }
 
-  /* ── 3. Start & Help (/start, /help) ── */
-  if (cmd === '/start' || cmd === '/help') {
+  /* ── 3. Start & Help (/start, /help, /menu) ── */
+  if (cmd === '/start' || cmd === '/help' || cmd === '/menu') {
     // If the user sent a deeplink like /start D09806 (Telegram start parameter)
-    if (args[0] && args[0].length >= 6) {
+    if (args[0] && args[0].length >= 6 && args[0].toLowerCase() !== 'subscribe') {
       const linkCodeArg = args[0].trim().toUpperCase()
       const row = await queryOne<{ user_id: string; expires_at: Date }>(
         `SELECT user_id, expires_at FROM telegram_link_codes WHERE code = $1`,
@@ -488,6 +712,12 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
       }
     }
 
+    // Do they have linked students? (parent menu)
+    const hasStudents = Boolean(
+      await queryOne(`SELECT 1 FROM students WHERE guardian_telegram_chat_id = $1::text AND tenant_id = $2 AND status = 'active' LIMIT 1`, [String(chatId), botRow.tenant_id])
+    )
+    const menuKeyboard = mainMenuKeyboard(botRow, { linked: Boolean(linkedUser), hasStudents, lang })
+
     if (linkedUser) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
@@ -497,14 +727,16 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
           `/lowstock — items to reorder\n` +
           `/expiring — batches expiring in 60 days\n` +
           `/shift — active cash drawer shift\n` +
+          `/receipt — submit a payment receipt photo\n` +
           `/unlink — disconnect account\n\n` +
           `Or tap the menu button to open <b>${tenantName}</b> Mini App.`,
         parse_mode: 'HTML',
+        reply_markup: menuKeyboard,
       })
       return
     }
 
-    // Customer or unlinked visitor: send welcome message + custom commands hint
+    // Customer or unlinked visitor: send welcome message + action menu
     const welcome = botRow.welcome_message
       .replace(/\\n/g, '\n')
       .replace('{name}', firstName)
@@ -515,7 +747,35 @@ async function handleUpdate(botRow: TenantBotRow, update: { update_id: number; m
       text: `${welcome}\n\n<i>Are you a staff member of ${tenantName}? Open Settings → Telegram to generate a code, then send /link CODE here.</i>`,
       parse_mode: 'HTML',
       disable_web_page_preview: true,
+      reply_markup: menuKeyboard,
     })
+    return
+  }
+
+  /* ── 3b. Language switcher (/language) — yekis /language + language picker keyboard ── */
+  if (cmd === '/language' || cmd === '/lang') {
+    await tgApi(botRow.bot_token, 'sendMessage', {
+      chat_id: chatId,
+      text: bt(lang, 'lang_prompt'),
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: 'English', callback_data: 'lang:en' }],
+          [{ text: 'አማርኛ (Amharic)', callback_data: 'lang:am' }],
+        ],
+      },
+    })
+    return
+  }
+
+  /* ── 3c. Payment receipt intake (/receipt) — yekis topup scene, simplified ── */
+  if (cmd === '/receipt') {
+    await query(`UPDATE bot_subscribers SET pending_action = 'awaiting_receipt' WHERE bot_id = $1 AND chat_id = $2`, [botRow.id, chatId])
+    await tgApi(botRow.bot_token, 'sendMessage', { chat_id: chatId, text: bt(lang, 'receipt_ask'), parse_mode: 'HTML' })
+    return
+  }
+  if (cmd === '/cancel') {
+    await query(`UPDATE bot_subscribers SET pending_action = NULL WHERE bot_id = $1 AND chat_id = $2`, [botRow.id, chatId])
+    await tgApi(botRow.bot_token, 'sendMessage', { chat_id: chatId, text: bt(lang, 'action_cancelled'), parse_mode: 'HTML' })
     return
   }
 
@@ -701,12 +961,12 @@ async function pollLoop(botId: string): Promise<void> {
   // getUpdates for the same bot with 409 Conflict.
   while (!runtime.stopped) {
     try {
-      const updates = await tgApi<Array<{ update_id: number }>>(row.bot_token, 'getUpdates', { offset: runtime.offset, timeout: 25 })
+      const updates = await tgApi<TenantBotUpdate[]>(row.bot_token, 'getUpdates', { offset: runtime.offset, timeout: 25, allowed_updates: ['message', 'callback_query'] })
       failures = 0
       for (const upd of updates) {
         if (runtime.stopped) break
         runtime.offset = (upd.update_id ?? runtime.offset) + 1
-        try { await handleUpdate(row, upd as { update_id: number; message?: { chat: { id: number }; text?: string; from?: { id: number; first_name?: string; username?: string } } }) } catch (err) { console.warn(`[bot:${botId}] handler error:`, err instanceof Error ? err.message : err) }
+        try { await handleTenantBotUpdate(row, upd) } catch (err) { console.warn(`[bot:${botId}] handler error:`, err instanceof Error ? err.message : err) }
         await pool.query(`INSERT INTO bot_polling_state (bot_id, last_update_id) VALUES ($1, $2) ON CONFLICT (bot_id) DO UPDATE SET last_update_id = $2, updated_at = now()`, [botId, runtime.offset])
       }
     } catch (err) {
@@ -726,6 +986,18 @@ async function pollLoop(botId: string): Promise<void> {
 
 export async function startTenantBot(botId: string): Promise<void> {
   await pool.query(`INSERT INTO bot_polling_state (bot_id) VALUES ($1) ON CONFLICT (bot_id) DO NOTHING`, [botId])
+  // Also publish command registry for the polling bots (yekis parity)
+  const bot = await getTenantBotByBotId(botId)
+  if (bot) {
+    await tgApi(bot.bot_token, 'deleteWebhook', { drop_pending_updates: false }).catch(() => undefined)
+    const appUrl = tenantBotAppUrl(bot)
+    const tenant = await queryOne<{ name: string }>(`SELECT name FROM tenants WHERE id = $1`, [bot.tenant_id])
+    const buttonText = bot.display_name || (tenant?.name ? `Open ${tenant.name}` : 'Open Workspace')
+    await tgApi(bot.bot_token, 'setChatMenuButton', {
+      menu_button: { type: 'web_app', text: buttonText, web_app: { url: appUrl } },
+    }).catch(() => undefined)
+    await registerBotCommands(bot, 'en')
+  }
   void pollLoop(botId).catch((err) => console.error(`[bot:${botId}] poll loop crashed:`, err instanceof Error ? err.message : err))
 }
 

@@ -48,6 +48,27 @@ export async function getMe(): Promise<{ id: number; username: string } | null> 
   return api<{ id: number; username: string }>('getMe')
 }
 
+/** Publish the bot's command list + description (ported from yekis bot startBot). */
+export async function registerBotCommands(): Promise<void> {
+  await api('setMyCommands', {
+    commands: [
+      { command: 'start', description: 'Get started' },
+      { command: 'help', description: 'Help' },
+      { command: 'link', description: 'Link your work account (/link CODE)' },
+      { command: 'parent', description: 'Link your child (/parent STUDENT_CODE)' },
+      { command: 'child', description: 'Linked students' },
+      { command: 'myfees', description: 'Fee status' },
+      { command: 'today', description: 'Daily summary (staff)' },
+      { command: 'lowstock', description: 'Low stock (staff)' },
+      { command: 'expiring', description: 'Expiring items (staff)' },
+      { command: 'shift', description: 'My shift (staff)' },
+      { command: 'unlink', description: 'Disconnect this chat' },
+    ],
+  })
+  await api('setMyDescription', { description: 'AFRO Suite assistant — alerts, sales summaries, fee statements and workspace access.' })
+  await api('setMyShortDescription', { short_description: 'AFRO Suite assistant' })
+}
+
 export async function setWebhook(url: string): Promise<boolean> {
   const ok = await api('setWebhook', {
     url,
@@ -58,6 +79,7 @@ export async function setWebhook(url: string): Promise<boolean> {
   await api('setChatMenuButton', {
     menu_button: { type: 'web_app', text: 'Open AFRO Suite', web_app: { url: MINI_APP_URL } },
   })
+  await registerBotCommands()
   return Boolean(ok)
 }
 
@@ -428,6 +450,7 @@ export function startPolling(): void {
   const tick = async (): Promise<void> => {
     // getUpdates conflicts with any active webhook (409) — clear it first.
     await api('deleteWebhook', { drop_pending_updates: false })
+    await registerBotCommands().catch(() => undefined)
     while (polling) {
       const updates = await api<Array<{ update_id: number; message?: { chat: { id: number }; text?: string; from?: TgUser } }>>('getUpdates', {
         offset: pollingOffset,

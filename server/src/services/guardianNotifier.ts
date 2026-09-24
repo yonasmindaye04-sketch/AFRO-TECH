@@ -153,8 +153,8 @@ export async function sendGuardianTelegram({
   let tenantBotFound = false
   if (tenantId) {
     try {
-      const tenantBot = await queryOne<{ bot_token: string; is_active: boolean }>(
-        `SELECT bot_token, is_active FROM tenant_bots WHERE tenant_id = $1 AND is_active = true LIMIT 1`,
+      const tenantBot = await queryOne<{ id: string; bot_token: string; is_active: boolean }>(
+        `SELECT id, bot_token, is_active FROM tenant_bots WHERE tenant_id = $1 AND is_active = true LIMIT 1`,
         [tenantId]
       )
       if (tenantBot?.bot_token) {
@@ -172,6 +172,13 @@ export async function sendGuardianTelegram({
         const json = (await res.json()) as { ok: boolean; description?: string }
         if (json.ok) {
           return { success: true }
+        }
+        // 403 / blocked → clear the stale chat id so we don't retry dead chats (ported from yekis)
+        if (res.status === 403 || /bot was blocked|user is deactivated|chat not found/i.test(json.description ?? '')) {
+          await queryOne(
+            `DELETE FROM bot_subscribers WHERE bot_id = $1 AND chat_id = $2`,
+            [tenantBot.id, String(targetChatId)]
+          ).catch(() => undefined)
         }
         return { success: false, error: `Tenant bot sendMessage failed: ${json.description ?? 'unknown'}` }
       }

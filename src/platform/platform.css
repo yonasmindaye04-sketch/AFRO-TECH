@@ -1608,3 +1608,60 @@ label:has(input[type="radio"]) {
   .sub-tabs { width: 100%; }
   .sub-tab { flex: 1; text-align: center; font-size: .82rem; padding: 7px 10px; }
 }
+
+/* ── Payment method picker (Subscription page) ── */
+.sub-provider-picker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.sub-provider-picker-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  font-size: .92rem;
+  white-space: nowrap;
+}
+.sub-provider-picker-label i { color: var(--accent); }
+.sub-provider-options {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+.sub-provider-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 16px;
+  min-width: 150px;
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color .15s, box-shadow .15s;
+}
+.sub-provider-option:hover { border-color: var(--accent); }
+.sub-provider-option-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.sub-provider-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  font-size: .95rem;
+  color: var(--text);
+}
+.sub-provider-option-active .sub-provider-name { color: var(--accent); }
+.sub-provider-hint { font-size: .78rem; color: var(--text-dim); }
+@media (max-width: 640px) {
+  .sub-provider-option { min-width: 0; flex: 1 1 calc(50% - 5px); padding: 8px 12px; }
+}

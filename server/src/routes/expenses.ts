@@ -233,7 +233,7 @@ router.patch('/:id', requirePermission('expenses.manage'), validateBody(expenseU
 
   const existing = await queryOne('SELECT id FROM expenses WHERE id = $1 AND tenant_id = $2', [id, tId]);
   if (!existing) {
-    throw new AppError('Expense not found', 404);
+    throw new AppError(404, 'Expense not found', 'NOT_FOUND');
   }
 
   const updates: string[] = [];
@@ -275,7 +275,7 @@ router.delete('/:id', requirePermission('expenses.manage'), asyncHandler(async (
   const deleted = await queryOne(sql, [id, tId]);
 
   if (!deleted) {
-    throw new AppError('Expense not found', 404);
+    throw new AppError(404, 'Expense not found', 'NOT_FOUND');
   }
 
   res.json({ message: 'Expense deleted successfully' });
@@ -296,7 +296,7 @@ router.patch('/:id/approve', requirePermission('expenses.manage'), asyncHandler(
   const approved = await queryOne(sql, [userId, id, tId]);
 
   if (!approved) {
-    throw new AppError('Expense not found', 404);
+    throw new AppError(404, 'Expense not found', 'NOT_FOUND');
   }
 
   res.json({ data: approved });
@@ -316,7 +316,7 @@ router.patch('/:id/reject', requirePermission('expenses.manage'), asyncHandler(a
   const rejected = await queryOne(sql, [id, tId]);
 
   if (!rejected) {
-    throw new AppError('Expense not found', 404);
+    throw new AppError(404, 'Expense not found', 'NOT_FOUND');
   }
 
   res.json({ data: rejected });

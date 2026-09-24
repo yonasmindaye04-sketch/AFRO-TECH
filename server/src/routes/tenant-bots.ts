@@ -200,6 +200,113 @@ router.get(
   })
 )
 
+/** GET /api/v1/tenant-bot/subscribers now includes language preference for the dashboard */
+
+/** GET /api/v1/tenant-bot/receipts — payment receipts customers sent to the bot (owner) */
+router.get(
+  '/receipts',
+  requireRole('owner'),
+  asyncHandler(async (req, res) => {
+    const bot = await getTenantBotByTenant(req.user!.tenant_id!)
+    if (!bot) throw new AppError(404, 'Register a bot first', 'NO_BOT')
+    const status = String(req.query.status || '').toLowerCase()
+    const allowed = ['pending', 'confirmed', 'rejected']
+    const rows = await query<{
+      id: string
+      chat_id: string
+      sender_name: string | null
+      caption: string | null
+      file_id: string
+      status: string
+      review_note: string | null
+      created_at: Date
+    }>(
+      `SELECT id, chat_id::text, sender_name, caption, file_id, status, review_note, created_at
+       FROM bot_receipt_submissions
+       WHERE bot_id = $1 ${allowed.includes(status) ? 'AND status = $2' : ''}
+       ORDER BY created_at DESC LIMIT 200`,
+      allowed.includes(status) ? [bot.id, status] : [bot.id]
+    )
+    res.json({ receipts: rows })
+  })
+)
+
+/** POST /api/v1/tenant-bot/receipts/:id/review — confirm/reject a customer receipt (owner) */
+router.post(
+  '/receipts/:id/review',
+  requireRole('owner'),
+  validateBody(
+    z
+      .object({ status: z.enum(['confirmed', 'rejected']), review_note: z.string().max(500).optional() })
+      .strip()
+  ),
+  asyncHandler(async (req, res) => {
+    const bot = await getTenantBotByTenant(req.user!.tenant_id!)
+    if (!bot) throw new AppError(404, 'Register a bot first', 'NO_BOT')
+    const { status, review_note } = req.body as { status: 'confirmed' | 'rejected'; review_note?: string }
+    const receipt = await queryOne<{ id: string; chat_id: string; status: string }>(
+      `SELECT id, chat_id::text, status FROM bot_receipt_submissions WHERE id = $1 AND bot_id = $2`,
+      [req.params.id, bot.id]
+    )
+    if (!receipt) throw new AppError(404, 'Receipt not found', 'NOT_FOUND')
+    if (receipt.status !== 'pending') throw new AppError(409, `Receipt is already ${receipt.status}`, 'BAD_STATE')
+
+    await query(
+      `UPDATE bot_receipt_submissions
+       SET status = $2, review_note = $3, reviewed_by = $4, reviewed_at = now()
+       WHERE id = $1`,
+      [receipt.id, status, review_note ?? null, req.user!.id]
+    )
+
+    // Notify the customer via the tenant bot (fire-and-forget)
+    try {
+      const lang = (await queryOne<{ language: string }>(`SELECT language FROM bot_subscribers WHERE bot_id = $1 AND chat_id = $2`, [bot.id, receipt.chat_id]))?.language
+      const { bt, isBotLang } = await import('../services/botI18n.js')
+      const text = bt(isBotLang(lang) ? lang : 'en', status === 'confirmed' ? 'receipt_confirmed' : 'receipt_rejected')
+      await fetch(`https://api.telegram.org/bot${bot.bot_token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: receipt.chat_id, text }),
+      })
+    } catch (e) {
+      console.warn('[tenant-bot] receipt review notify failed:', e instanceof Error ? e.message : e)
+    }
+
+    res.json({ ok: true, status })
+  })
+)
+
+/** GET /api/v1/tenant-bot/receipts/:id/photo — proxy the Telegram photo so the owner can view it */
+router.get(
+  '/receipts/:id/photo',
+  requireRole('owner'),
+  asyncHandler(async (req, res) => {
+    const bot = await getTenantBotByTenant(req.user!.tenant_id!)
+    if (!bot) throw new AppError(404, 'Register a bot first', 'NO_BOT')
+    const receipt = await queryOne<{ file_id: string }>(
+      `SELECT file_id FROM bot_receipt_submissions WHERE id = $1 AND bot_id = $2`,
+      [req.params.id, bot.id]
+    )
+    if (!receipt) throw new AppError(404, 'Receipt not found', 'NOT_FOUND')
+
+    const fileRes = await fetch(`https://api.telegram.org/bot${bot.bot_token}/getFile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_id: receipt.file_id }),
+    })
+    const fileData = (await fileRes.json()) as { ok: boolean; result?: { file_path?: string } }
+    if (!fileData.ok || !fileData.result?.file_path) throw new AppError(404, 'Receipt photo unavailable', 'NO_FILE')
+
+    const fileUrl = `https://api.telegram.org/file/bot${bot.bot_token}/${encodeURI(fileData.result.file_path)}`
+    const img = await fetch(fileUrl)
+    if (!img.ok || !img.body) throw new AppError(502, 'Could not fetch receipt photo', 'FILE_FETCH_FAIL')
+    res.setHeader('Content-Type', img.headers.get('content-type') ?? 'image/jpeg')
+    res.setHeader('Cache-Control', 'private, max-age=300')
+    const { Readable } = await import('node:stream')
+    Readable.fromWeb(img.body as unknown as import('node:stream/web').ReadableStream).pipe(res)
+  })
+)
+
 /** GET /api/v1/tenant-bot/broadcasts — broadcast history (owner) */
 router.get(
   '/broadcasts',
