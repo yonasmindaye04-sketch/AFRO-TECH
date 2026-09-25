@@ -80,7 +80,7 @@ export default function SocialAuthCallback(): JSX.Element {
 
   if (error) {
     return (
-      <div className="pl-auth">
+      <main className="pl-auth" id="main-content">
         <div className="pl-auth-card">
           <div className="pl-auth-brand">
             AFRO<span>SUITE</span>
@@ -95,13 +95,13 @@ export default function SocialAuthCallback(): JSX.Element {
             </button>
           </div>
         </div>
-      </div>
+      </main>
     )
   }
 
   if (stage === 'loading') {
     return (
-      <div className="pl-auth">
+      <main className="pl-auth" id="main-content">
         <div className="pl-auth-card">
           <div className="pl-auth-brand">
             AFRO<span>SUITE</span>
@@ -111,12 +111,12 @@ export default function SocialAuthCallback(): JSX.Element {
             <p className="pl-sub">Finishing your social sign-in.</p>
           </div>
         </div>
-      </div>
+      </main>
     )
   }
 
   return (
-    <div className={`pl-auth pl-firm-${businessType}`} data-firm={businessType}>
+    <main className={`pl-auth pl-firm-${businessType}`} id="main-content" data-firm={businessType}>
       <div className="pl-auth-card wide">
         <div className="pl-auth-brand">
           AFRO<span>SUITE</span>
@@ -166,6 +166,6 @@ export default function SocialAuthCallback(): JSX.Element {
           Not you? <Link to="/app/login">Sign in with a different account</Link>
         </p>
       </div>
-    </div>
+    </main>
   )
 }

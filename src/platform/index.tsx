@@ -64,7 +64,7 @@ const Analytics = lazy(() => import('./marketing/Analytics'))
 function Blocked({ icon, title, body }: { icon: string; title: string; body: string }): JSX.Element {
   const { logout } = useAuth()
   return (
-    <div className="pl-auth">
+    <main className="pl-auth" id="main-content">
       <div className="pl-blocked">
         <div>
           <i className={icon} aria-hidden="true" />
@@ -85,7 +85,7 @@ function Blocked({ icon, title, body }: { icon: string; title: string; body: str
           </button>
         </div>
       </div>
-    </div>
+    </main>
   )
 }
 

@@ -57,7 +57,7 @@ export default function Register(): JSX.Element {
   }
 
   return (
-    <div className={`pl-auth pl-firm-${form.business_type}`} data-firm={form.business_type}>
+    <main className={`pl-auth pl-firm-${form.business_type}`} id="main-content" data-firm={form.business_type}>
       <div className="pl-auth-card wide">
         <div className="pl-auth-brand">
           AFRO<span>SUITE</span>
@@ -139,6 +139,6 @@ export default function Register(): JSX.Element {
           Already registered? <Link to="/app/login">Sign in</Link>
         </p>
       </div>
-    </div>
+    </main>
   )
 }

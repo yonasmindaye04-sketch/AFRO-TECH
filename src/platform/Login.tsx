@@ -70,7 +70,7 @@ export default function Login(): JSX.Element {
   }
 
   return (
-    <div className="pl-auth">
+    <main className="pl-auth" id="main-content">
       <Link to="/" className="pl-back-link">
         ← Back to afrotech website
       </Link>
@@ -164,6 +164,6 @@ export default function Login(): JSX.Element {
           <Link to="/app/register">Start your free 45-day trial</Link>
         </p>
       </div>
-    </div>
+    </main>
   )
 }
