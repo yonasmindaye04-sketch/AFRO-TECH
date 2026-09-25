@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { api, fmtDate, fmtMoney } from '../api'
+import { api, fmtDate, fmtMoney, loadAuth } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { Card, DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
 import ReceiptScanner, { type ScannedExpense } from '../ui/ReceiptScanner'
@@ -122,7 +122,7 @@ export default function Expenses(): JSX.Element {
     setExporting(true)
     try {
       const res = await fetch(`/api/v1/expenses/export?${qs}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
+        headers: { Authorization: `Bearer ${loadAuth()?.token ?? ''}` },
       })
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -140,8 +140,8 @@ export default function Expenses(): JSX.Element {
 
   return (
     <div className="pl-page">
-      <PageHeader title="Expenses" subtitle="Track and manage all business expenses" action={<><button type="button" className="pl-btn pl-btn-ghost" onClick={exportCsv} disabled={exporting}>
-          <i className="fa-solid fa-download" aria-hidden="true" /> {exporting ? 'Exporting...' : 'CSV'}
+      <PageHeader title="Expenses" subtitle="Track and manage all business expenses" action={<><button type="button" className="pl-btn pl-btn-ghost" onClick={exportCsv} disabled={exporting} aria-label="Export expenses as CSV">
+          <i className="fa-solid fa-download" aria-hidden="true" /> {exporting ? 'Exporting…' : 'Export CSV'}
         </button>
         <button type="button" className="pl-btn pl-btn-primary" onClick={openNew}>
           <i className="fa-solid fa-plus" aria-hidden="true" /> Add Expense
@@ -173,15 +173,15 @@ export default function Expenses(): JSX.Element {
       <Card>
         <div className="pl-toolbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input className="pl-input" type="date" style={{ width: 150 }} value={from} onChange={(e) => setFrom(e.target.value)} />
+            <input className="pl-input" type="date" style={{ width: 150 }} value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Filter expenses from date" />
             <span style={{ color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>to</span>
-            <input className="pl-input" type="date" style={{ width: 150 }} value={to} onChange={(e) => setTo(e.target.value)} />
+            <input className="pl-input" type="date" style={{ width: 150 }} value={to} onChange={(e) => setTo(e.target.value)} aria-label="Filter expenses to date" />
           </div>
-          <select className="pl-input" style={{ width: 160 }} value={catFilter} onChange={(e) => setCatFilter(e.target.value)}>
+          <select className="pl-input" style={{ width: 160 }} value={catFilter} onChange={(e) => setCatFilter(e.target.value)} aria-label="Filter expenses by category">
             <option value="">All categories</option>
             {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
-          <input className="pl-input" placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ maxWidth: 200 }} />
+          <input className="pl-input" type="search" placeholder="Search expenses..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ maxWidth: 200 }} aria-label="Search expenses" />
         </div>
       </Card>
 
@@ -212,19 +212,19 @@ export default function Expenses(): JSX.Element {
                 <div style={{ display: 'flex', gap: 6 }}>
                   {r.status === 'pending' && (
                     <>
-                      <button type="button" className="pl-btn-icon" title="Approve" onClick={() => void approve(r.id)}>
-                        <i className="fa-solid fa-check" />
+                      <button type="button" className="pl-btn-icon" title="Approve expense" aria-label="Approve expense" onClick={() => void approve(r.id)}>
+                        <i className="fa-solid fa-check" aria-hidden="true" />
                       </button>
-                      <button type="button" className="pl-btn-icon" title="Reject" onClick={() => void reject(r.id)}>
-                        <i className="fa-solid fa-xmark" />
+                      <button type="button" className="pl-btn-icon" title="Reject expense" aria-label="Reject expense" onClick={() => void reject(r.id)}>
+                        <i className="fa-solid fa-xmark" aria-hidden="true" />
                       </button>
                     </>
                   )}
-                  <button type="button" className="pl-btn-icon" title="Edit" onClick={() => openEdit(r)}>
-                    <i className="fa-solid fa-pen" />
+                  <button type="button" className="pl-btn-icon" title="Edit expense" aria-label="Edit expense" onClick={() => openEdit(r)}>
+                    <i className="fa-solid fa-pen" aria-hidden="true" />
                   </button>
-                  <button type="button" className="pl-btn-icon" title="Delete" onClick={() => void remove(r.id)}>
-                    <i className="fa-solid fa-trash" />
+                  <button type="button" className="pl-btn-icon" title="Delete expense" aria-label="Delete expense" onClick={() => void remove(r.id)}>
+                    <i className="fa-solid fa-trash" aria-hidden="true" />
                   </button>
                 </div>
               ),

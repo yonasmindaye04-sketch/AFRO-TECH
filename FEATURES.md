@@ -349,7 +349,10 @@ Each company connects **its own Telegram bot** (created with @BotFather in 2 min
 
 - **Push alerts** — low stock, expiring batches, fees due, today's appointments
 - **Staff commands** — `/today` (sales/appointments/attendance), `/lowstock`, `/expiring`, `/shift`
-- **Customer broadcast** — message all subscribers with offers and announcements
+- **Interactive main menu** — role-aware inline keyboards (`/menu`, `/start`) with one-tap actions; callback queries run the same handlers as commands
+- **Amharic / English** — per-subscriber language preference (`/language` + inline picker) covering all bot system copy
+- **Payment receipts** — customers submit Telebirr / CBE Birr receipt photos to the bot; staff review in Bot Studio and the customer is notified on confirm/reject
+- **Customer broadcast** — message all subscribers with offers and announcements (blocked chats auto-deactivate)
 - **Mini App** — the bot's menu button opens the full workspace inside Telegram, already signed in (secure token exchange, no password needed)
 
 ---
@@ -357,7 +360,7 @@ Each company connects **its own Telegram bot** (created with @BotFather in 2 min
 ## 13. Subscription & Platform Administration
 
 - **Subscription plans** (monthly / semi-annual / annual) per business type
-- **Chapa payment integration** — online checkout with idempotent webhook callbacks
+- **Payment methods** — Chapa, Telebirr (C2B web checkout), M-Pesa (Safaricom ET) and CBE Birr / manual bank transfer; per-checkout provider picker with idempotent webhooks and a missed-webhook reconciliation sweep
 - **Trial lifecycle** — 45-day trial auto-expires; expired tenants keep their data but see the subscription screen until they pay
 - **AFRO-TECH admin panel** — all companies, owner contacts, status badges, trial days left; grant/extend/suspend access; reset passwords; platform-wide stats
 

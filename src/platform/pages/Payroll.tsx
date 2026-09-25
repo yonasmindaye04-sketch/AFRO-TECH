@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { api, fmtMoney } from '../api'
+import { api, fmtMoney, loadAuth } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { Card, DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
 import { useAuth } from '../AuthContext'
@@ -155,8 +155,8 @@ function EmployeesTab(): JSX.Element {
             { key: 'pension_pct', header: 'Pension %', render: (r) => r.pension_pct != null ? `${r.pension_pct}%` : '—' },
             {
               key: 'actions', header: '', render: (r) => (
-                <button type="button" className="pl-btn-icon" title="Set salary" onClick={() => openEdit(r)}>
-                  <i className="fa-solid fa-pen" />
+                <button type="button" className="pl-btn-icon" title="Set salary" aria-label="Set salary" onClick={() => openEdit(r)}>
+                  <i className="fa-solid fa-pen" aria-hidden="true" />
                 </button>
               ),
             },
@@ -315,7 +315,7 @@ function HistoryTab(): JSX.Element {
 
   const exportCsv = async (id: string): Promise<void> => {
     const res = await fetch(`/api/v1/payroll/runs/${id}/export`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
+      headers: { Authorization: `Bearer ${loadAuth()?.token ?? ''}` },
     })
     const blob = await res.blob()
     const url = URL.createObjectURL(blob)
@@ -352,11 +352,11 @@ function HistoryTab(): JSX.Element {
             {
               key: 'actions', header: '', render: (r) => (
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button type="button" className="pl-btn-icon" title="View" onClick={() => void viewRun(r.id)}><i className="fa-solid fa-eye" /></button>
-                  {r.status === 'draft' && <button type="button" className="pl-btn-icon" title="Approve" disabled={busy} onClick={() => void approve(r.id)}><i className="fa-solid fa-check" /></button>}
-                  {r.status === 'approved' && <button type="button" className="pl-btn-icon" title="Mark Paid" disabled={busy} onClick={() => void markPaid(r.id)}><i className="fa-solid fa-money-bill-wave" /></button>}
-                  <button type="button" className="pl-btn-icon" title="CSV" onClick={() => void exportCsv(r.id)}><i className="fa-solid fa-download" /></button>
-                  {r.status === 'draft' && <button type="button" className="pl-btn-icon" title="Delete" onClick={() => void deleteRun(r.id)}><i className="fa-solid fa-trash" /></button>}
+                  <button type="button" className="pl-btn-icon" title="View run" aria-label="View payroll run" onClick={() => void viewRun(r.id)}><i className="fa-solid fa-eye" aria-hidden="true" /></button>
+                  {r.status === 'draft' && <button type="button" className="pl-btn-icon" title="Approve run" aria-label="Approve payroll run" disabled={busy} onClick={() => void approve(r.id)}><i className="fa-solid fa-check" aria-hidden="true" /></button>}
+                  {r.status === 'approved' && <button type="button" className="pl-btn-icon" title="Mark paid" aria-label="Mark payroll run as paid" disabled={busy} onClick={() => void markPaid(r.id)}><i className="fa-solid fa-money-bill-wave" aria-hidden="true" /></button>}
+                  <button type="button" className="pl-btn-icon" title="Export CSV" aria-label="Export payroll run as CSV" onClick={() => void exportCsv(r.id)}><i className="fa-solid fa-download" aria-hidden="true" /></button>
+                  {r.status === 'draft' && <button type="button" className="pl-btn-icon" title="Delete run" aria-label="Delete payroll run" onClick={() => void deleteRun(r.id)}><i className="fa-solid fa-trash" aria-hidden="true" /></button>}
                 </div>
               ),
             },

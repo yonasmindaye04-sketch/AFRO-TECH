@@ -337,10 +337,14 @@ function mainMenuKeyboard(bot: TenantBotRow, opts: { linked: boolean; hasStudent
   } else {
     rows.push([{ text: bt(opts.lang, 'btn_receipt'), callback_data: 'menu:receipt' }])
   }
-  rows.push([
-    { text: bt(opts.lang, 'btn_language'), callback_data: 'menu:language' },
-    { text: bt(opts.lang, 'btn_open_app'), web_app: { url: tenantBotAppUrl(bot) } },
-  ])
+  const bottomRow: Array<Record<string, unknown>> = [{ text: bt(opts.lang, 'btn_language'), callback_data: 'menu:language' }]
+  // web_app buttons require an HTTPS URL — in local dev (http://localhost) Telegram
+  // rejects the whole message with BUTTON_TYPE_INVALID, so skip the app button there.
+  const appUrl = tenantBotAppUrl(bot)
+  if (appUrl.startsWith('https://')) {
+    bottomRow.push({ text: bt(opts.lang, 'btn_open_app'), web_app: { url: appUrl } })
+  }
+  rows.push(bottomRow)
   return { inline_keyboard: rows }
 }
 
@@ -408,17 +412,18 @@ async function handleCallbackQuery(botRow: TenantBotRow, cq: TgCallbackQuery): P
  * adapted to a single-step flow keyed on bot_subscribers.pending_action).
  */
 async function handleReceiptPhoto(botRow: TenantBotRow, msg: TgIncomingMessage, pending: string | null): Promise<void> {
+  // Photos arrive all the time; we only act when the receipt scene is armed.
+  if (pending !== 'awaiting_receipt' || !msg.photo?.length) return
   const chatId = msg.chat.id
   const lang = await subscriberLang(botRow.id, chatId, msg.from?.language_code)
-  if (pending !== 'awaiting_receipt' || !msg.photo?.length) return
   const largest = msg.photo[msg.photo.length - 1]!
-  await query(
+  const inserted = await queryOne<{ id: string }>(
     `INSERT INTO bot_receipt_submissions (bot_id, tenant_id, chat_id, sender_name, file_id, caption)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
     [botRow.id, botRow.tenant_id, chatId, msg.from?.first_name ?? null, largest.file_id, msg.caption ?? null]
   )
   await query(`UPDATE bot_subscribers SET pending_action = NULL WHERE bot_id = $1 AND chat_id = $2`, [botRow.id, chatId])
-  logAudit({ userId: 'system', userName: 'telegram-bot', action: 'bot.receipt.submitted', entity: 'tenant_bot', entityId: botRow.id, details: { chat_id: chatId } })
+  logAudit({ tenantId: botRow.tenant_id, userName: 'telegram-bot', action: 'bot.receipt.submitted', entity: 'bot_receipt', entityId: inserted?.id ?? null, details: { chat_id: chatId } })
   await tgApi(botRow.bot_token, 'sendMessage', { chat_id: chatId, text: bt(lang, 'receipt_received'), parse_mode: 'HTML' })
 }
 
@@ -490,7 +495,7 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     if (!row || new Date(row.expires_at).getTime() < Date.now()) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: 'That code is invalid or expired. Please generate a fresh one in Settings → Telegram.',
+        text: bt(lang, 'link_invalid'),
       })
       return
     }
@@ -502,7 +507,7 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     if (!user) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `This link code belongs to another workspace. This bot is exclusively for <b>${tenantName}</b>.`,
+        text: `${bt(lang, 'link_wrong_workspace')} <b>${tenantName}</b>.`,
         parse_mode: 'HTML',
       })
       return
@@ -521,15 +526,9 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
 
     await tgApi(botRow.bot_token, 'sendMessage', {
       chat_id: chatId,
-      text: `✅ <b>Linked!</b>\n\nWelcome, <b>${escapeHtml(user.full_name)}</b> (${user.role}). You are now connected to <b>${tenantName}</b>.\n\n` +
-        `Available staff commands:\n` +
-        `/today — Daily sales & activity summary\n` +
-        `/lowstock — Items needing reorder\n` +
-        `/expiring — Inventory expiring soon\n` +
-        `/shift — Current cash drawer shift\n` +
-        `/unlink — Disconnect this account\n\n` +
-        `Tap the menu button at the bottom to launch your company Mini App!`,
+      text: `✅ <b>Linked!</b>\n\n${bt(lang, 'linked_welcome')} <b>${escapeHtml(user.full_name)}</b> (${user.role}) — <b>${tenantName}</b>.\n\n${bt(lang, 'try_commands')}`,
       parse_mode: 'HTML',
+      reply_markup: mainMenuKeyboard(botRow, { linked: true, hasStudents: false, lang }),
     })
     return
   }
@@ -540,7 +539,7 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
       await query(`UPDATE users SET telegram_chat_id = NULL, telegram_linked_at = NULL WHERE id = $1`, [linkedUser.id])
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `Unlinked. You will no longer receive staff alerts or summaries for <b>${tenantName}</b>.`,
+        text: `${bt(lang, 'unlinked_done')} <b>${tenantName}</b>.`,
         parse_mode: 'HTML',
       })
       return
@@ -553,7 +552,7 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     if (!rawCode) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `Please provide your child's student code:\nExample: <code>/parent STU-00001</code>\n\n(Ask the school administration for the student code if you don't have it.)`,
+        text: escapeHtml(bt(lang, 'parent_prompt')).replace('/parent STU-00001', '<code>/parent STU-00001</code>'),
         parse_mode: 'HTML',
       })
       return
@@ -576,7 +575,7 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     if (!student) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `❌ No active student found with code "<b>${escapeHtml(rawCode)}</b>" at <b>${tenantName}</b>.\nPlease check the student code and try again.`,
+        text: `❌ ${bt(lang, 'parent_not_found')} (<b>${escapeHtml(rawCode)}</b> — ${tenantName})`,
         parse_mode: 'HTML',
       })
       return
@@ -591,16 +590,13 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
 
     await tgApi(botRow.bot_token, 'sendMessage', {
       chat_id: chatId,
-      text: `✅ <b>Successfully Linked as Guardian!</b>\n\n` +
-        `👤 <b>Student:</b> ${student.first_name} ${student.last_name}\n` +
-        `🆔 <b>Code:</b> <code>${student.code}</code>\n` +
-        `🏫 <b>School:</b> ${tenantName}\n` +
-        `📚 <b>Class:</b> ${student.class_name || 'Not assigned'}\n\n` +
-        `You will now receive important school announcements, notices, and fee receipts directly in this chat.\n\n` +
-        `Commands for parents:\n` +
-        `/child — View linked student info\n` +
-        `/myfees — View outstanding fee records`,
+      text: `✅ <b>${bt(lang, 'parent_linked')}</b>\n\n` +
+        `👤 <b>Student:</b> ${escapeHtml(student.first_name)} ${escapeHtml(student.last_name)}\n` +
+        `🆔 <b>Code:</b> <code>${escapeHtml(student.code)}</code>\n` +
+        `🏫 <b>School:</b> ${tenantName}\n\n` +
+        `${bt(lang, 'try_commands')}`,
       parse_mode: 'HTML',
+      reply_markup: mainMenuKeyboard(botRow, { linked: false, hasStudents: true, lang }),
     })
     return
   }
@@ -624,19 +620,19 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     if (!students.length) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `You have not linked any students to this bot yet.\nSend <code>/parent STUDENT_CODE</code> to link your child.`,
+        text: bt(lang, 'no_students_linked'),
         parse_mode: 'HTML',
       })
       return
     }
 
     const list = students
-      .map((s) => `• <b>${escapeHtml(`${s.first_name} ${s.last_name}`)}</b> (Code: <code>${escapeHtml(s.code)}</code>)\n  Class: ${escapeHtml(s.class_name || 'N/A')}`)
+      .map((s) => `• <b>${escapeHtml(`${s.first_name} ${s.last_name}`)}</b> (Code: <code>${escapeHtml(s.code)}</code>)\n  ${bt(lang, 'class')}: ${escapeHtml(s.class_name || 'N/A')}`)
       .join('\n\n')
 
     await tgApi(botRow.bot_token, 'sendMessage', {
       chat_id: chatId,
-      text: `👨‍👩‍👧 <b>Linked Students at ${tenantName}:</b>\n\n${list}\n\nType /myfees to check fee status.`,
+      text: `👨‍👩‍👧 <b>${tenantName}</b>:\n\n${list}`,
       parse_mode: 'HTML',
     })
     return
@@ -663,7 +659,7 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     if (!fees.length) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `No fee records found for your linked student(s).`,
+        text: bt(lang, 'no_fees'),
         parse_mode: 'HTML',
       })
       return
@@ -672,14 +668,14 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     const textList = fees
       .map((f) => {
         const remaining = Math.max(0, Number(f.amount) - Number(f.paid_amount))
-        const statusEmoji = f.status === 'paid' ? '✅ Paid' : remaining > 0 ? `⚠️ Due: ${remaining.toFixed(2)} ETB` : 'Pending'
-        return `• <b>${escapeHtml(f.title)}</b> (${escapeHtml(f.student_name)})\n  Total: ${Number(f.amount).toFixed(2)} ETB | Paid: ${Number(f.paid_amount).toFixed(2)} ETB\n  Status: ${statusEmoji}${f.due_date ? ` (Due: ${f.due_date.toString().slice(0, 10)})` : ''}`
+        const statusEmoji = f.status === 'paid' ? `✅ ${bt(lang, 'paid')}` : remaining > 0 ? `⚠️ ${bt(lang, 'due')}: ${remaining.toFixed(2)} ETB` : bt(lang, 'status')
+        return `• <b>${escapeHtml(f.title)}</b> (${escapeHtml(f.student_name)})\n  ${bt(lang, 'total')}: ${Number(f.amount).toFixed(2)} ETB | ${bt(lang, 'paid')}: ${Number(f.paid_amount).toFixed(2)} ETB\n  ${bt(lang, 'status')}: ${statusEmoji}${f.due_date ? ` (${bt(lang, 'due')}: ${f.due_date.toString().slice(0, 10)})` : ''}`
       })
       .join('\n\n')
 
     await tgApi(botRow.bot_token, 'sendMessage', {
       chat_id: chatId,
-      text: `📋 <b>Fee Statements:</b>\n\n${textList}`,
+      text: `📋 <b>${bt(lang, 'btn_fees')}:</b>\n\n${textList}`,
       parse_mode: 'HTML',
     })
     return
@@ -784,7 +780,7 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     if (!linkedUser) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `This command is for <b>${tenantName}</b> staff. Send <code>/link CODE</code> to link your work account.`,
+        text: `${bt(lang, 'staff_only_prefix')} <b>${tenantName}</b>. ${bt(lang, 'staff_only_suffix')}`,
         parse_mode: 'HTML',
       })
       return
@@ -801,10 +797,10 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
               `SELECT count(*)::text AS today FROM attendance WHERE tenant_id = $1 AND att_date = CURRENT_DATE`,
               [botRow.tenant_id]
             )
-      const label = businessType === 'hospital' ? 'appointments scheduled today' : 'attendance entries recorded today'
+      const label = businessType === 'hospital' ? bt(lang, 'today_appointments') : bt(lang, 'today_attendance')
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `<b>${tenantName} — Today</b>\n\n📅 ${stats?.today ?? 0} ${label}.`,
+        text: `<b>${tenantName} — ${bt(lang, 'btn_today')}</b>\n\n📅 ${stats?.today ?? 0} ${label}.`,
         parse_mode: 'HTML',
       })
       return
@@ -818,7 +814,7 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     )
     await tgApi(botRow.bot_token, 'sendMessage', {
       chat_id: chatId,
-      text: `<b>${tenantName} — Today's Sales</b>\n\n💰 Total: <b>${Number(s?.total ?? 0).toFixed(2)} ETB</b>\n🧾 Receipts: <b>${s?.count ?? 0}</b>`,
+      text: `<b>${tenantName} — ${bt(lang, 'todays_sales')}</b>\n\n💰 ${bt(lang, 'total')}: <b>${Number(s?.total ?? 0).toFixed(2)} ETB</b>\n🧾 ${bt(lang, 'receipts_count')}: <b>${s?.count ?? 0}</b>`,
       parse_mode: 'HTML',
     })
     return
@@ -828,7 +824,7 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     if (!linkedUser) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `This command is for <b>${tenantName}</b> staff. Send <code>/link CODE</code> to link your account.`,
+        text: `${bt(lang, 'staff_only_prefix')} <b>${tenantName}</b>. ${bt(lang, 'staff_only_suffix')}`,
         parse_mode: 'HTML',
       })
       return
@@ -847,14 +843,14 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     if (!rows.length) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `✅ <b>${tenantName} Stock:</b>\n\nAll inventory levels look healthy! Nothing currently below threshold.`,
+        text: `✅ <b>${tenantName}:</b>\n\n${bt(lang, 'all_stock_ok')}`,
         parse_mode: 'HTML',
       })
       return
     }
     await tgApi(botRow.bot_token, 'sendMessage', {
       chat_id: chatId,
-      text: `⚠️ <b>Low Stock Items for ${tenantName}:</b>\n\n${rows.map((r) => `• <b>${escapeHtml(r.name)}</b> — ${r.sellable} left (min: ${r.threshold})`).join('\n')}`,
+      text: `⚠️ <b>${bt(lang, 'low_stock_title')} — ${tenantName}:</b>\n\n${rows.map((r) => `• <b>${escapeHtml(r.name)}</b> — ${r.sellable} ${bt(lang, 'items_left')} (${bt(lang, 'min')}: ${r.threshold})`).join('\n')}`,
       parse_mode: 'HTML',
     })
     return
@@ -871,14 +867,14 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     if (!rows.length) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `✅ <b>${tenantName}:</b> No products expiring within the next 60 days.`,
+        text: `✅ <b>${tenantName}:</b> ${bt(lang, 'nothing_expiring')}`,
         parse_mode: 'HTML',
       })
       return
     }
     await tgApi(botRow.bot_token, 'sendMessage', {
       chat_id: chatId,
-      text: `⏳ <b>Expiring within 60 days (${tenantName}):</b>\n\n${rows.map((r) => `• <b>${escapeHtml(r.name)}</b> — ${r.quantity} units (expires ${new Date(r.expiry_date).toLocaleDateString('en-GB')})`).join('\n')}`,
+      text: `⏳ <b>${bt(lang, 'expiring_title')} (${tenantName}):</b>\n\n${rows.map((r) => `• <b>${escapeHtml(r.name)}</b> — ${r.quantity} ${bt(lang, 'units')} (${bt(lang, 'expires')} ${new Date(r.expiry_date).toLocaleDateString('en-GB')})`).join('\n')}`,
       parse_mode: 'HTML',
     })
     return
@@ -893,7 +889,7 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     if (!shift) {
       await tgApi(botRow.bot_token, 'sendMessage', {
         chat_id: chatId,
-        text: `No open drawer shift found for you at <b>${tenantName}</b>. Start a shift from the Cash Drawer page.`,
+        text: `${bt(lang, 'no_open_shift')} — <b>${tenantName}</b>.`,
         parse_mode: 'HTML',
       })
       return
@@ -901,7 +897,7 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     const expected = Number(shift.opening_balance) + Number(shift.cash_sales) - Number(shift.expenses)
     await tgApi(botRow.bot_token, 'sendMessage', {
       chat_id: chatId,
-      text: `💼 <b>Open Shift — ${tenantName}</b>\n\nCash sales: <b>${Number(shift.cash_sales).toFixed(2)} ETB</b>\nExpenses: <b>${Number(shift.expenses).toFixed(2)} ETB</b>\nExpected in drawer: <b>${expected.toFixed(2)} ETB</b>`,
+      text: `💼 <b>${bt(lang, 'open_shift')} — ${tenantName}</b>\n\n${bt(lang, 'cash_sales')}: <b>${Number(shift.cash_sales).toFixed(2)} ETB</b>\n${bt(lang, 'expenses')}: <b>${Number(shift.expenses).toFixed(2)} ETB</b>\n${bt(lang, 'expected_in_drawer')}: <b>${expected.toFixed(2)} ETB</b>`,
       parse_mode: 'HTML',
     })
     return
@@ -926,22 +922,32 @@ async function handleUpdate(botRow: TenantBotRow, update: TenantBotUpdate): Prom
     await deactivateSubscriber(botRow.id, chatId)
     await tgApi(botRow.bot_token, 'sendMessage', {
       chat_id: chatId,
-      text: `You have unsubscribed from ${tenantName}. Send /start at any time to rejoin.`,
+      text: `${bt(lang, 'unsubscribed')} — ${tenantName}.`,
     })
     await query(`UPDATE tenant_bots SET total_subscribers = (SELECT count(*) FROM bot_subscribers WHERE bot_id = $1 AND is_active = true) WHERE id = $1`, [botRow.id])
     return
   }
 
-  /* ── 7. Default fallback: welcome / help message ── */
+  /* ── 7. Default fallback: welcome / help message ──
+     Honour auto_reply=false: unknown non-command messages are ignored
+     (the customer might just be saying hi). Commands always get an answer. */
+  const isUnknownCommand = cmd.startsWith('/')
+  if (!botRow.auto_reply && !isUnknownCommand) return
+
   const fallback = botRow.welcome_message
     .replace(/\\n/g, '\n')
     .replace('{name}', firstName)
     .replace('{company}', tenantName)
 
+  const hasStudents2 = Boolean(
+    await queryOne(`SELECT 1 FROM students WHERE guardian_telegram_chat_id = $1::text AND tenant_id = $2 AND status = 'active' LIMIT 1`, [String(chatId), botRow.tenant_id])
+  )
+
   await tgApi(botRow.bot_token, 'sendMessage', {
     chat_id: chatId,
-    text: fallback,
+    text: isUnknownCommand ? `${bt(lang, 'unknown_command')}\n\n${fallback}` : fallback,
     disable_web_page_preview: true,
+    reply_markup: mainMenuKeyboard(botRow, { linked: Boolean(linkedUser), hasStudents: hasStudents2, lang }),
   })
   await query(`UPDATE tenant_bots SET total_subscribers = (SELECT count(*) FROM bot_subscribers WHERE bot_id = $1 AND is_active = true) WHERE id = $1`, [botRow.id])
 }

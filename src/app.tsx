@@ -157,7 +157,7 @@ function ShowcaseSection() {
   return (
     <div className="showcase-wrap" role="region" aria-label="Project showcase">
       <div className="showcase-inner">
-        <div className="section-title" data-reveal="fade-up">What we've built</div>
+        <h2 className="section-title" data-reveal="fade-up">What we've built</h2>
 
         <div className="showcase-tabs" role="tablist" aria-label="Project categories">
           {showcase.map((p, i) => (
@@ -189,10 +189,10 @@ function ShowcaseSection() {
             <div className="panel-title">{panel.name} — AFRO-TECH</div>
           </div>
           <div className="panel-body">
-            <div className="ui-sidebar" aria-label="Navigation">
+            <div className="ui-sidebar" aria-hidden="true">
               {panel.sidebar.map((item, j) => (
-                <div key={item} className={`ui-nav-item ${j === 0 ? 'active' : ''}`} role="button" tabIndex={0}>
-                  <span className="ui-nav-dot" style={{ background: j === 0 ? panel.color : 'var(--border)' }} aria-hidden="true" />
+                <div key={item} className={`ui-nav-item ${j === 0 ? 'active' : ''}`}>
+                  <span className="ui-nav-dot" style={{ background: j === 0 ? panel.color : 'var(--border)' }} />
                   {item}
                 </div>
               ))}
@@ -338,11 +338,11 @@ export default function App() {
             Based in Addis Ababa. From websites to full ERP platforms — we design and build the tools that help Ethiopian businesses grow, automate, and compete.
           </p>
           <div className="hero-actions">
-            <button className="btn-primary" onClick={() => scrollTo('contact-section')}>
-              Start a Project <i className="fa-solid fa-arrow-right" />
+            <button type="button" className="btn-primary" onClick={() => scrollTo('contact-section')}>
+              Start a Project <i className="fa-solid fa-arrow-right" aria-hidden="true" />
             </button>
-            <button className="btn-ghost" onClick={() => scrollTo('showcase-section')}>
-              See Our Work <i className="fa-solid fa-arrow-down" />
+            <button type="button" className="btn-ghost" onClick={() => scrollTo('showcase-section')}>
+              See Our Work <i className="fa-solid fa-arrow-down" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -410,7 +410,7 @@ export default function App() {
 
       {/* ── WHAT WE DO — teaser ──────────────────────────────── */}
       <section id="services-section" className="section-wrap" aria-label="Our services">
-        <div className="section-title" data-reveal="fade-up">What We Do</div>
+        <h2 className="section-title" data-reveal="fade-up">What We Do</h2>
         <p className="what-we-do-intro" data-reveal="fade-up">
           We design, build, and launch digital systems — from marketing sites to full enterprise platforms.
         </p>
@@ -434,7 +434,7 @@ export default function App() {
 
       {/* ── HOW WE WORK — horizontal map ──────────────────────── */}
       <section id="process-section" className="process-wrap" aria-label="Our process">
-        <div className="section-title" data-reveal="fade-up">Our Process</div>
+        <h2 className="section-title" data-reveal="fade-up">Our Process</h2>
         <div className="process-map">
 
           {/* SVG string connecting the boxes directly */}
@@ -491,7 +491,7 @@ export default function App() {
 
       {/* ── WHY US ──────────────────────────────────────────── */}
       <section id="whyus-section" className="section-wrap" aria-label="Why choose us">
-        <div className="section-title" data-reveal="fade-up">We're not a template shop.</div>
+        <h2 className="section-title" data-reveal="fade-up">We're not a template shop.</h2>
         <div className="whyus-grid" data-stagger>
           {whyUs.map(w => (
             <div key={w.title} className="whyus-card" data-reveal="fade-up">
@@ -505,7 +505,7 @@ export default function App() {
 
       {/* ── ABOUT ────────────────────────────────────────────── */}
       <section id="about-section" aria-label="About us">
-        <div className="section-title" data-reveal="fade-up">About Us</div>
+        <h2 className="section-title" data-reveal="fade-up">About Us</h2>
         <div className="about-inner">
           <p className="about-quote">
             We're a small studio from Addis Ababa. We've been building websites since 2020 — not because it's trending, but because we believe Ethiopian businesses deserve quality digital tools, not rushed templates.
@@ -518,7 +518,7 @@ export default function App() {
 
       {/* ── REVIEWS ──────────────────────────────────────────── */}
       <section id="reviews-section" className="section-wrap" aria-label="Client testimonials">
-        <div className="section-title" data-reveal="fade-up">What Our Clients Say</div>
+        <h2 className="section-title" data-reveal="fade-up">What Our Clients Say</h2>
         <div className="testimonials-grid" data-stagger>
           {testimonials.map(t => (
             <div key={t.name} className="testimonial-card" data-reveal="fade-up">
@@ -539,7 +539,7 @@ export default function App() {
       <section id="contact-section" aria-label="Contact us">
         <div className="contact-inner" data-reveal="fade-up">
           <div className="contact-info">
-            <div className="section-title">Let's talk.</div>
+            <h2 className="section-title">Let's talk.</h2>
             <p>We reply within 24 hours — usually faster.</p>
 
             {[
@@ -608,17 +608,17 @@ export default function App() {
 
       {/* ── BACK TO TOP ──────────────────────────────────────── */}
       {showTop && (
-        <button className="back-to-top" onClick={() => window.scrollTo({ top:0, behavior:'smooth' })} aria-label="Back to top">
-          <i className="fa-solid fa-chevron-up" />
+        <button type="button" className="back-to-top" onClick={() => window.scrollTo({ top:0, behavior:'smooth' })} aria-label="Back to top">
+          <i className="fa-solid fa-chevron-up" aria-hidden="true" />
         </button>
       )}
 
       {/* ── TOAST ────────────────────────────────────────────── */}
       {toast && (
-        <div className={`toast toast-${toast.type}`}>
-          <i className={toast.type==='success' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-xmark'} />
+        <div className={`toast toast-${toast.type}`} role="status" aria-live="polite">
+          <i className={toast.type==='success' ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-xmark'} aria-hidden="true" />
           <span>{toast.msg}</span>
-          <button className="toast-close" onClick={() => setToast(null)}><i className="fa-solid fa-xmark" /></button>
+          <button type="button" className="toast-close" onClick={() => setToast(null)} aria-label="Dismiss notification"><i className="fa-solid fa-xmark" aria-hidden="true" /></button>
         </div>
       )}
     </>

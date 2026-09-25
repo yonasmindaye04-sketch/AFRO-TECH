@@ -12,6 +12,29 @@ export function tg(): TelegramWebApp | null {
   return w.Telegram?.WebApp ?? null
 }
 
+let sdkPromise: Promise<TelegramWebApp | null> | null = null
+
+/**
+ * Lazily load the Telegram Mini App SDK (telegram-web-app.js).
+ * The script is injected on demand so it never blocks page rendering on
+ * routes that don't need it. Resolves once the SDK is available (or null
+ * when the script fails to load, e.g. offline).
+ */
+export function loadTelegramSdk(): Promise<TelegramWebApp | null> {
+  if (sdkPromise) return sdkPromise
+  sdkPromise = new Promise((resolve) => {
+    const existing = tg()
+    if (existing) { resolve(existing); return }
+    const script = document.createElement('script')
+    script.src = 'https://telegram.org/js/telegram-web-app.js'
+    script.async = true
+    script.onload = () => resolve(tg())
+    script.onerror = () => resolve(null)
+    document.head.appendChild(script)
+  })
+  return sdkPromise
+}
+
 export function isTelegram(): boolean {
   const app = tg()
   return Boolean(app?.initData)

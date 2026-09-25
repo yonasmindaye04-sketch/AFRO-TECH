@@ -1,9 +1,36 @@
 # AFRO-TECH
 
-AFRO-TECH is an Addis Ababa-based digital studio building websites, ERP systems, POS platforms, and custom software.
+> AFRO-TECH is a digital studio based in Addis Ababa, Ethiopia. We design and
+> build websites, ERP systems, POS platforms, and custom software for
+> Ethiopian businesses — fast delivery, premium design, honest pricing.
 
-## Links
+## About the site
 
-- [Home](https://afro-tech-liard.vercel.app/)
-- [Services & Pricing](https://afro-tech-liard.vercel.app/services)
-- [Contact us via email](mailto:yonasmindaye04@gmail.com)
+- [Home](https://afro-tech-et.vercel.app/): overview of the studio, showcase of
+  systems we've built (ERP, POS, inventory, school, hotel/PMS, hospital,
+  e-commerce), our process, testimonials, and the contact form.
+- [Services & Pricing](https://afro-tech-et.vercel.app/services): full service
+  catalog with tiers (Starter, Professional, Enterprise) and feature
+  comparison.
+- [Products](https://afro-tech-et.vercel.app/products): AFRO Suite — our
+  ready-to-use business management systems (pharmacy, store/retail,
+  hospital/clinic, school) available as a hosted product with a free trial.
+
+## Authenticated application
+
+- https://afro-tech-et.vercel.app/app is the AFRO Suite workspace
+  (point-of-sale, inventory, patients, students, expenses, payroll, reports).
+  It requires an account; content behind /app is private per company and is
+  not crawlable. Public sign-in: /app/login, registration: /app/register.
+
+## Contact
+
+- Email: yonasmindaye04@gmail.com
+- Telegram: https://t.me/yona64
+- WhatsApp: https://wa.me/251910011818
+- Location: Addis Ababa, Ethiopia (serving clients locally and globally)
+
+## Files
+
+- Sitemap: https://afro-tech-et.vercel.app/sitemap.xml
+- Robots: https://afro-tech-et.vercel.app/robots.txt

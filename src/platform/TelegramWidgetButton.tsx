@@ -38,7 +38,22 @@ export default function TelegramWidgetButton({ botUsername, onError }: Props): J
     const container = document.getElementById('telegram-widget')
     if (container && !container.hasChildNodes()) container.appendChild(script)
 
+    // The widget injects an iframe without a title — give it an accessible
+    // name so screen readers / Lighthouse's frame-title audit are satisfied.
+    let observer: MutationObserver | null = null
+    if (container) {
+      const titleFrames = (): void => {
+        container.querySelectorAll('iframe').forEach((f) => {
+          if (!f.title) f.title = 'Sign in with Telegram'
+        })
+      }
+      titleFrames()
+      observer = new MutationObserver(titleFrames)
+      observer.observe(container, { childList: true, subtree: true })
+    }
+
     return () => {
+      observer?.disconnect()
       delete window.onTelegramAuth
     }
   }, [botUsername, onError])

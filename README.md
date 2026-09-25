@@ -36,7 +36,7 @@ Sign in with **email/password**, **Google**, or **Telegram** — social sign-in 
 
 - **Frontend**: React 18, TypeScript, Vite, React Router v6, plain CSS (custom properties, dark/light)
 - **Backend**: Node 20+, Express 4, PostgreSQL, Redis + BullMQ (queues/workers), JWT auth
-- **Integrations**: Telegram Bot API, Chapa payments, Resend email, Ethio Telecom SMPP, ZXing (camera barcode), Google OAuth
+- **Integrations**: Telegram Bot API (tenant bots with menus + Amharic/English), Chapa / Telebirr / M-Pesa / CBE Birr payments, Resend email, Ethio Telecom SMPP, ZXing (camera barcode), Google OAuth
 - **Deploy**: Vercel (web, `/api/*` proxied to the API), Render/VPS (API server)
 
 ## Project structure

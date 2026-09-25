@@ -200,8 +200,6 @@ router.get(
   })
 )
 
-/** GET /api/v1/tenant-bot/subscribers now includes language preference for the dashboard */
-
 /** GET /api/v1/tenant-bot/receipts — payment receipts customers sent to the bot (owner) */
 router.get(
   '/receipts',

@@ -673,14 +673,16 @@ Once connected, authorized staff can interact with your company bot directly ins
 * The header displays the remaining trial days countdown.
 * If a trial expires, your data remains secure and intact; simply choose a subscription plan to resume full operations.
 
-### 9.2 Plan Selection & Chapa Online Payment Integration
+### 9.2 Plan Selection & Payment Method
 1. Navigate to **Settings -> Subscription & Plan**.
 2. Select your billing frequency:
    * **Monthly Plan**
    * **Semi-Annual Plan (Save 15%)**
    * **Annual Enterprise Plan (Save 25%)**
-3. Click **Pay with Chapa**.
-4. Pay securely using **Telebirr**, **CBE Birr**, **Awash Birr**, or local/international credit cards.
+3. Choose a **Payment method** — the platform supports **Chapa** (cards, wallets), **Telebirr**, **M-Pesa (Safaricom)** and **CBE Birr / manual bank transfer**. Only the methods currently enabled by AFRO-TECH are shown.
+4. Click **Subscribe**.
+   * *Chapa / Telebirr / M-Pesa:* you are redirected to the provider's secure checkout page; completion returns you here and activates your plan within seconds.
+   * *CBE Birr / manual transfer:* transfer the amount quoting the payment reference shown; AFRO-TECH confirms the transfer and your workspace activates automatically.
 5. Upon successful payment verification, your workspace is extended automatically and an official tax invoice is generated.
 
 ### 9.3 Getting Technical Support

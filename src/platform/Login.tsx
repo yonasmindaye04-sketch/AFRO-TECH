@@ -4,7 +4,7 @@ import { useAuth } from './AuthContext'
 import { ApiError, api } from './api'
 import { Field } from './ui'
 import TelegramWidgetButton from './TelegramWidgetButton'
-import { initTelegramUi, isTelegram } from './utils/telegram'
+import { initTelegramUi, isTelegram, loadTelegramSdk } from './utils/telegram'
 
 interface Providers {
   google: boolean
@@ -31,22 +31,28 @@ export default function Login(): JSX.Element {
   }, [])
 
   // Telegram Mini App: signed initData replaces the password entirely.
+  // The SDK is loaded on demand (async) so it never blocks page rendering.
   useEffect(() => {
-    if (!isTelegram()) return
-    initTelegramUi()
-    setTgStatus('working')
-    const initData = (window as unknown as { Telegram: { WebApp: { initData: string } } }).Telegram.WebApp.initData
-    const params = new URLSearchParams(window.location.search)
-    const tenantId = params.get('tenant_id') || undefined
-    const botId = params.get('bot_id') || undefined
+    let cancelled = false
+    void loadTelegramSdk().then(() => {
+      if (cancelled || !isTelegram()) return
+      initTelegramUi()
+      setTgStatus('working')
+      const initData = (window as unknown as { Telegram: { WebApp: { initData: string } } }).Telegram.WebApp.initData
+      const params = new URLSearchParams(window.location.search)
+      const tenantId = params.get('tenant_id') || undefined
+      const botId = params.get('bot_id') || undefined
 
-    api
-      .post<{ token: string; me: import('./api').Me }>('/telegram/verify', { initData, tenantId, botId })
-      .then((res) => {
-        persistFromTelegram(res.token, res.me)
-        navigate('/app', { replace: true })
-      })
-      .catch(() => setTgStatus('failed'))
+      api
+        .post<{ token: string; me: import('./api').Me }>('/telegram/verify', { initData, tenantId, botId })
+        .then((res) => {
+          if (cancelled) return
+          persistFromTelegram(res.token, res.me)
+          navigate('/app', { replace: true })
+        })
+        .catch(() => { if (!cancelled) setTgStatus('failed') })
+    })
+    return () => { cancelled = true }
   }, [navigate, persistFromTelegram])
 
   const onSubmit = async (e: FormEvent): Promise<void> => {
@@ -116,6 +122,8 @@ export default function Login(): JSX.Element {
                     justifyContent: 'center'
                   }}
                   title={showPassword ? "Hide password" : "Show password"}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
                 >
                   <i className={`fa-solid ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`} aria-hidden="true" />
                 </button>

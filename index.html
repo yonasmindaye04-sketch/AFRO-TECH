@@ -1,15 +1,16 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
 
     <!-- ── PRIMARY SEO ─────────────────────────────────────── -->
     <title>AFRO-TECH | Web Development & Digital Solutions in Addis Ababa, Ethiopia</title>
     <meta name="description" content="AFRO-TECH is an Addis Ababa-based digital studio building websites, ERP systems, POS platforms, and custom software for Ethiopian businesses. Fast delivery, premium design, honest pricing." />
     <meta name="keywords" content="web development Ethiopia, Addis Ababa web design, ERP system Ethiopia, POS system, custom software development, AFRO-TECH, Ethiopian tech company" />
     <meta name="author" content="AFRO-TECH" />
-    <link rel="canonical" href="https://afro-tech-liard.vercel.app/" />
+    <link rel="canonical" href="https://afro-tech-et.vercel.app/" />
     <meta name="robots" content="index, follow" />
     <meta name="theme-color" content="#09090b" />
 
@@ -17,9 +18,9 @@
     <meta property="og:type" content="website" />
     <meta property="og:title" content="AFRO-TECH | Web Development & Digital Solutions in Addis Ababa" />
     <meta property="og:description" content="We design and build websites, ERP systems, and custom software that help Ethiopian businesses grow, automate, and compete." />
-    <meta property="og:url" content="https://afro-tech-liard.vercel.app/" />
+    <meta property="og:url" content="https://afro-tech-et.vercel.app/" />
     <meta property="og:site_name" content="AFRO-TECH" />
-    <meta property="og:image" content="https://afro-tech-liard.vercel.app/android-chrome-512x512.png" />
+    <meta property="og:image" content="https://afro-tech-et.vercel.app/android-chrome-512x512.png" />
     <meta property="og:image:width" content="512" />
     <meta property="og:image:height" content="512" />
     <meta property="og:locale" content="en_US" />
@@ -28,7 +29,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="AFRO-TECH | Web Development & Digital Solutions" />
     <meta name="twitter:description" content="Addis Ababa-based studio building premium websites, ERP & POS systems for Ethiopian businesses." />
-    <meta name="twitter:image" content="https://afro-tech-liard.vercel.app/android-chrome-512x512.png" />
+    <meta name="twitter:image" content="https://afro-tech-et.vercel.app/android-chrome-512x512.png" />
 
     <!-- ── FAVICONS ────────────────────────────────────────── -->
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
@@ -37,18 +38,23 @@
     <link rel="icon" href="/favicon.ico" />
     <link rel="manifest" href="/site.webmanifest" />
 
-    <!-- ── Telegram Mini App SDK (must load before other scripts) ── -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Telegram Mini App SDK is NOT loaded here — it is injected lazily,
+         on demand, by src/platform/utils/telegram.ts (only on pages that
+         need it). This keeps third-party JS off the critical path. -->
 
-    <!-- ── PERFORMANCE: Preconnect to Google Fonts ─────────── -->
+    <!-- ── PERFORMANCE: Preconnect to Google Fonts ───────────
+         Stylesheets below start with media="print" so they don't block
+         rendering; src/main.tsx flips them to media="all" once loaded
+         (data-async-css), avoiding inline onload handlers so the CSP can
+         stay free of 'unsafe-inline' for scripts. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" media="print" onload="this.media='all'" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" media="print" data-async-css />
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" /></noscript>
 
     <!-- ── PERFORMANCE: Font Awesome CDN ────────────────────── -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" media="print" onload="this.media='all'" />
+    <link id="fa-cdn" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" media="print" data-async-css />
     <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" /></noscript>
 
     <!-- Fonts load via the stylesheet above (display=swap). Version-pinned preload URLs
@@ -61,9 +67,9 @@
       "@type": "ProfessionalService",
       "name": "AFRO-TECH",
       "description": "Addis Ababa-based digital studio building websites, ERP systems, POS platforms, and custom software for Ethiopian businesses.",
-      "url": "https://afro-tech-liard.vercel.app",
-      "logo": "https://afro-tech-liard.vercel.app/android-chrome-512x512.png",
-      "image": "https://afro-tech-liard.vercel.app/android-chrome-512x512.png",
+      "url": "https://afro-tech-et.vercel.app",
+      "logo": "https://afro-tech-et.vercel.app/android-chrome-512x512.png",
+      "image": "https://afro-tech-et.vercel.app/android-chrome-512x512.png",
       "telephone": "+251-910011818",
       "email": "yonasmindaye04@gmail.com",
       "address": {

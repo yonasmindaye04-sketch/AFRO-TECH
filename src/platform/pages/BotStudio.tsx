@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api, fmtDate, fmtDateTime } from '../api'
+import { api, fmtDate, fmtDateTime, loadAuth } from '../api'
 import { Card, Field, PageHeader, EmptyState, ErrorBox, OkBox, Badge } from '../ui'
 
 interface TenantBot {
@@ -66,7 +66,8 @@ export default function BotStudio(): JSX.Element {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([])
   const [receipts, setReceipts] = useState<Receipt[]>([])
   const [reviewing, setReviewing] = useState<string | null>(null)
-  const [viewPhoto, setViewPhoto] = useState<string | null>(null)
+  const [viewPhotoUrl, setViewPhotoUrl] = useState<string | null>(null)
+  const [photoLoading, setPhotoLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
 
@@ -207,6 +208,30 @@ export default function BotStudio(): JSX.Element {
     } finally {
       setReviewing(null)
     }
+  }
+
+  // Receipt photos need the auth header — fetch as blob → object URL (img tags can't set headers)
+  const openPhoto = async (receiptId: string): Promise<void> => {
+    setPhotoLoading(true)
+    setError(null)
+    try {
+      const auth = loadAuth()
+      const res = await fetch(`/api/v1/tenant-bot/receipts/${receiptId}/photo`, {
+        headers: auth ? { Authorization: `Bearer ${auth.token}` } : {},
+      })
+      if (!res.ok) throw new Error(`Could not load photo (${res.status})`)
+      const blob = await res.blob()
+      setViewPhotoUrl(URL.createObjectURL(blob))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load photo')
+    } finally {
+      setPhotoLoading(false)
+    }
+  }
+
+  const closePhoto = (): void => {
+    if (viewPhotoUrl) URL.revokeObjectURL(viewPhotoUrl)
+    setViewPhotoUrl(null)
   }
 
   if (bot === undefined) {
@@ -682,7 +707,7 @@ export default function BotStudio(): JSX.Element {
                     <td>{r.sender_name ?? '—'} <br /><code style={{ fontSize: '.76rem' }}>{r.chat_id}</code></td>
                     <td style={{ maxWidth: 220 }}>{r.caption ?? '—'}</td>
                     <td>
-                      <button className="pl-btn pl-btn-ghost" style={{ padding: '4px 10px' }} onClick={() => setViewPhoto(`/api/v1/tenant-bot/receipts/${r.id}/photo`)}>
+                      <button className="pl-btn pl-btn-ghost" style={{ padding: '4px 10px' }} disabled={photoLoading} onClick={() => void openPhoto(r.id)}>
                         <i className="fa-solid fa-image" /> View
                       </button>
                     </td>
@@ -769,17 +794,17 @@ export default function BotStudio(): JSX.Element {
         )}
      </Card>
 
-      {viewPhoto && (
+      {viewPhotoUrl && (
         <div
           className="pl-modal-backdrop"
-          onMouseDown={(e) => e.target === e.currentTarget && setViewPhoto(null)}
+          onMouseDown={(e) => e.target === e.currentTarget && closePhoto()}
         >
           <div className="pl-modal" role="dialog" aria-modal="true" style={{ maxWidth: 560 }}>
             <div className="pl-modal-head">
               <h2>Receipt photo</h2>
               <button
                 className="pl-icon-btn"
-                onClick={() => setViewPhoto(null)}
+                onClick={closePhoto}
                 aria-label="Close"
               >
                 <i className="fa-solid fa-xmark" />
@@ -787,10 +812,9 @@ export default function BotStudio(): JSX.Element {
             </div>
             <div className="pl-modal-body" style={{ textAlign: 'center' }}>
               <img
-                src={viewPhoto}
+                src={viewPhotoUrl}
                 alt="Payment receipt"
                 style={{ maxWidth: '100%', borderRadius: 8 }}
-                onError={(e) => { (e.target as HTMLImageElement).alt = 'Could not load photo' }}
               />
             </div>
           </div>

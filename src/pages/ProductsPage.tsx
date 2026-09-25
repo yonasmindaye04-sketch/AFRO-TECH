@@ -39,9 +39,7 @@ const SYSTEMS = [
 export default function ProductsPage(): JSX.Element {
   return (
     <>
-      <a href="#main-content" className="skip-to-content">
-        Skip to main content
-      </a>
+      {/* The global skip-link lives in index.html — no page-level duplicate here. */}
       <Navbar />
       <main id="main-content" style={{ paddingTop: 90 }}>
         <section style={{ padding: '60px 6%', textAlign: 'center' }}>

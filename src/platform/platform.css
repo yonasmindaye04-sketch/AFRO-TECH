@@ -130,7 +130,8 @@
   border-radius: 10px; padding: 10px 13px; font-size: .94rem; font-family: inherit;
   transition: border-color .15s;
 }
-.pl-input:focus, .pl-select:focus, .pl-textarea:focus { outline: none; border-color: var(--accent); }
+.pl-input:focus, .pl-select:focus, .pl-textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb, 212,168,67), .25); }
+.pl-btn:focus-visible, .pl-icon-btn:focus-visible, .pl-btn-icon:focus-visible, .pl-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pl-textarea { resize: vertical; min-height: 84px; }
 .pl-form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
 .pl-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }

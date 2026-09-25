@@ -62,6 +62,7 @@ export default function ServicesPage() {
       <div className="scroll-progress" style={{ width: `${scrollPct}%` }} />
       <Navbar />
 
+      <main id="main-content">
       {/* ── HERO BANNER ────────────────────────────────────── */}
       <section className="services-hero">
         <div className="services-hero-inner">
@@ -132,7 +133,7 @@ export default function ServicesPage() {
       {/* ── FEATURE COMPARISON TABLE ───────────────────────── */}
       <div className="comparison-wrap">
         <div className="comparison-inner">
-          <div className="section-title">What's Included</div>
+          <h2 className="section-title">What's Included</h2>
           <div className="comparison-table">
             <div className="comparison-header">
               <div className="comparison-col comp-feature">Feature</div>
@@ -173,6 +174,7 @@ export default function ServicesPage() {
           </div>
         </div>
       </div>
+      </main>
 
 {/* ── FOOTER ─────────────────────────────────────────── */}
       <footer>
@@ -195,8 +197,8 @@ export default function ServicesPage() {
       </footer>
 
       {showTop && (
-        <button className="back-to-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Back to top">
-          <i className="fa-solid fa-chevron-up" />
+        <button type="button" className="back-to-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Back to top">
+          <i className="fa-solid fa-chevron-up" aria-hidden="true" />
         </button>
       )}
     </>
