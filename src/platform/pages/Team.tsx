@@ -1,4 +1,4 @@
-﻿import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { fmtDate, api } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'

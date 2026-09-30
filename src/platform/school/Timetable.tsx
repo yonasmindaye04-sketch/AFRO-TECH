@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { api } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'

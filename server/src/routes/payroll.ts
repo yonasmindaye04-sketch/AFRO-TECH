@@ -43,23 +43,28 @@ function calcIncomeTax(taxable: number): number {
     return tax;
 }
 
+/** Money columns are NUMERIC(x,2) — round in JS so stored rows and totals agree. */
+function round2(value: number): number {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 // Any authenticated employee can view their payslips
 router.get('/my-payslips', asyncHandler(async (req, res) => {
     const tId = tenantId(req);
     const userId = req.user!.id;
     const sql = `
-        SELECT pi.*, pr.period_label, pr.status as run_status, pr.created_at as run_created_at 
+        SELECT pi.*, pr.period_label, pr.frequency, pr.status, pr.created_at as run_created_at 
         FROM payroll_items pi
-        JOIN payroll_runs pr ON pi.run_id = pr.id AND pi.tenant_id = pr.tenant_id
+        JOIN payroll_runs pr ON pi.payroll_run_id = pr.id AND pi.tenant_id = pr.tenant_id
         WHERE pi.user_id = $1 AND pi.tenant_id = $2
         ORDER BY pr.period_label DESC
     `;
-    const items = await query(sql, [userId, tId]);
-    res.json(items);
+    const payslips = await query(sql, [userId, tId]);
+    res.json({ payslips });
 }));
 
 // Apply role restrictions for management routes
-router.use(requireRole('owner', 'admin'));
+router.use(requireRole('owner', 'afrotech_admin'));
 
 router.get('/employees', asyncHandler(async (req, res) => {
     const tId = tenantId(req);
@@ -72,7 +77,7 @@ router.get('/employees', asyncHandler(async (req, res) => {
         ORDER BY u.full_name
     `;
     const employees = await query(sql, [tId]);
-    res.json(employees);
+    res.json({ employees });
 }));
 
 const salarySchema = z.object({
@@ -99,8 +104,7 @@ router.post('/employees/:userId', validateBody(salarySchema), asyncHandler(async
             housing_allow = EXCLUDED.housing_allow,
             other_allow = EXCLUDED.other_allow,
             pension_pct = EXCLUDED.pension_pct,
-            is_active = EXCLUDED.is_active,
-            updated_at = CURRENT_TIMESTAMP
+            is_active = EXCLUDED.is_active
         RETURNING *
     `;
     const updated = await queryOne(sql, [
@@ -110,13 +114,16 @@ router.post('/employees/:userId', validateBody(salarySchema), asyncHandler(async
 }));
 
 const runSchema = z.object({
-    period_label: z.string(),
+    period_label: z.string().min(1).optional(),
+    period_header: z.string().min(1).optional(),   // legacy alias still sent by older clients
     frequency: z.enum(['weekly', 'biweekly', 'monthly']).default('monthly')
 });
 
 router.post('/run', validateBody(runSchema), asyncHandler(async (req, res) => {
     const tId = tenantId(req);
-    const { period_label, frequency } = req.body;
+    const { frequency } = req.body;
+    const period_label: string = String(req.body.period_label ?? req.body.period_header ?? '').trim();
+    if (!period_label) throw new AppError(400, 'period_label is required', 'VALIDATION_ERROR');
     
     // Check for existing run
     const existing = await queryOne(
@@ -129,7 +136,10 @@ router.post('/run', validateBody(runSchema), asyncHandler(async (req, res) => {
     
     // Get active salaries
     const salaries = await query(
-        `SELECT * FROM employee_salaries WHERE tenant_id = $1 AND is_active = true`,
+        `SELECT es.*, u.full_name
+         FROM employee_salaries es
+         JOIN users u ON u.id = es.user_id AND u.tenant_id = es.tenant_id
+         WHERE es.tenant_id = $1 AND es.is_active = true`,
         [tId]
     );
     if (!salaries.length) {
@@ -141,9 +151,9 @@ router.post('/run', validateBody(runSchema), asyncHandler(async (req, res) => {
         await client.query('BEGIN');
         
         const runRes = await client.query(
-            `INSERT INTO payroll_runs (tenant_id, period_label, frequency, status, total_gross, total_net) 
-             VALUES ($1, $2, $3, 'draft', 0, 0) RETURNING *`,
-            [tId, period_label, frequency]
+            `INSERT INTO payroll_runs (tenant_id, period_label, frequency, status, total_gross, total_net, created_by) 
+             VALUES ($1, $2, $3, 'draft', 0, 0, $4) RETURNING *`,
+            [tId, period_label, frequency, req.user!.id]
         );
         const runId = runRes.rows[0].id;
         
@@ -157,42 +167,46 @@ router.post('/run', validateBody(runSchema), asyncHandler(async (req, res) => {
             const other = Number(emp.other_allow) || 0;
             const pension_pct = Number(emp.pension_pct) || 0;
             
-            const gross = base + transport + housing + other;
+            const allowances = transport + housing + other;
+            const gross = base + allowances;
             // Only base salary is subject to tax and pension based on typical standard, but user instructions say:
             // "taxable = gross", "pension_employee = base * pension_pct/100"
             const taxable = gross;
             const income_tax = calcIncomeTax(taxable);
             const pension_employee = base * (pension_pct / 100);
             const pension_employer = base * 0.11;
-            const net = gross - income_tax - pension_employee;
+            const other_deductions = 0;
+            const net = gross - income_tax - pension_employee - other_deductions;
             
             totalGross += gross;
             totalNet += net;
             
             await client.query(
                 `INSERT INTO payroll_items 
-                 (tenant_id, run_id, user_id, base_salary, transport_allow, housing_allow, other_allow, gross_pay, taxable_income, income_tax, pension_employee, pension_employer, net_pay)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+                 (tenant_id, payroll_run_id, user_id, employee_name, base_salary, allowances, gross, income_tax, pension_employee, pension_employer, other_deductions, net_pay)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
                 [
-                    tId, runId, emp.user_id, base, transport, housing, other, 
-                    gross, taxable, income_tax, pension_employee, pension_employer, net
+                    tId, runId, emp.user_id, emp.full_name ?? 'Employee',
+                    round2(base), round2(allowances), round2(gross),
+                    round2(income_tax), round2(pension_employee), round2(pension_employer), round2(other_deductions), round2(net)
                 ]
             );
         }
         
         const updateRes = await client.query(
             `UPDATE payroll_runs SET total_gross = $1, total_net = $2 WHERE id = $3 AND tenant_id = $4 RETURNING *`,
-            [totalGross, totalNet, runId, tId]
+            [round2(totalGross), round2(totalNet), runId, tId]
         );
         
         await client.query('COMMIT');
         
         const itemsRes = await query(
-            `SELECT * FROM payroll_items WHERE run_id = $1 AND tenant_id = $2`, 
+            `SELECT * FROM payroll_items WHERE payroll_run_id = $1 AND tenant_id = $2 ORDER BY employee_name`, 
             [runId, tId]
         );
         
-        res.status(201).json({ run: updateRes.rows[0], items: itemsRes });
+        // The UI reads the run and its items as one object (`run.items`).
+        res.status(201).json({ run: { ...updateRes.rows[0], items: itemsRes }, items: itemsRes });
     } catch (err) {
         await client.query('ROLLBACK');
         throw err;
@@ -206,13 +220,13 @@ router.get('/runs', asyncHandler(async (req, res) => {
     const sql = `
         SELECT pr.*, COUNT(pi.id)::int as item_count 
         FROM payroll_runs pr
-        LEFT JOIN payroll_items pi ON pi.run_id = pr.id AND pi.tenant_id = pr.tenant_id
+        LEFT JOIN payroll_items pi ON pi.payroll_run_id = pr.id AND pi.tenant_id = pr.tenant_id
         WHERE pr.tenant_id = $1
         GROUP BY pr.id
         ORDER BY pr.created_at DESC
     `;
     const runs = await query(sql, [tId]);
-    res.json(runs);
+    res.json({ runs });
 }));
 
 router.get('/runs/:id', asyncHandler(async (req, res) => {
@@ -228,11 +242,11 @@ router.get('/runs/:id', asyncHandler(async (req, res) => {
         `SELECT pi.*, u.full_name, u.email 
          FROM payroll_items pi
          JOIN users u ON pi.user_id = u.id AND pi.tenant_id = u.tenant_id
-         WHERE pi.run_id = $1 AND pi.tenant_id = $2`, 
+         WHERE pi.payroll_run_id = $1 AND pi.tenant_id = $2`, 
         [runId, tId]
     );
     
-    res.json({ run, items });
+    res.json({ run: { ...run, items }, items });
 }));
 
 router.patch('/runs/:id/approve', asyncHandler(async (req, res) => {
@@ -259,7 +273,7 @@ router.patch('/runs/:id/paid', asyncHandler(async (req, res) => {
     if (run.status !== 'approved') throw new AppError(400, 'Only approved runs can be marked as paid', 'BAD_STATE');
     
     const updated = await queryOne(
-        `UPDATE payroll_runs SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+        `UPDATE payroll_runs SET status = 'paid' WHERE id = $1 AND tenant_id = $2 RETURNING *`,
         [runId, tId]
     );
     res.json(updated);
@@ -276,7 +290,7 @@ router.delete('/runs/:id', asyncHandler(async (req, res) => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        await client.query(`DELETE FROM payroll_items WHERE run_id = $1 AND tenant_id = $2`, [runId, tId]);
+        await client.query(`DELETE FROM payroll_items WHERE payroll_run_id = $1 AND tenant_id = $2`, [runId, tId]);
         await client.query(`DELETE FROM payroll_runs WHERE id = $1 AND tenant_id = $2`, [runId, tId]);
         await client.query('COMMIT');
         res.json({ message: 'Payroll run deleted successfully' });
@@ -296,7 +310,7 @@ router.get('/runs/:id/export', asyncHandler(async (req, res) => {
         `SELECT pi.*, u.full_name 
          FROM payroll_items pi
          JOIN users u ON pi.user_id = u.id AND pi.tenant_id = u.tenant_id
-         WHERE pi.run_id = $1 AND pi.tenant_id = $2`, 
+         WHERE pi.payroll_run_id = $1 AND pi.tenant_id = $2`, 
         [runId, tId]
     );
     
@@ -304,21 +318,19 @@ router.get('/runs/:id/export', asyncHandler(async (req, res) => {
         throw new AppError(404, 'No items found to export', 'NOT_FOUND');
     }
     
-    const headers = ['Full Name', 'Base Salary', 'Transport', 'Housing', 'Other', 'Gross', 'Taxable', 'Income Tax', 'Pension (Emp)', 'Pension (Employer)', 'Net Pay'];
+    const headers = ['Employee', 'Base Salary', 'Allowances', 'Gross', 'Income Tax', 'Pension (Emp)', 'Pension (Employer)', 'Other Deductions', 'Net Pay'];
     const csvRows = [headers.join(',')];
     
     for (const item of items) {
         const row = [
-            `"${item.full_name}"`,
+            `"${item.full_name ?? item.employee_name ?? ''}"`,
             item.base_salary,
-            item.transport_allow,
-            item.housing_allow,
-            item.other_allow,
-            item.gross_pay,
-            item.taxable_income,
+            item.allowances,
+            item.gross,
             item.income_tax,
             item.pension_employee,
             item.pension_employer,
+            item.other_deductions,
             item.net_pay
         ];
         csvRows.push(row.join(','));

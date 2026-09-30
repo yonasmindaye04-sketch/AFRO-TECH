@@ -1,4 +1,4 @@
-﻿# Contributing to AFRO-TECH Portfolio
+# Contributing to AFRO-TECH Portfolio
 
 Thank you for your interest in contributing! This document outlines the process and standards for contributing to the AFRO-TECH portfolio website.
 

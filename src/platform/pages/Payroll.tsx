@@ -211,7 +211,7 @@ function RunPayrollTab(): JSX.Element {
     setError(null)
     setResult(null)
     try {
-      const res = await api.post<{ run: RunDetail }>('/payroll/run', { period_header: periodLabel, frequency })
+      const res = await api.post<{ run: RunDetail }>('/payroll/run', { period_label: periodLabel, frequency })
       setResult(res.run)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate payroll')

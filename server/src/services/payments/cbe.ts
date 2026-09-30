@@ -1,4 +1,4 @@
-﻿import crypto from 'node:crypto'
+import crypto from 'node:crypto'
 
 /**
  * CBE Birr (Commercial Bank of Ethiopia) payment client - placeholder.

@@ -135,7 +135,7 @@ export default function ReceiptScanner({ onApply, onClose }: Props): JSX.Element
     setProgress(0)
     try {
       const { createWorker, OEM } = await import('tesseract.js')
-      const worker = await createWorker('eng', OEM.LSTM, {
+      const worker = await createWorker('eng', OEM.LSTM_ONLY, {
         logger: (m: { status: string; progress: number }) => {
           if (m.status === 'recognizing text') setProgress(Math.round(m.progress * 100))
         },

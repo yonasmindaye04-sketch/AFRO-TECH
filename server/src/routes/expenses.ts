@@ -203,7 +203,9 @@ router.post('/', requirePermission('expenses.manage'), validateBody(expenseCreat
   const data = req.body;
   const recordedBy = req.user!.id;
   const userRole = (req.user as any).role;
-  const defaultStatus = userRole === 'admin' ? 'approved' : 'pending';
+  // 'admin' is not a role in this system — workspace owners and platform admins
+  // auto-approve, everyone else submits an expense for approval.
+  const defaultStatus = userRole === 'owner' || userRole === 'afrotech_admin' ? 'approved' : 'pending';
   
   const status = data.status || defaultStatus;
   const spentAt = data.spent_at || new Date().toISOString();

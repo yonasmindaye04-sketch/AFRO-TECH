@@ -1,4 +1,4 @@
-﻿import crypto from 'crypto'
+import crypto from 'crypto'
 import type { PoolClient } from 'pg'
 import { pool } from '../config/db.js'
 import { AppError } from '../utils/helpers.js'

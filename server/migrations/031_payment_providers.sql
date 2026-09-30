@@ -1,4 +1,4 @@
-﻿-- ===========================================================
+-- ===========================================================
 -- AFRO Suite v1.7 - Payment providers ported from yekis:
 -- Telebirr, M-Pesa (Safaricom ET) and CBE Birr alongside Chapa.
 -- The payments.provider / payments.provider_ref columns already

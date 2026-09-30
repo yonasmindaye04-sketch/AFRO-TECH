@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Teaching Activity module — integration tests.
  *
  * Requires a reachable Postgres (server/.env) with all migrations applied.

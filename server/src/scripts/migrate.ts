@@ -21,7 +21,10 @@ async function run(): Promise<void> {
       console.log(`= ${file} already applied`)
       continue
     }
-    const sql = await readFile(path.join(migrationsDir, file), 'utf8')
+    // Strip a leading UTF-8 BOM if present: Postgres rejects the U+FEFF
+    // character with "syntax error at or near", and editors on Windows add
+    // BOMs silently, so never assume a migration file is byte-clean.
+    const sql = (await readFile(path.join(migrationsDir, file), 'utf8')).replace(/^\uFEFF/, '')
     try {
       await pool.query(sql)
       await pool.query(`INSERT INTO schema_migrations (name) VALUES ($1)`, [file])
