@@ -207,6 +207,25 @@ Turns the platform into a Telegram-native assistant: push alerts for low stock, 
 
 Security notes: `initDataUnsafe` is never trusted; only the HMAC-verified `initData` with a 24h freshness window authenticates. The webhook validates Telegram's secret token header.
 
+### Tenant bot tokens (multi-tenant Bot Studio)
+
+Tenant-registered bots are stored **encrypted at rest**. Set the key before first production boot:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # → BOT_TOKEN_ENCRYPTION_KEY
+```
+
+- **Required in production.** Without it the server logs an error at boot and refuses to store new bot tokens.
+- **Stable, not regenerable.** Tokens are sealed with AES-256-GCM; rotating the key makes existing sealed tokens unreadable and tenants must re-register their bots.
+- After upgrading an existing database, seal the legacy plaintext tokens once:
+
+```bash
+npm run migrate --prefix server
+npm run seal:bot-tokens --prefix server
+```
+
+Tenant resolution for the Mini App: the tenant is derived from whichever bot token validates the `initData` HMAC — `bot_id`/`tenant_id` URL params and the `?startapp=<slug>` deep-link value are treated as routing hints only, never as identity. `POST /api/v1/telegram/resolve` (rate-limited, unauthenticated by design) returns the tenant's public branding for the pre-login shell; `POST /api/v1/telegram/verify` still requires a Telegram-linked account.
+
 ## 8. Multi-tenancy notes
 
 - Every company registers itself at `/app/register` → gets an isolated workspace with a 45-day trial (`TRIAL_DAYS` in `.env`).

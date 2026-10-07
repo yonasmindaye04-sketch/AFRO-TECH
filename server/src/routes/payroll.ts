@@ -59,7 +59,7 @@ router.get('/my-payslips', asyncHandler(async (req, res) => {
 }));
 
 // Apply role restrictions for management routes
-router.use(requireRole('owner', 'admin'));
+router.use(requireRole('owner'));
 
 router.get('/employees', asyncHandler(async (req, res) => {
     const tId = tenantId(req);

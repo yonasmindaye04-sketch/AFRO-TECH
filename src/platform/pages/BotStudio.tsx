@@ -60,6 +60,24 @@ interface Cmd {
   response: string
 }
 
+interface Brand {
+  primary?: string
+  accent?: string
+  logo_url?: string
+  tagline?: string
+}
+
+interface MiniAppConfig {
+  tenant_id: string
+  name: string
+  slug: string
+  bot_slug: string | null
+  currency: string
+  brand: Brand
+  bot_username: string | null
+  launch_url: string | null
+}
+
 export default function BotStudio(): JSX.Element {
   const [bot, setBot] = useState<TenantBot | null | undefined>(undefined)
   const [subscribers, setSubscribers] = useState<Subscriber[]>([])
@@ -83,6 +101,14 @@ export default function BotStudio(): JSX.Element {
   const [broadcasting, setBroadcasting] = useState(false)
   const [confirming, setConfirming] = useState(false)
 
+  const [miniapp, setMiniapp] = useState<MiniAppConfig | null>(null)
+  const [primary, setPrimary] = useState('#1f6f5c')
+  const [accent, setAccent] = useState('#e0a33e')
+  const [logoUrl, setLogoUrl] = useState('')
+  const [tagline, setTagline] = useState('')
+  const [botSlug, setBotSlug] = useState('')
+  const [savingBrand, setSavingBrand] = useState(false)
+
   const reload = async (): Promise<void> => {
     try {
       const r = await api.get<{ bot: TenantBot | null }>('/tenant-bot')
@@ -92,14 +118,21 @@ export default function BotStudio(): JSX.Element {
         setAutoReply(r.bot.auto_reply)
         setLimitPerDay(r.bot.broadcast_limit_per_day)
         setCommands(Array.isArray(r.bot.commands) ? r.bot.commands : [])
-        const [s, h, rc] = await Promise.all([
+        const [s, h, rc, ma] = await Promise.all([
           api.get<{ subscribers: Subscriber[] }>('/tenant-bot/subscribers'),
           api.get<{ broadcasts: Broadcast[] }>('/tenant-bot/broadcasts'),
           api.get<{ receipts: Receipt[] }>('/tenant-bot/receipts'),
+          api.get<{ miniapp: MiniAppConfig }>('/tenant-bot/miniapp'),
         ])
         setSubscribers(Array.isArray(s.subscribers) ? s.subscribers : [])
         setBroadcasts(Array.isArray(h.broadcasts) ? h.broadcasts : [])
         setReceipts(Array.isArray(rc.receipts) ? rc.receipts : [])
+        setMiniapp(ma.miniapp)
+        setPrimary(ma.miniapp.brand.primary ?? '#1f6f5c')
+        setAccent(ma.miniapp.brand.accent ?? '#e0a33e')
+        setLogoUrl(ma.miniapp.brand.logo_url ?? '')
+        setTagline(ma.miniapp.brand.tagline ?? '')
+        setBotSlug(ma.miniapp.bot_slug ?? ma.miniapp.slug)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')
@@ -175,6 +208,27 @@ export default function BotStudio(): JSX.Element {
       await reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save')
+    }
+  }
+
+  const saveBranding = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault()
+    setError(null)
+    setSavingBrand(true)
+    try {
+      const brand: Brand = { primary, accent, tagline: tagline || undefined }
+      if (logoUrl.trim()) brand.logo_url = logoUrl.trim()
+      const res = await api.patch<{ bot_slug: string | null; brand: Brand }>('/tenant-bot/miniapp', {
+        bot_slug: botSlug.trim() || undefined,
+        brand,
+      })
+      setBotSlug(res.bot_slug ?? botSlug)
+      setMiniapp((prev) => (prev ? { ...prev, bot_slug: res.bot_slug, brand: res.brand } : prev))
+      setOk('Mini App branding saved.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save branding')
+    } finally {
+      setSavingBrand(false)
     }
   }
 
@@ -431,11 +485,101 @@ export default function BotStudio(): JSX.Element {
                 )
               }
             >
-              <i className="fa-brands fa-telegram" /> Share on Telegram
-           </button>
-         </div>
-       </Card>
-     </div>
+<i className="fa-brands fa-telegram" /> Share on Telegram
+            </button>
+          </div>
+        </Card>
+      </div>
+
+      <Card>
+        <h2 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <i className="fa-solid fa-palette" style={{ color: '#2AABEE' }} />
+          Mini App branding & launch link
+        </h2>
+        <p style={{ color: 'var(--text-dim)', fontSize: '.9rem', lineHeight: 1.6, marginBottom: 16 }}>
+          These colours paint your Mini App the moment a customer opens it in Telegram — before they sign in.
+        </p>
+
+        <form onSubmit={saveBranding}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 14 }}>
+            <Field label="Primary colour">
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="color"
+                  value={primary}
+                  onChange={(e) => setPrimary(e.target.value)}
+                  aria-label="Primary colour"
+                  style={{ width: 46, height: 40, padding: 2, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--input)' }}
+                />
+                <input className="pl-input" value={primary} onChange={(e) => setPrimary(e.target.value)} pattern="#[0-9a-fA-F]{3,6}" />
+              </div>
+            </Field>
+            <Field label="Accent colour">
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="color"
+                  value={accent}
+                  onChange={(e) => setAccent(e.target.value)}
+                  aria-label="Accent colour"
+                  style={{ width: 46, height: 40, padding: 2, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--input)' }}
+                />
+                <input className="pl-input" value={accent} onChange={(e) => setAccent(e.target.value)} pattern="#[0-9a-fA-F]{3,6}" />
+              </div>
+            </Field>
+          </div>
+
+          <Field label="Tagline">
+            <input
+              className="pl-input"
+              value={tagline}
+              onChange={(e) => setTagline(e.target.value)}
+              maxLength={140}
+              placeholder="Fresh bread daily — order in Telegram"
+            />
+          </Field>
+
+          <Field label="Logo URL (HTTPS)">
+            <input
+              className="pl-input"
+              value={logoUrl}
+              onChange={(e) => setLogoUrl(e.target.value)}
+              placeholder="https://cdn.example.com/logo.png"
+            />
+          </Field>
+
+          <Field label="Telegram link slug">
+            <input
+              className="pl-input"
+              value={botSlug}
+              onChange={(e) => setBotSlug(e.target.value)}
+              pattern="[a-z0-9][a-z0-9-]{1,48}"
+              placeholder="my-store"
+            />
+          </Field>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
+            <button className="pl-btn pl-btn-primary" type="submit" disabled={savingBrand}>
+              {savingBrand ? 'Saving…' : 'Save branding'}
+            </button>
+            {miniapp?.launch_url && (
+              <a
+                className="pl-btn pl-btn-ghost"
+                href={miniapp.launch_url}
+                target="_blank"
+                rel="noreferrer"
+                style={{ textDecoration: 'none' }}
+              >
+                <i className="fa-solid fa-arrow-up-right-from-square" /> Test launch link
+              </a>
+            )}
+          </div>
+          {miniapp?.launch_url && (
+            <p style={{ color: 'var(--text-dim)', fontSize: '.82rem', marginTop: 10, wordBreak: 'break-all' }}>
+              Customers open your app with: <code>{miniapp.launch_url}</code>
+            </p>
+          )}
+        </form>
+      </Card>
 
       <Card>
         <h2 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>

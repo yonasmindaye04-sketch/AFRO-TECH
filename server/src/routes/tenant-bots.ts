@@ -2,8 +2,10 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { query, queryOne } from '../config/db.js'
 import { asyncHandler, AppError } from '../utils/helpers.js'
+import { encryptSecret } from '../utils/crypto.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
 import { validateBody } from '../middleware/validate.js'
+import { getMiniAppTenant } from '../services/miniApp.js'
 import {
   validateBotToken,
   getTenantBotByTenant,
@@ -103,11 +105,11 @@ router.post(
     const existing = await getTenantBotByTenant(tid)
     const row = await queryOne<{ id: string; bot_username: string; is_active: boolean; webhook_secret: string }>(
       existing
-        ? `UPDATE tenant_bots SET bot_token=$2, bot_id=$3, bot_username=$4, is_active=true, updated_at=now()
+        ? `UPDATE tenant_bots SET bot_token_enc=$2, bot_token=NULL, bot_id=$3, bot_username=$4, is_active=true, updated_at=now()
            WHERE tenant_id=$1 RETURNING id, bot_username, is_active, webhook_secret`
-        : `INSERT INTO tenant_bots (tenant_id, bot_token, bot_id, bot_username) VALUES ($1, $2, $3, $4)
+        : `INSERT INTO tenant_bots (tenant_id, bot_token_enc, bot_id, bot_username) VALUES ($1, $2, $3, $4)
            RETURNING id, bot_username, is_active, webhook_secret`,
-      [tid, token, me.id, me.username]
+      [tid, encryptSecret(token), me.id, me.username]
     )
     if (!row) throw new AppError(500, 'Could not save the bot', 'INTERNAL')
     const bot = await queryOne<import('../services/tenantBot.js').TenantBotRow>(`SELECT * FROM tenant_bots WHERE id = $1`, [row.id])
@@ -314,6 +316,86 @@ router.get(
     if (!bot) throw new AppError(404, 'Register a bot first', 'NO_BOT')
     const rows = await listBroadcasts(bot.id)
     res.json({ broadcasts: rows })
+  })
+)
+
+/** GET /api/v1/tenant-bot/miniapp — branding the Mini App renders (owner) */
+router.get(
+  '/miniapp',
+  requireRole('owner'),
+  asyncHandler(async (req, res) => {
+    const tenant = await getMiniAppTenant(req.user!.tenant_id!)
+    if (!tenant) throw new AppError(404, 'Workspace not found', 'TENANT_MISSING')
+    const slug = await queryOne<{ bot_slug: string | null }>(`SELECT bot_slug FROM tenants WHERE id = $1`, [tenant.id])
+    res.json({
+      miniapp: {
+        tenant_id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        bot_slug: slug?.bot_slug ?? null,
+        currency: tenant.currency,
+        brand: tenant.brand,
+        bot_username: tenant.bot_username,
+        launch_url: tenant.bot_username
+          ? `https://t.me/${tenant.bot_username}?startapp=${slug?.bot_slug ?? tenant.slug}`
+          : null,
+      },
+    })
+  })
+)
+
+/** PATCH /api/v1/tenant-bot/miniapp — set brand colours/logo/deep-link slug (owner) */
+router.patch(
+  '/miniapp',
+  requireRole('owner'),
+  validateBody(
+    z.object({
+      bot_slug: z
+        .string()
+        .trim()
+        .toLowerCase()
+        .regex(/^[a-z0-9][a-z0-9-]{1,48}$/, 'Use lowercase letters, numbers and dashes (3-49 chars)')
+        .optional(),
+      brand: z
+        .object({
+          primary: z.string().regex(/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i, 'Use a hex colour like #1f6f5c').optional(),
+          accent: z.string().regex(/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i, 'Use a hex colour like #e0a33e').optional(),
+          logo_url: z
+            .string()
+            .url()
+            .max(500)
+            .refine((u) => u.startsWith('https://'), 'Logo must be served over HTTPS')
+            .optional(),
+          tagline: z.string().trim().max(140).optional(),
+        })
+        .partial()
+        .optional(),
+    })
+  ),
+  asyncHandler(async (req, res) => {
+    const { brand, bot_slug } = req.body as { brand?: Record<string, unknown>; bot_slug?: string }
+
+    if (bot_slug) {
+      const taken = await queryOne<{ id: string }>(
+        `SELECT id FROM tenants WHERE bot_slug = $1 AND id <> $2`,
+        [bot_slug, req.user!.tenant_id]
+      )
+      if (taken) throw new AppError(409, 'That Telegram link slug is already used by another workspace.', 'SLUG_TAKEN')
+      await query(`UPDATE tenants SET bot_slug = $2, updated_at = now() WHERE id = $1`, [req.user!.tenant_id, bot_slug])
+    }
+
+    if (brand && Object.keys(brand).length) {
+      await query(
+        `UPDATE tenants SET brand = brand || $2::jsonb, updated_at = now() WHERE id = $1`,
+        [req.user!.tenant_id, JSON.stringify(brand)]
+      )
+    }
+
+    const row = await queryOne<{ bot_slug: string | null; brand: Record<string, unknown> }>(
+      `SELECT bot_slug, brand FROM tenants WHERE id = $1`,
+      [req.user!.tenant_id]
+    )
+    res.json({ bot_slug: row?.bot_slug ?? null, brand: row?.brand ?? {} })
   })
 )
 

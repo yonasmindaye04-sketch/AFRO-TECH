@@ -4,7 +4,7 @@ import { useAuth } from './AuthContext'
 import { ApiError, api } from './api'
 import { Field } from './ui'
 import TelegramWidgetButton from './TelegramWidgetButton'
-import { initTelegramUi, isTelegram, loadTelegramSdk } from './utils/telegram'
+import { bootstrapMiniApp } from './miniAppBoot'
 
 interface Providers {
   google: boolean
@@ -34,24 +34,28 @@ export default function Login(): JSX.Element {
   // The SDK is loaded on demand (async) so it never blocks page rendering.
   useEffect(() => {
     let cancelled = false
-    void loadTelegramSdk().then(() => {
-      if (cancelled || !isTelegram()) return
-      initTelegramUi()
-      setTgStatus('working')
-      const initData = (window as unknown as { Telegram: { WebApp: { initData: string } } }).Telegram.WebApp.initData
-      const params = new URLSearchParams(window.location.search)
-      const tenantId = params.get('tenant_id') || undefined
-      const botId = params.get('bot_id') || undefined
+    void bootstrapMiniApp()
+      .then(({ tenantId: resolvedTenantId }) => {
+        if (cancelled) return
+        // A failed resolve means this isn't a real Telegram launch (or the
+        // link is unknown) — fall through to the normal sign-in form.
+        if (!resolvedTenantId) return
+        setTgStatus('working')
+        const app = (window as unknown as { Telegram: { WebApp: { initData: string } } }).Telegram.WebApp
+        const params = new URLSearchParams(window.location.search)
+        const tenantId = params.get('tenant_id') || resolvedTenantId
+        const botId = params.get('bot_id') || undefined
+        const startParam = app.initData ? new URLSearchParams(app.initData).get('start_param') ?? undefined : undefined
 
-      api
-        .post<{ token: string; me: import('./api').Me }>('/telegram/verify', { initData, tenantId, botId })
-        .then((res) => {
-          if (cancelled) return
-          persistFromTelegram(res.token, res.me)
-          navigate('/app', { replace: true })
-        })
-        .catch(() => { if (!cancelled) setTgStatus('failed') })
-    })
+        api
+          .post<{ token: string; me: import('./api').Me }>('/telegram/verify', { initData: app.initData, tenantId, botId, slug: startParam })
+          .then((res) => {
+            if (cancelled) return
+            persistFromTelegram(res.token, res.me)
+            navigate('/app', { replace: true })
+          })
+          .catch(() => { if (!cancelled) setTgStatus('failed') })
+      })
     return () => { cancelled = true }
   }, [navigate, persistFromTelegram])
 

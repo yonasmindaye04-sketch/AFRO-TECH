@@ -1,6 +1,6 @@
 import { Worker } from 'bullmq'
 import { pool } from '../config/db.js'
-import { marketingQueues, redisConnection } from '../config/queue.js'
+import { bullConnection } from '../config/queue.js'
 import { ResendEmailChannel } from '../channels/email/ResendEmailChannel.js'
 import { EthioTelecomSmppChannel } from '../channels/sms/EthioTelecomSmppChannel.js'
 import type { MarketingJobData } from '../config/queue.js'
@@ -72,16 +72,16 @@ async function processJob(job: { data: MarketingJobData; attemptsMade: number })
   }
 }
 
-const emailWorker = redisConnection
+const emailWorker = bullConnection
   ? new Worker('marketing-email', processJob, {
-      connection: redisConnection,
+      connection: bullConnection,
       concurrency: 5,
     })
   : null
 
-const smsWorker = redisConnection
+const smsWorker = bullConnection
   ? new Worker('marketing-sms', processJob, {
-      connection: redisConnection,
+      connection: bullConnection,
       concurrency: 3,
     })
   : null

@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer'
 import { pool, query, queryOne } from '../config/db.js'
 import { escapeHtml } from './telegram.js'
+import { getTenantBotToken } from './tenantBot.js'
 
 export interface GuardianNoticePayload {
   tenantId: string
@@ -153,13 +154,14 @@ export async function sendGuardianTelegram({
   let tenantBotFound = false
   if (tenantId) {
     try {
-      const tenantBot = await queryOne<{ id: string; bot_token: string; is_active: boolean }>(
-        `SELECT id, bot_token, is_active FROM tenant_bots WHERE tenant_id = $1 AND is_active = true LIMIT 1`,
+      const tenantBot = await queryOne<{ id: string }>(
+        `SELECT id FROM tenant_bots WHERE tenant_id = $1 AND is_active = true LIMIT 1`,
         [tenantId]
       )
-      if (tenantBot?.bot_token) {
+      const tenantToken = await getTenantBotToken(tenantId)
+      if (tenantBot && tenantToken) {
         tenantBotFound = true
-        const res = await fetch(`https://api.telegram.org/bot${tenantBot.bot_token}/sendMessage`, {
+        const res = await fetch(`https://api.telegram.org/bot${tenantToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

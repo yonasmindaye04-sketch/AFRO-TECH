@@ -1,12 +1,33 @@
 import { Router } from 'express'
+import rateLimit from 'express-rate-limit'
 import { z } from 'zod'
 import { queryOne } from '../config/db.js'
 import { asyncHandler, AppError } from '../utils/helpers.js'
 import { authenticate, signToken } from '../middleware/auth.js'
 import { validateBody } from '../middleware/validate.js'
-import { createLinkCode, getMe, handleUpdate, telegramEnabled, verifyInitData, verifyInitDataWithToken, WEBHOOK_SECRET } from '../services/telegram.js'
+import { createLinkCode, getMe, handleUpdate, telegramEnabled, WEBHOOK_SECRET } from '../services/telegram.js'
+import {
+  getMiniAppTenant,
+  logMiniAppSession,
+  normaliseSlug,
+  requireTenant,
+  resolveMiniAppTenant,
+} from '../services/miniApp.js'
 
 const router = Router()
+
+/**
+ * initData endpoints are unauthenticated by design — the HMAC check is the
+ * auth. Rate limit them per IP so a leaked/hostile client can't hammer the
+ * signature path (each attempt costs an HMAC plus up to 3 DB lookups).
+ */
+const initAppLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many requests — slow down and try again shortly.', code: 'RATE_LIMITED' },
+})
 
 /** GET /config — bot username + whether this account is linked (auth) */
 router.get(
@@ -82,48 +103,37 @@ router.post(
  * Validates the signed initData server-side (HMAC + freshness) against
  * either the company's tenant bot or the central platform bot.
  */
+const initDataSchema = z.object({
+  initData: z.string().min(20),
+  botId: z.string().uuid().optional(),
+  tenantId: z.string().uuid().optional(),
+  slug: z.string().trim().min(2).max(64).optional(),
+})
+
 router.post(
   '/verify',
-  validateBody(
-    z.object({
-      initData: z.string().min(20),
-      botId: z.string().uuid().optional(),
-      tenantId: z.string().uuid().optional(),
-    })
-  ),
+  initAppLimiter,
+  validateBody(initDataSchema),
   asyncHandler(async (req, res) => {
-    const { initData, botId, tenantId } = req.body as {
-      initData: string
-      botId?: string
-      tenantId?: string
-    }
+    const { initData, botId, tenantId, slug } = req.body as z.infer<typeof initDataSchema>
 
-    let parsed: { userId: number; firstName: string; username?: string } | null = null
-    let targetTenantId: string | null = tenantId || null
-
-    // 1. Try verifying with tenant bot if botId or tenantId is provided
-    if (botId || tenantId) {
-      const tenantBot = await queryOne<{ id: string; tenant_id: string; bot_token: string }>(
-        `SELECT id, tenant_id, bot_token FROM tenant_bots
-         WHERE (${botId ? 'id = $1' : 'tenant_id = $1'}) AND is_active = true`,
-        [botId || tenantId]
-      )
-      if (tenantBot) {
-        targetTenantId = tenantBot.tenant_id
-        parsed = verifyInitDataWithToken(initData, tenantBot.bot_token)
-      }
-    }
-
-    // 2. Fallback to verifying with the platform bot token
-    if (!parsed && telegramEnabled()) {
-      parsed = verifyInitData(initData)
-    }
+    // Resolve the tenant server-side. The bot that signed initData IS the
+    // authority on which store this is: the hinted bot first, then the
+    // startapp slug, then the platform bot. A client-supplied tenant_id only
+    // ever selects which token to check — it is never trusted as identity.
+    const resolution = await resolveMiniAppTenant({ initData, botId, tenantId, slug })
+    const parsed = resolution.parsed
+    const targetTenantId = resolution.tenantId ?? tenantId ?? null
 
     if (!parsed) {
       throw new AppError(401, 'Telegram signature verification failed', 'TG_BAD_SIGNATURE')
     }
 
-    // 3. Find linked user — prioritize matching the specific tenant if known
+    // A tenant identified by bot signature or deep-link slug is authoritative:
+    // only accept an account linked to THAT tenant. Falling back to "any tenant
+    // with this chat id" would let store A's bot mint a session for store B.
+    const tenantIsAuthoritative = resolution.via === 'bot_token' || resolution.via === 'start_param'
+
     let user: { id: string; email: string; full_name: string; role: 'owner' | 'staff' | 'afrotech_admin'; tenant_id: string | null } | null = null
 
     if (targetTenantId) {
@@ -134,7 +144,8 @@ router.post(
       )
     }
 
-    if (!user) {
+    if (!user && !tenantIsAuthoritative) {
+      // Platform-bot launch with no reliable tenant signal — match on chat id.
       user = await queryOne(
         `SELECT id, email, full_name, role, tenant_id FROM users
          WHERE telegram_chat_id = $1 AND is_active = true LIMIT 1`,
@@ -150,7 +161,51 @@ router.post(
       )
     }
 
-    res.json({ token: signToken(user), me: user })
+    const tenant = user.tenant_id ? await getMiniAppTenant(user.tenant_id) : null
+    res.json({ token: signToken(user), me: user, tenant })
+  })
+)
+
+/**
+ * POST /resolve — tenant branding for the Mini App shell.
+ *
+ * Called before (and independently of) login so the UI can paint the right
+ * colours/logo while the user is still on the sign-in screen. Returns only
+ * public config, and only after initData has been signature-verified.
+ */
+router.post(
+  '/resolve',
+  initAppLimiter,
+  validateBody(initDataSchema),
+  asyncHandler(async (req, res) => {
+    const { initData, botId, tenantId, slug } = req.body as z.infer<typeof initDataSchema>
+    const resolution = await resolveMiniAppTenant({ initData, botId, tenantId, slug })
+    if (!resolution.parsed) {
+      throw new AppError(401, 'Telegram signature verification failed', 'TG_BAD_SIGNATURE')
+    }
+
+    const tenant = resolution.tenantId ? await getMiniAppTenant(resolution.tenantId) : null
+    if (!tenant) throw new AppError(404, 'This Telegram link is not linked to a workspace.', 'TENANT_UNKNOWN')
+
+    await logMiniAppSession(tenant.id, resolution.parsed.userId, normaliseSlug(resolution.parsed.startParam) ?? null, resolution.via)
+
+    res.json({
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        business_type: tenant.business_type,
+        currency: tenant.currency,
+        brand: tenant.brand,
+        bot_username: tenant.bot_username,
+      },
+      telegram: {
+        user_id: resolution.parsed.userId,
+        first_name: resolution.parsed.firstName,
+        username: resolution.parsed.username ?? null,
+      },
+      resolved_via: resolution.via,
+    })
   })
 )
 

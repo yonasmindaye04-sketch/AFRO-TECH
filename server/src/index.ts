@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit'
 import nodemailer from 'nodemailer'
 import { pool } from './config/db.js'
 import { errorHandler, notFound } from './middleware/validate.js'
+import { assertEncryptionConfigured } from './utils/crypto.js'
 
 import authRoutes from './routes/auth.js'
 import tenantRoutes from './routes/tenant.js'
@@ -124,6 +125,11 @@ app.use(errorHandler)
 const port = Number(process.env.PORT || 4000)
 app.listen(port, async () => {
   console.log(`AFRO Suite API listening on :${port} (${process.env.NODE_ENV || 'development'})`)
+  try {
+    assertEncryptionConfigured()
+  } catch (err) {
+    console.error('[security]', err instanceof Error ? err.message : err)
+  }
   // Platform bot: webhook in production, long-polling in development.
   if (telegramEnabled()) {
     const isProduction = process.env.NODE_ENV === 'production'

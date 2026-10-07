@@ -1,6 +1,7 @@
 import { pool, query, queryOne } from '../config/db.js'
 import { logAudit } from '../utils/audit.js'
 import { AppError } from '../utils/helpers.js'
+import { decryptSecret } from '../utils/crypto.js'
 import { escapeHtml } from './telegram.js'
 import { bt, isBotLang, type BotLang } from './botI18n.js'
 
@@ -36,6 +37,7 @@ export async function validateBotToken(token: string): Promise<{ id: number; use
 export interface TenantBotRow {
   id: string
   tenant_id: string
+  /** Decrypted token. Populated by getTenantBotBy*; raw ciphertext is in resolved_token. */
   bot_token: string
   bot_id: number
   bot_username: string
@@ -52,12 +54,47 @@ export interface TenantBotRow {
   transport: 'polling' | 'webhook'
 }
 
+/**
+ * SQL fragment that yields the bot token regardless of whether it is still
+ * plaintext (pre-034 rows) or sealed in bot_token_enc. Callers pass the
+ * result through decryptBotToken before using it.
+ */
+export const BOT_TOKEN_SQL = `COALESCE(bot_token_enc, bot_token)`
+
+/** Decrypt a token read via BOT_TOKEN_SQL. Legacy plaintext passes through. */
+export function decryptBotToken(value: string | null | undefined): string {
+  return decryptSecret(value)
+}
+
+/** Decrypt bot_token in place so callers can keep using `row.bot_token`. */
+function withToken<T extends { resolved_token?: string | null; bot_token?: string | null }>(row: T | null): (T & { bot_token: string }) | null {
+  if (!row) return null
+  return { ...row, bot_token: decryptBotToken(row.resolved_token ?? row.bot_token) } as T & { bot_token: string }
+}
+
 export async function getTenantBotByTenant(tenantId: string): Promise<TenantBotRow | null> {
-  return queryOne<TenantBotRow>(`SELECT * FROM tenant_bots WHERE tenant_id = $1`, [tenantId])
+  const row = await queryOne<TenantBotRow & { resolved_token: string | null }>(
+    `SELECT *, ${BOT_TOKEN_SQL} AS resolved_token FROM tenant_bots WHERE tenant_id = $1`,
+    [tenantId]
+  )
+  return withToken(row) as TenantBotRow | null
 }
 
 export async function getTenantBotByBotId(botId: string): Promise<TenantBotRow | null> {
-  return queryOne<TenantBotRow>(`SELECT * FROM tenant_bots WHERE id = $1`, [botId])
+  const row = await queryOne<TenantBotRow & { resolved_token: string | null }>(
+    `SELECT *, ${BOT_TOKEN_SQL} AS resolved_token FROM tenant_bots WHERE id = $1`,
+    [botId]
+  )
+  return withToken(row) as TenantBotRow | null
+}
+
+/** Fetch only the decrypted token for a tenant's active bot (used by notifiers). */
+export async function getTenantBotToken(tenantId: string): Promise<string | null> {
+  const row = await queryOne<{ resolved_token: string | null }>(
+    `SELECT ${BOT_TOKEN_SQL} AS resolved_token FROM tenant_bots WHERE tenant_id = $1 AND is_active = true LIMIT 1`,
+    [tenantId]
+  )
+  return row?.resolved_token ? decryptBotToken(row.resolved_token) : null
 }
 
 export interface SubscriberRow {
@@ -108,11 +145,14 @@ export async function deactivateSubscriber(botId: string, chatId: number): Promi
 export interface BroadcastResult { delivered: number; failed: number }
 
 export async function sendBroadcast(tenantId: string, botId: string, message: string, sentBy: string): Promise<BroadcastResult> {
-  const bot = await queryOne<{ bot_token: string; last_broadcast_at: Date | null; broadcast_limit_per_day: number }>(
-    `SELECT bot_token, last_broadcast_at, broadcast_limit_per_day FROM tenant_bots WHERE id = $1 AND tenant_id = $2 AND is_active = true`,
+  const row = await queryOne<{ resolved_token: string | null; last_broadcast_at: Date | null; broadcast_limit_per_day: number }>(
+    `SELECT ${BOT_TOKEN_SQL} AS resolved_token, last_broadcast_at, broadcast_limit_per_day
+     FROM tenant_bots WHERE id = $1 AND tenant_id = $2 AND is_active = true`,
     [botId, tenantId]
   )
-  if (!bot) throw new AppError(404, 'Bot not found or not active', 'INACTIVE')
+  if (!row) throw new AppError(404, 'Bot not found or not active', 'INACTIVE')
+  const bot = { ...row, bot_token: decryptBotToken(row.resolved_token) }
+  if (!bot.bot_token) throw new AppError(409, 'Bot token could not be decrypted — re-register the bot.', 'NO_TOKEN')
 
   // Daily rate limit
   const sinceMidnight = await queryOne<{ n: string }>(
@@ -176,10 +216,15 @@ export function tenantBotWebhookUrl(bot: Pick<TenantBotRow, 'id' | 'webhook_secr
   return `${publicApiUrl()}${tenantBotWebhookPath(bot)}`
 }
 
-/** The Mini App URL with company context (used by the menu button + in-line buttons). */
+/**
+ * The Mini App URL with company context (menu button + in-line buttons).
+ * `bot_id` is the primary hint; the deep-link `startapp` slug is an additive
+ * fallback for launches that only carry the slug.
+ */
 export function tenantBotAppUrl(bot: Pick<TenantBotRow, 'id' | 'tenant_id'>): string {
-  const baseAppUrl = (process.env.TELEGRAM_WEBAPP_URL || `${(process.env.PUBLIC_URL || '').replace(/\/$/, '')}/app`)
-  return `${baseAppUrl}${baseAppUrl.includes('?') ? '&' : '?'}tenant_id=${bot.tenant_id}&bot_id=${bot.id}`
+  const baseAppUrl = process.env.TELEGRAM_WEBAPP_URL || `${(process.env.PUBLIC_URL || '').replace(/\/$/, '')}/app`
+  const sep = baseAppUrl.includes('?') ? '&' : '?'
+  return `${baseAppUrl}${sep}tenant_id=${bot.tenant_id}&bot_id=${bot.id}`
 }
 
 /** Publish the bot's command list so Telegram shows the "/" autocomplete (ported from yekis bot startBot). */

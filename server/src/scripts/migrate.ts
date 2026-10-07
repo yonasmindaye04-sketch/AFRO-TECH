@@ -21,7 +21,9 @@ async function run(): Promise<void> {
       console.log(`= ${file} already applied`)
       continue
     }
-    const sql = await readFile(path.join(migrationsDir, file), 'utf8')
+    // Strip UTF-8 BOM if present — PostgreSQL rejects it ("syntax error at or near \"\"" at position 1)
+    const rawSql = await readFile(path.join(migrationsDir, file), 'utf8')
+    const sql = rawSql.charCodeAt(0) === 0xfeff ? rawSql.slice(1) : rawSql
     try {
       await pool.query(sql)
       await pool.query(`INSERT INTO schema_migrations (name) VALUES ($1)`, [file])
