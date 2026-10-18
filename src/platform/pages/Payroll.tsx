@@ -129,8 +129,7 @@ function EmployeesTab(): JSX.Element {
     try {
       const profile_values: Record<string, string | number> = {}
       for (const [k, v] of Object.entries(form)) {
-        const num = Number(v)
-        profile_values[k] = isNaN(num) ? v : num
+        profile_values[k] = v
       }
 
       await api.post(`/payroll/employees/${editUser.id}`, { profile_values })
@@ -273,13 +272,16 @@ function RunPayrollTab(): JSX.Element {
           {result.items && result.items.length > 0 && (
             <DataTable
               columns={[
-                { key: 'employee_name', header: 'Employee', render: (r) => r.employee_name },
-                { key: 'base_salary', header: 'Base', render: (r) => fmtMoney(r.base_salary) },
-                { key: 'allowances', header: 'Allowances', render: (r) => fmtMoney(r.allowances) },
-                { key: 'gross', header: 'Gross', render: (r) => fmtMoney(r.gross) },
-                { key: 'income_tax', header: 'Tax', render: (r) => fmtMoney(r.income_tax) },
-                { key: 'pension_employee', header: 'Pension', render: (r) => fmtMoney(r.pension_employee) },
-                { key: 'net_pay', header: 'Net Pay', render: (r) => <strong>{fmtMoney(r.net_pay)} ETB</strong> },
+                { key: 'employee_name', header: 'Employee', render: (r: any) => r.employee_name },
+                ...((result as any).run?.components || []).map((c: any) => ({
+                  key: c.code,
+                  header: c.label,
+                  render: (r: any) => {
+                    const val = r.values?.[c.code]
+                    return typeof val === 'number' ? fmtMoney(val) : (val ?? '—')
+                  }
+                })),
+                { key: 'net_pay', header: 'Net Pay', render: (r: any) => <strong>{fmtMoney(r.net_pay)} ETB</strong> }
               ]}
               rows={result.items}
             />
@@ -378,13 +380,16 @@ function HistoryTab(): JSX.Element {
         <Modal open={true} title={`Payroll — ${(detail as any).period_label}`} onClose={() => setDetail(null)}>
           <DataTable
             columns={[
-              { key: 'employee_name', header: 'Employee', render: (r) => r.employee_name },
-              { key: 'base_salary', header: 'Base', render: (r) => fmtMoney(r.base_salary) },
-              { key: 'allowances', header: 'Allow.', render: (r) => fmtMoney(r.allowances) },
-              { key: 'gross', header: 'Gross', render: (r) => fmtMoney(r.gross) },
-              { key: 'income_tax', header: 'Tax', render: (r) => fmtMoney(r.income_tax) },
-              { key: 'pension_employee', header: 'Pension', render: (r) => fmtMoney(r.pension_employee) },
-              { key: 'net_pay', header: 'Net', render: (r) => <strong>{fmtMoney(r.net_pay)}</strong> },
+              { key: 'employee_name', header: 'Employee', render: (r: any) => r.employee_name },
+              ...((detail as any).run?.components || []).map((c: any) => ({
+                key: c.code,
+                header: c.label,
+                render: (r: any) => {
+                  const val = r.values?.[c.code]
+                  return typeof val === 'number' ? fmtMoney(val) : (val ?? '—')
+                }
+              })),
+              { key: 'net_pay', header: 'Net', render: (r: any) => <strong>{fmtMoney(r.net_pay)}</strong> }
             ]}
             rows={detail.items ?? []}
           />
@@ -409,12 +414,10 @@ function MyPayslipsTab(): JSX.Element {
     <DataTable
       columns={[
         { key: 'period_label', header: 'Period', render: (r: any) => r.period_label },
-        { key: 'base_salary', header: 'Base', render: (r) => `${fmtMoney(r.base_salary)} ETB` },
-        { key: 'allowances', header: 'Allowances', render: (r) => `${fmtMoney(r.allowances)} ETB` },
-        { key: 'gross', header: 'Gross', render: (r) => `${fmtMoney(r.gross)} ETB` },
-        { key: 'income_tax', header: 'Tax', render: (r) => `${fmtMoney(r.income_tax)} ETB` },
-        { key: 'pension_employee', header: 'Pension', render: (r) => `${fmtMoney(r.pension_employee)} ETB` },
-        { key: 'net_pay', header: 'Net Pay', render: (r) => <strong style={{ color: '#059669' }}>{fmtMoney(r.net_pay)} ETB</strong> },
+        { key: 'gross', header: 'Gross', render: (r: any) => `${fmtMoney(r.values?.GROSS ?? 0)} ETB` },
+        { key: 'income_tax', header: 'Tax', render: (r: any) => `${fmtMoney(r.values?.INCOME_TAX ?? 0)} ETB` },
+        { key: 'pension_employee', header: 'Pension', render: (r: any) => `${fmtMoney(r.values?.PENSION_EE ?? 0)} ETB` },
+        { key: 'net_pay', header: 'Net Pay', render: (r: any) => <strong style={{ color: '#059669' }}>{fmtMoney(r.net_pay)} ETB</strong> },
         {
           key: 'status', header: 'Status', render: (r) => (
             <span style={{ fontWeight: 700, color: r.status === 'paid' ? '#059669' : r.status === 'approved' ? '#2563eb' : '#d97706' }}>
