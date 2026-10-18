@@ -154,7 +154,7 @@ router.post('/brackets', requireRole('afrotech_admin', 'owner'), validateBody(br
 router.get('/employees', asyncHandler(async (req, res) => {
     const tId = tenantId(req);
     const sql = `
-        SELECT u.id, u.full_name, u.email, es.profile_values, es.is_active
+        SELECT u.id, u.full_name, u.email, u.role, es.profile_values, es.is_active
         FROM users u
         LEFT JOIN employee_salaries es ON es.user_id = u.id AND es.tenant_id = u.tenant_id
         WHERE u.tenant_id = $1 AND u.role != 'patient'
