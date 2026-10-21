@@ -1,4 +1,4 @@
-﻿import { getRedisConnection } from '../../config/queue.js'
+import { getRedisConnection } from '../../config/queue.js'
 
 /**
  * Telebirr Fabric Token Manager.

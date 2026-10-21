@@ -15,6 +15,7 @@ interface Employee {
   housing_allow: number | null
   other_allow: number | null
   pension_pct: number | null
+  profile_values?: Record<string, number>
   is_active: boolean | null
 }
 
@@ -94,21 +95,29 @@ export default function Payroll(): JSX.Element {
 /* ══════════════════ EMPLOYEES TAB ══════════════════ */
 
 function EmployeesTab(): JSX.Element {
-  const { data, loading, reload } = useApiData<{ employees: Employee[] }>('/payroll/employees')
+  const { data: empData, loading: empLoading, reload } = useApiData<{ employees: Employee[] }>('/payroll/employees')
+  const { data: compData, loading: compLoading } = useApiData<{ components: any[] }>('/payroll/components')
   const [editUser, setEditUser] = useState<Employee | null>(null)
-  const [form, setForm] = useState({ base_salary: '', transport_allow: '', housing_allow: '', other_allow: '', pension_pct: '7' })
+  const [form, setForm] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const openEdit = (emp: Employee): void => {
     setEditUser(emp)
-    setForm({
-      base_salary: String(emp.base_salary ?? ''),
-      transport_allow: String(emp.transport_allow ?? '0'),
-      housing_allow: String(emp.housing_allow ?? '0'),
-      other_allow: String(emp.other_allow ?? '0'),
-      pension_pct: String(emp.pension_pct ?? '7'),
-    })
+
+    // Initialize form with existing profile values or defaults for PROFILE components
+    const newForm: Record<string, string> = {}
+    const profileComps = compData?.components?.filter(c => c.source === 'PROFILE') || []
+
+    for (const comp of profileComps) {
+       // If employee has a value, use it, else default to '0'
+       const val = emp.profile_values && emp.profile_values[comp.code] !== undefined
+          ? String(emp.profile_values[comp.code])
+          : '0'
+       newForm[comp.code] = val
+    }
+
+    setForm(newForm)
     setError(null)
   }
 
@@ -118,13 +127,12 @@ function EmployeesTab(): JSX.Element {
     setBusy(true)
     setError(null)
     try {
-      await api.post(`/payroll/employees/${editUser.id}`, {
-        base_salary: Number(form.base_salary),
-        transport_allow: Number(form.transport_allow) || 0,
-        housing_allow: Number(form.housing_allow) || 0,
-        other_allow: Number(form.other_allow) || 0,
-        pension_pct: Number(form.pension_pct) || 7,
-      })
+      const profile_values: Record<string, string | number> = {}
+      for (const [k, v] of Object.entries(form)) {
+        profile_values[k] = v
+      }
+
+      await api.post(`/payroll/employees/${editUser.id}`, { profile_values })
       setEditUser(null)
       void reload()
     } catch (err) {
@@ -134,9 +142,10 @@ function EmployeesTab(): JSX.Element {
     }
   }
 
-  if (loading && !data) return <Spinner />
+  if ((empLoading && !empData) || (compLoading && !compData)) return <Spinner />
 
-  const employees = data?.employees ?? []
+  const employees = empData?.employees ?? []
+  const profileComps = compData?.components?.filter(c => c.source === 'PROFILE').sort((a, b) => a.display_order - b.display_order) || []
 
   return (
     <>
@@ -147,15 +156,17 @@ function EmployeesTab(): JSX.Element {
           columns={[
             { key: 'full_name', header: 'Employee', render: (r) => r.full_name },
             { key: 'role', header: 'Role', render: (r) => r.role },
-            { key: 'base_salary', header: 'Base Salary', render: (r) => r.base_salary ? `${fmtMoney(r.base_salary)} ETB` : '—' },
-            { key: 'allowances', header: 'Allowances', render: (r) => {
-              const total = (r.transport_allow ?? 0) + (r.housing_allow ?? 0) + (r.other_allow ?? 0)
-              return total > 0 ? `${fmtMoney(total)} ETB` : '—'
-            } },
-            { key: 'pension_pct', header: 'Pension %', render: (r) => r.pension_pct != null ? `${r.pension_pct}%` : '—' },
+            ...profileComps.map(c => ({
+              key: c.code,
+              header: c.label,
+              render: (r: any) => {
+                const val = r.profile_values?.[c.code]
+                return val != null ? `${fmtMoney(val)}` : '—'
+              }
+            })),
             {
               key: 'actions', header: '', render: (r) => (
-                <button type="button" className="pl-btn-icon" title="Set salary" aria-label="Set salary" onClick={() => openEdit(r)}>
+                <button type="button" className="pl-btn-icon" title="Set profile values" aria-label="Set profile values" onClick={() => openEdit(r)}>
                   <i className="fa-solid fa-pen" aria-hidden="true" />
                 </button>
               ),
@@ -168,23 +179,20 @@ function EmployeesTab(): JSX.Element {
       {editUser && (
         <Modal open={true} title={`Salary — ${editUser.full_name}`} onClose={() => setEditUser(null)}>
           <form onSubmit={submit}>
-            <Field label="Base Salary (ETB / month)">
-              <input className="pl-input" type="number" min="0" step="0.01" required value={form.base_salary} onChange={(e) => setForm({ ...form, base_salary: e.target.value })} />
-            </Field>
-            <Field label="Transport Allowance">
-              <input className="pl-input" type="number" min="0" step="0.01" value={form.transport_allow} onChange={(e) => setForm({ ...form, transport_allow: e.target.value })} />
-            </Field>
-            <Field label="Housing Allowance">
-              <input className="pl-input" type="number" min="0" step="0.01" value={form.housing_allow} onChange={(e) => setForm({ ...form, housing_allow: e.target.value })} />
-            </Field>
-            <Field label="Other Allowance">
-              <input className="pl-input" type="number" min="0" step="0.01" value={form.other_allow} onChange={(e) => setForm({ ...form, other_allow: e.target.value })} />
-            </Field>
-            <Field label="Employee Pension %">
-              <input className="pl-input" type="number" min="0" max="100" step="0.01" value={form.pension_pct} onChange={(e) => setForm({ ...form, pension_pct: e.target.value })} />
-            </Field>
-            {error && <p style={{ color: '#e07a7a', fontSize: '.87rem' }}>{error}</p>}
-            <div className="pl-form-actions">
+            {profileComps.map(c => (
+              <Field key={c.code} label={c.label}>
+                <input
+                  className="pl-input"
+                  type="text"
+                  value={form[c.code] || ''}
+                  onChange={(e) => setForm({ ...form, [c.code]: e.target.value })}
+                />
+              </Field>
+            ))}
+            {profileComps.length === 0 && <p>No PROFILE components defined in Payroll Engine.</p>}
+
+            {error && <p style={{ color: '#e07a7a', fontSize: '.87rem', marginTop: '1rem' }}>{error}</p>}
+            <div className="pl-form-actions" style={{ marginTop: '1.5rem' }}>
               <button type="button" className="pl-btn pl-btn-ghost" onClick={() => setEditUser(null)}>Cancel</button>
               <button type="submit" className="pl-btn pl-btn-primary" disabled={busy}>{busy ? 'Saving...' : 'Save'}</button>
             </div>
@@ -211,7 +219,7 @@ function RunPayrollTab(): JSX.Element {
     setError(null)
     setResult(null)
     try {
-      const res = await api.post<{ run: RunDetail }>('/payroll/run', { period_header: periodLabel, frequency })
+      const res = await api.post<{ run: RunDetail }>('/payroll/run', { period_label: periodLabel, frequency })
       setResult(res.run)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate payroll')
@@ -264,13 +272,16 @@ function RunPayrollTab(): JSX.Element {
           {result.items && result.items.length > 0 && (
             <DataTable
               columns={[
-                { key: 'employee_name', header: 'Employee', render: (r) => r.employee_name },
-                { key: 'base_salary', header: 'Base', render: (r) => fmtMoney(r.base_salary) },
-                { key: 'allowances', header: 'Allowances', render: (r) => fmtMoney(r.allowances) },
-                { key: 'gross', header: 'Gross', render: (r) => fmtMoney(r.gross) },
-                { key: 'income_tax', header: 'Tax', render: (r) => fmtMoney(r.income_tax) },
-                { key: 'pension_employee', header: 'Pension', render: (r) => fmtMoney(r.pension_employee) },
-                { key: 'net_pay', header: 'Net Pay', render: (r) => <strong>{fmtMoney(r.net_pay)} ETB</strong> },
+                { key: 'employee_name', header: 'Employee', render: (r: any) => r.employee_name },
+                ...((result as any).run?.components || []).map((c: any) => ({
+                  key: c.code,
+                  header: c.label,
+                  render: (r: any) => {
+                    const val = r.values?.[c.code]
+                    return typeof val === 'number' ? fmtMoney(val) : (val ?? '—')
+                  }
+                })),
+                { key: 'net_pay', header: 'Net Pay', render: (r: any) => <strong>{fmtMoney(r.net_pay)} ETB</strong> }
               ]}
               rows={result.items}
             />
@@ -369,13 +380,16 @@ function HistoryTab(): JSX.Element {
         <Modal open={true} title={`Payroll — ${(detail as any).period_label}`} onClose={() => setDetail(null)}>
           <DataTable
             columns={[
-              { key: 'employee_name', header: 'Employee', render: (r) => r.employee_name },
-              { key: 'base_salary', header: 'Base', render: (r) => fmtMoney(r.base_salary) },
-              { key: 'allowances', header: 'Allow.', render: (r) => fmtMoney(r.allowances) },
-              { key: 'gross', header: 'Gross', render: (r) => fmtMoney(r.gross) },
-              { key: 'income_tax', header: 'Tax', render: (r) => fmtMoney(r.income_tax) },
-              { key: 'pension_employee', header: 'Pension', render: (r) => fmtMoney(r.pension_employee) },
-              { key: 'net_pay', header: 'Net', render: (r) => <strong>{fmtMoney(r.net_pay)}</strong> },
+              { key: 'employee_name', header: 'Employee', render: (r: any) => r.employee_name },
+              ...((detail as any).run?.components || []).map((c: any) => ({
+                key: c.code,
+                header: c.label,
+                render: (r: any) => {
+                  const val = r.values?.[c.code]
+                  return typeof val === 'number' ? fmtMoney(val) : (val ?? '—')
+                }
+              })),
+              { key: 'net_pay', header: 'Net', render: (r: any) => <strong>{fmtMoney(r.net_pay)}</strong> }
             ]}
             rows={detail.items ?? []}
           />
@@ -400,12 +414,10 @@ function MyPayslipsTab(): JSX.Element {
     <DataTable
       columns={[
         { key: 'period_label', header: 'Period', render: (r: any) => r.period_label },
-        { key: 'base_salary', header: 'Base', render: (r) => `${fmtMoney(r.base_salary)} ETB` },
-        { key: 'allowances', header: 'Allowances', render: (r) => `${fmtMoney(r.allowances)} ETB` },
-        { key: 'gross', header: 'Gross', render: (r) => `${fmtMoney(r.gross)} ETB` },
-        { key: 'income_tax', header: 'Tax', render: (r) => `${fmtMoney(r.income_tax)} ETB` },
-        { key: 'pension_employee', header: 'Pension', render: (r) => `${fmtMoney(r.pension_employee)} ETB` },
-        { key: 'net_pay', header: 'Net Pay', render: (r) => <strong style={{ color: '#059669' }}>{fmtMoney(r.net_pay)} ETB</strong> },
+        { key: 'gross', header: 'Gross', render: (r: any) => `${fmtMoney(r.values?.GROSS ?? 0)} ETB` },
+        { key: 'income_tax', header: 'Tax', render: (r: any) => `${fmtMoney(r.values?.INCOME_TAX ?? 0)} ETB` },
+        { key: 'pension_employee', header: 'Pension', render: (r: any) => `${fmtMoney(r.values?.PENSION_EE ?? 0)} ETB` },
+        { key: 'net_pay', header: 'Net Pay', render: (r: any) => <strong style={{ color: '#059669' }}>{fmtMoney(r.net_pay)} ETB</strong> },
         {
           key: 'status', header: 'Status', render: (r) => (
             <span style={{ fontWeight: 700, color: r.status === 'paid' ? '#059669' : r.status === 'approved' ? '#2563eb' : '#d97706' }}>

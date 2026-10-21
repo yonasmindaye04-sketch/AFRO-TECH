@@ -1,4 +1,4 @@
-﻿import { query, queryOne } from '../config/db.js'
+import { query, queryOne } from '../config/db.js'
 import { sendNotification } from './notificationEngine.js'
 
 /**

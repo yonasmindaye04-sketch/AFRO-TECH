@@ -2,26 +2,26 @@
 -- AFRO Suite — Expenses (enhanced) + Payroll Management
 -- ═══════════════════════════════════════════════════════════
 
--- Enhanced expenses table (shared across all business types)
-CREATE TABLE IF NOT EXISTS expenses (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id     UUID NOT NULL REFERENCES tenants(id),
-  category      TEXT NOT NULL DEFAULT 'Other',
-  description   TEXT,
-  amount        NUMERIC(12,2) NOT NULL CHECK (amount > 0),
-  spent_at      DATE NOT NULL DEFAULT CURRENT_DATE,
-  receipt_url   TEXT,
-  is_recurring  BOOLEAN DEFAULT false,
-  recurrence    TEXT CHECK (recurrence IN ('weekly','monthly','quarterly','yearly')),
-  status        TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('pending','approved','rejected')),
-  submitted_by  UUID REFERENCES users(id),
-  approved_by   UUID REFERENCES users(id),
-  approved_at   TIMESTAMPTZ,
-  recorded_by   UUID REFERENCES users(id),
-  created_at    TIMESTAMPTZ DEFAULT NOW()
-);
+-- Enhanced expenses columns. The `expenses` table already exists (001_init.sql),
+-- so the enhancement has to be an idempotent ALTER: a CREATE TABLE IF NOT EXISTS
+-- here matched nothing and the new columns never appeared (the old
+-- idx_expenses_status build then failed with "column status does not exist").
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_url  TEXT;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT false;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS recurrence   TEXT CHECK (recurrence IN ('daily','weekly','monthly','quarterly','yearly'));
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS status       TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('pending','approved','rejected'));
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS submitted_by UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS approved_by  UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS approved_at  TIMESTAMPTZ;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS recorded_by  UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS updated_at   TIMESTAMPTZ;
+
+-- Back-fill the new bookkeeper column from the legacy user_id column
+UPDATE expenses SET recorded_by = user_id WHERE recorded_by IS NULL AND user_id IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_expenses_tenant ON expenses(tenant_id, spent_at DESC);
 CREATE INDEX IF NOT EXISTS idx_expenses_status ON expenses(tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_expenses_recorded_by ON expenses(recorded_by);
 
 -- Employee salary profiles
 CREATE TABLE IF NOT EXISTS employee_salaries (

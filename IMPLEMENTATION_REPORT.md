@@ -1,4 +1,4 @@
-﻿# Teacher Attendance & Teaching Activity Tracking — Implementation Report
+# Teacher Attendance & Teaching Activity Tracking — Implementation Report
 
 ## Summary
 

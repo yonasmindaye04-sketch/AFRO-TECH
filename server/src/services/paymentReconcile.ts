@@ -1,4 +1,4 @@
-﻿import { pool } from '../config/db.js'
+import { pool } from '../config/db.js'
 import { settlePaymentSuccess, markPaymentFailed } from './billing.js'
 import { telebirrConfigured, telebirrQueryStatus } from './payments/telebirr.js'
 import { mpesaConfigured, mpesaQueryStatus } from './payments/mpesa.js'
