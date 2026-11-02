@@ -6,42 +6,19 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
   server: {
-    proxy: {
-      '/api': {
-        target: 'http://localhost:4000',
-        changeOrigin: true,
-      }
-    }
+    host: '0.0.0.0',
+    port: 3000,
+    allowedHosts: true,
   },
   base: '/',
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   build: {
-    rollupOptions: {
-      output: {
-        manualChunks: (id) => {
-          if (id.includes('node_modules')) {
-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
-              return 'react-vendor';
-            }
-            if (id.includes('lenis')) {
-              return 'lenis';
-            }
-            return 'vendor';
-          }
-        }
-      }
-    },
-    // Enable CSS code splitting
     cssCodeSplit: true,
-    // Minify with esbuild
-    minify: 'esbuild',
-    // Target modern browsers for smaller bundles
     target: 'es2020',
-    // No sourcemaps in production
     sourcemap: false,
   },
 })

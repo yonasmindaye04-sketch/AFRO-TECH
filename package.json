@@ -5,15 +5,15 @@
   "type": "module",
   "homepage": "https://yonasmindaye04-sketch.github.io/portfolio",
   "scripts": {
-    "dev": "vite",
+    "dev": "node server.js",
     "build": "tsc -b && vite build",
+    "start": "NODE_ENV=production node server.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
-    "@vercel/analytics": "^2.0.1",
     "@zxing/browser": "^0.2.1",
     "@zxing/library": "^0.23.0",
     "cors": "^2.8.6",
