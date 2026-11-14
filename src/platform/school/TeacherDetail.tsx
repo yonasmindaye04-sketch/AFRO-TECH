@@ -82,8 +82,8 @@ const fmtTime = (d: string | null | undefined): string =>
   d ? new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—'
 export default function TeacherDetail(): JSX.Element {
   const { id } = useParams<{ id: string }>()
-  const [from, setFrom] = useState(isoDay(new Date(Date.now() - 29 * 864e5)))
-  const [to, setTo] = useState(isoDay(new Date()))
+  const [from, setFrom] = useState(() => isoDay(new Date(Date.now() - 29 * 864e5)))
+  const [to, setTo] = useState(() => isoDay(new Date()))
   const detailQ = useApiData<DetailRes>(id ? `/teaching/reports/teachers/${id}?from=${from}&to=${to}` : null)
   const usersQ = useApiData<{ users: { id: string; full_name: string; email: string }[] }>('/users')
   const teachersQ = useApiData<{ teachers: { id: string; full_name: string }[] }>('/school/teachers')

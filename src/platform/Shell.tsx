@@ -23,14 +23,18 @@ const RETAIL_NAV: NavItem[] = [
   { to: '/app/cashdrawer', icon: 'fa-solid fa-vault', label: 'Cash Drawer' },
   { to: '/app/sales', icon: 'fa-solid fa-receipt', label: 'Sales History' },
   { to: '/app/products', icon: 'fa-solid fa-boxes-stacked', label: 'Products' },
+  { to: '/app/orders', icon: 'fa-solid fa-file-signature', label: 'Orders & Quotes' },
   { to: '/app/purchases', icon: 'fa-solid fa-truck-ramp-box', label: 'Purchases' },
+  { to: '/app/warehouses', icon: 'fa-solid fa-warehouse', label: 'Warehouses & Ledger' },
   { to: '/app/stock', icon: 'fa-solid fa-sliders', label: 'Stock Adjustments' },
   { to: '/app/expiry', icon: 'fa-solid fa-hourglass-half', label: 'Expiry' },
   { to: '/app/suppliers', icon: 'fa-solid fa-truck-field', label: 'Suppliers' },
   { to: '/app/customers', icon: 'fa-solid fa-users', label: 'Customers' },
+  { to: '/app/crm', icon: 'fa-solid fa-handshake', label: 'CRM Leads' },
   { to: '/app/credit', icon: 'fa-solid fa-hand-holding-dollar', label: 'Credit (Khata)' },
   { to: '/app/expenses', icon: 'fa-solid fa-file-invoice-dollar', label: 'Expenses' },
   { to: '/app/payroll', icon: 'fa-solid fa-money-check-dollar', label: 'Payroll' },
+  { to: '/app/accounting', icon: 'fa-solid fa-scale-balanced', label: 'Accounting & GL' },
   { to: '/app/reports', icon: 'fa-solid fa-chart-line', label: 'Reports' },
 ]
 
@@ -40,6 +44,7 @@ const HOSPITAL_NAV: NavItem[] = [
   { to: '/app/flow', icon: 'fa-solid fa-code-branch', label: 'Patient Flow' },
   { to: '/app/queue', icon: 'fa-solid fa-timeline', label: 'Appointments' },
   { to: '/app/patients', icon: 'fa-solid fa-hospital-user', label: 'Patients' },
+  { to: '/app/crm', icon: 'fa-solid fa-handshake', label: 'CRM Leads' },
   { to: '/app/appointments', icon: 'fa-solid fa-calendar-check', label: 'Bookings' },
   { to: '/app/records', icon: 'fa-solid fa-file-medical', label: 'Medical Records' },
   { to: '/app/labs', icon: 'fa-solid fa-flask-vial', label: 'Laboratory' },
@@ -47,12 +52,14 @@ const HOSPITAL_NAV: NavItem[] = [
   { to: '/app/billing', icon: 'fa-solid fa-file-invoice-dollar', label: 'Billing' },
   { to: '/app/expenses', icon: 'fa-solid fa-coins', label: 'Expenses' },
   { to: '/app/payroll', icon: 'fa-solid fa-money-check-dollar', label: 'Payroll' },
+  { to: '/app/accounting', icon: 'fa-solid fa-scale-balanced', label: 'Accounting & GL' },
   { to: '/app/hospital-reports', icon: 'fa-solid fa-chart-line', label: 'Reports' },
 ]
 
 const SCHOOL_NAV: NavItem[] = [
   { to: '/app', icon: 'fa-solid fa-gauge-high', label: 'Dashboard', end: true },
   { to: '/app/students', icon: 'fa-solid fa-user-graduate', label: 'Students' },
+  { to: '/app/crm', icon: 'fa-solid fa-handshake', label: 'Admissions CRM' },
   { to: '/app/classes', icon: 'fa-solid fa-chalkboard', label: 'Classes & Teachers' },
   { to: '/app/timetable', icon: 'fa-solid fa-calendar-week', label: 'Timetable' },
   { to: '/app/attendance', icon: 'fa-solid fa-clipboard-check', label: 'Attendance' },
@@ -64,6 +71,7 @@ const SCHOOL_NAV: NavItem[] = [
   { to: '/app/announcements', icon: 'fa-solid fa-bullhorn', label: 'Announcements' },
   { to: '/app/expenses', icon: 'fa-solid fa-coins', label: 'Expenses' },
   { to: '/app/payroll', icon: 'fa-solid fa-money-check-dollar', label: 'Payroll' },
+  { to: '/app/accounting', icon: 'fa-solid fa-scale-balanced', label: 'Accounting & GL' },
   { to: '/app/school-reports', icon: 'fa-solid fa-chart-line', label: 'Reports' },
 ]
 
@@ -150,6 +158,10 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
       case '/app/products':
         // Products: inventory.manage
         return permissions.includes('inventory.manage')
+      case '/app/orders':
+        return permissions.includes('sales.view') || permissions.includes('purchases.view')
+      case '/app/warehouses':
+        return permissions.includes('inventory.view') || permissions.includes('inventory.manage')
       case '/app/purchases':
         // Purchases: purchases.create
         return permissions.includes('purchases.create')
@@ -165,12 +177,16 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
       case '/app/customers':
         // Customers: customers.view (assuming we have such a permission)
         return permissions.includes('customers.view')
+      case '/app/crm':
+        return permissions.includes('customers.view') || permissions.includes('patients.view') || permissions.includes('students.view')
       case '/app/credit':
         // Credit (Khata): payments.view
         return permissions.includes('payments.view')
       case '/app/finance':
         // Expenses: payments.view OR payments.create
         return permissions.includes('payments.view') || permissions.includes('payments.create')
+      case '/app/accounting':
+        return permissions.includes('payments.view') || permissions.includes('billing.view') || permissions.includes('reports.view')
       case '/app/reports':
         // Reports: reports.view
         return permissions.includes('reports.view')

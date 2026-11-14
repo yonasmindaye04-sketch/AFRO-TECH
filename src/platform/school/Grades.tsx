@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { api, fmtDate } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
@@ -51,10 +51,6 @@ export default function Grades(): JSX.Element {
   const [scores, setScores] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    setScores({})
-  }, [classId, examType, term, subject])
 
   const saveAll = async (): Promise<void> => {
     const entries = Object.entries(scores)
@@ -146,7 +142,7 @@ export default function Grades(): JSX.Element {
       <Modal open={open} title="Record scores for a class" wide onClose={() => setOpen(false)}>
         <div className="pl-grid-2">
           <Field label="Class">
-            <select className="pl-select" value={classId} onChange={(e) => setClassId(e.target.value)}>
+            <select className="pl-select" value={classId} onChange={(e) => { setClassId(e.target.value); setScores({}) }}>
               <option value="">Select class…</option>
               {(classesQ.data?.classes ?? []).map((c) => (
                 <option key={c.id} value={c.id}>
@@ -156,12 +152,12 @@ export default function Grades(): JSX.Element {
             </select>
           </Field>
           <Field label="Subject">
-            <input className="pl-input" placeholder="Mathematics" value={subject} onChange={(e) => setSubject(e.target.value)} />
+            <input className="pl-input" placeholder="Mathematics" value={subject} onChange={(e) => { setSubject(e.target.value); setScores({}) }} />
           </Field>
         </div>
         <div className="pl-grid-2">
           <Field label="Assessment type">
-            <select className="pl-select" value={examType} onChange={(e) => setExamType(e.target.value as (typeof EXAMS)[number])}>
+            <select className="pl-select" value={examType} onChange={(e) => { setExamType(e.target.value as (typeof EXAMS)[number]); setScores({}) }}>
               {EXAMS.map((x) => (
                 <option key={x} value={x}>
                   {x[0].toUpperCase() + x.slice(1)}

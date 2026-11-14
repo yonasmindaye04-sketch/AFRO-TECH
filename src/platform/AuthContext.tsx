@@ -79,8 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
   }, [])
 
   // ── 30-minute inactivity timeout (silent) ─────────────────────────────
-  const IDLE_MS = 30 * 60 * 1000 // 30 minutes
   useEffect(() => {
+    const IDLE_MS = 30 * 60 * 1000 // 30 minutes
     // Only run the timer when logged in
     if (!me) return
 

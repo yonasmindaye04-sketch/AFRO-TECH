@@ -38,10 +38,9 @@ export default function ThermalReceipt({
   }
 
   useEffect(() => {
-    if (autoPrint) {
-      handlePrint()
-    }
-  }, [])
+    if (!autoPrint) return
+    void printThermal80mm(data)
+  }, [autoPrint, data])
 
   return (
     <div className="pl-thermal-wrapper">

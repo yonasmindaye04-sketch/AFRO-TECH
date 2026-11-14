@@ -20,6 +20,8 @@ const Expiry = lazy(() => import('./retail/Expiry'))
 const Credit = lazy(() => import('./retail/Credit'))
 const RetailReports = lazy(() => import('./retail/Reports'))
 const CashDrawer = lazy(() => import('./retail/CashDrawer'))
+const Orders = lazy(() => import('./retail/Orders'))
+const Warehouses = lazy(() => import('./retail/Warehouses'))
 
 const HospitalDashboard = lazy(() => import('./hospital/HospitalDashboard'))
 const Patients = lazy(() => import('./hospital/Patients'))
@@ -54,6 +56,8 @@ const Subscription = lazy(() => import('./pages/Subscription'))
 const BotStudio = lazy(() => import('./pages/BotStudio'))
 const Expenses = lazy(() => import('./pages/Expenses'))
 const Payroll = lazy(() => import('./pages/Payroll'))
+const Accounting = lazy(() => import('./pages/Accounting'))
+const Crm = lazy(() => import('./pages/Crm'))
 const MarketingDashboard = lazy(() => import('./marketing/MarketingDashboard'))
 const Contacts = lazy(() => import('./marketing/Contacts'))
 const Audiences = lazy(() => import('./marketing/Audiences'))
@@ -149,6 +153,8 @@ function Inner(): JSX.Element {
             <Route path="expiry" element={<Expiry />} />
             <Route path="credit" element={<Credit />} />
             <Route path="cashdrawer" element={<CashDrawer />} />
+            <Route path="orders" element={<Orders />} />
+            <Route path="warehouses" element={<Warehouses />} />
             <Route path="reports" element={<RetailReports />} />
             {/* hospital */}
             <Route path="queue" element={<Queue />} />
@@ -177,6 +183,8 @@ function Inner(): JSX.Element {
             {/* shared */}
             <Route path="expenses" element={<Expenses />} />
             <Route path="payroll" element={<Payroll />} />
+            <Route path="accounting" element={<Accounting />} />
+            <Route path="crm" element={<Crm />} />
             <Route path="users" element={me?.role === 'owner' ? <Team /> : <Navigate to="/app" replace />} />
             <Route path="settings" element={me?.role === 'owner' ? <Settings /> : <Navigate to="/app" replace />} />
             <Route path="subscription" element={me?.role === 'owner' ? <Subscription /> : <Navigate to="/app" replace />} />

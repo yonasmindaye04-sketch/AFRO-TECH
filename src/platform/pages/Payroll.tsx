@@ -19,8 +19,16 @@ interface Employee {
   is_active: boolean | null
 }
 
+interface PayrollComponent {
+  code: string
+  label: string
+  source: string
+  display_order: number
+}
+
 interface PayrollRun {
   id: string
+  period_label?: string
   period_header: string
   frequency: string
   status: 'draft' | 'approved' | 'paid'
@@ -34,33 +42,37 @@ interface PayrollItem {
   id: string
   user_id: string
   employee_name: string
-  base_salary: string
-  allowances: string
-  gross: string
-  income_tax: string
-  pension_employee: string
-  pension_employer: string
-  other_deductions: string
+  values?: Record<string, number | string>
+  base_salary?: string
+  allowances?: string
+  gross?: string
+  income_tax?: string
+  pension_employee?: string
+  pension_employer?: string
+  other_deductions?: string
   net_pay: string
 }
 
 interface RunDetail extends PayrollRun {
   items: PayrollItem[]
+  run?: { components?: PayrollComponent[] }
 }
 
 interface Payslip {
   id: string
+  period_label?: string
   period_header: string
   frequency: string
   status: string
   employee_name: string
-  base_salary: string
-  allowances: string
-  gross: string
-  income_tax: string
-  pension_employee: string
-  pension_employer: string
-  other_deductions: string
+  values?: Record<string, number | string>
+  base_salary?: string
+  allowances?: string
+  gross?: string
+  income_tax?: string
+  pension_employee?: string
+  pension_employer?: string
+  other_deductions?: string
   net_pay: string
 }
 
@@ -96,7 +108,7 @@ export default function Payroll(): JSX.Element {
 
 function EmployeesTab(): JSX.Element {
   const { data: empData, loading: empLoading, reload } = useApiData<{ employees: Employee[] }>('/payroll/employees')
-  const { data: compData, loading: compLoading } = useApiData<{ components: any[] }>('/payroll/components')
+  const { data: compData, loading: compLoading } = useApiData<{ components: PayrollComponent[] }>('/payroll/components')
   const [editUser, setEditUser] = useState<Employee | null>(null)
   const [form, setForm] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
@@ -159,7 +171,7 @@ function EmployeesTab(): JSX.Element {
             ...profileComps.map(c => ({
               key: c.code,
               header: c.label,
-              render: (r: any) => {
+              render: (r: Employee) => {
                 const val = r.profile_values?.[c.code]
                 return val != null ? `${fmtMoney(val)}` : '—'
               }
@@ -272,16 +284,16 @@ function RunPayrollTab(): JSX.Element {
           {result.items && result.items.length > 0 && (
             <DataTable
               columns={[
-                { key: 'employee_name', header: 'Employee', render: (r: any) => r.employee_name },
-                ...((result as any).run?.components || []).map((c: any) => ({
+                { key: 'employee_name', header: 'Employee', render: (r: PayrollItem) => r.employee_name },
+                ...(result.run?.components || []).map((c: PayrollComponent) => ({
                   key: c.code,
                   header: c.label,
-                  render: (r: any) => {
+                  render: (r: PayrollItem) => {
                     const val = r.values?.[c.code]
                     return typeof val === 'number' ? fmtMoney(val) : (val ?? '—')
                   }
                 })),
-                { key: 'net_pay', header: 'Net Pay', render: (r: any) => <strong>{fmtMoney(r.net_pay)} ETB</strong> }
+                { key: 'net_pay', header: 'Net Pay', render: (r: PayrollItem) => <strong>{fmtMoney(r.net_pay)} ETB</strong> }
               ]}
               rows={result.items}
             />
@@ -348,7 +360,7 @@ function HistoryTab(): JSX.Element {
       ) : (
         <DataTable
           columns={[
-            { key: 'period_label', header: 'Period', render: (r: any) => r.period_label },
+            { key: 'period_label', header: 'Period', render: (r: PayrollRun) => r.period_label ?? r.period_header },
             { key: 'frequency', header: 'Frequency', render: (r) => r.frequency },
             { key: 'total_gross', header: 'Gross', render: (r) => `${fmtMoney(r.total_gross)} ETB` },
             { key: 'total_net', header: 'Net', render: (r) => `${fmtMoney(r.total_net)} ETB` },
@@ -377,19 +389,19 @@ function HistoryTab(): JSX.Element {
       )}
 
       {detail && (
-        <Modal open={true} title={`Payroll — ${(detail as any).period_label}`} onClose={() => setDetail(null)}>
+        <Modal open={true} title={`Payroll — ${detail.period_label ?? detail.period_header}`} onClose={() => setDetail(null)}>
           <DataTable
             columns={[
-              { key: 'employee_name', header: 'Employee', render: (r: any) => r.employee_name },
-              ...((detail as any).run?.components || []).map((c: any) => ({
+              { key: 'employee_name', header: 'Employee', render: (r: PayrollItem) => r.employee_name },
+              ...(detail.run?.components || []).map((c: PayrollComponent) => ({
                 key: c.code,
                 header: c.label,
-                render: (r: any) => {
+                render: (r: PayrollItem) => {
                   const val = r.values?.[c.code]
                   return typeof val === 'number' ? fmtMoney(val) : (val ?? '—')
                 }
               })),
-              { key: 'net_pay', header: 'Net', render: (r: any) => <strong>{fmtMoney(r.net_pay)}</strong> }
+              { key: 'net_pay', header: 'Net', render: (r: PayrollItem) => <strong>{fmtMoney(r.net_pay)}</strong> }
             ]}
             rows={detail.items ?? []}
           />
@@ -413,11 +425,11 @@ function MyPayslipsTab(): JSX.Element {
   ) : (
     <DataTable
       columns={[
-        { key: 'period_label', header: 'Period', render: (r: any) => r.period_label },
-        { key: 'gross', header: 'Gross', render: (r: any) => `${fmtMoney(r.values?.GROSS ?? 0)} ETB` },
-        { key: 'income_tax', header: 'Tax', render: (r: any) => `${fmtMoney(r.values?.INCOME_TAX ?? 0)} ETB` },
-        { key: 'pension_employee', header: 'Pension', render: (r: any) => `${fmtMoney(r.values?.PENSION_EE ?? 0)} ETB` },
-        { key: 'net_pay', header: 'Net Pay', render: (r: any) => <strong style={{ color: '#059669' }}>{fmtMoney(r.net_pay)} ETB</strong> },
+        { key: 'period_label', header: 'Period', render: (r: Payslip) => r.period_label ?? r.period_header },
+        { key: 'gross', header: 'Gross', render: (r: Payslip) => `${fmtMoney(r.values?.GROSS ?? r.gross ?? 0)} ETB` },
+        { key: 'income_tax', header: 'Tax', render: (r: Payslip) => `${fmtMoney(r.values?.INCOME_TAX ?? r.income_tax ?? 0)} ETB` },
+        { key: 'pension_employee', header: 'Pension', render: (r: Payslip) => `${fmtMoney(r.values?.PENSION_EE ?? r.pension_employee ?? 0)} ETB` },
+        { key: 'net_pay', header: 'Net Pay', render: (r: Payslip) => <strong style={{ color: '#059669' }}>{fmtMoney(r.net_pay)} ETB</strong> },
         {
           key: 'status', header: 'Status', render: (r) => (
             <span style={{ fontWeight: 700, color: r.status === 'paid' ? '#059669' : r.status === 'approved' ? '#2563eb' : '#d97706' }}>

@@ -14,20 +14,29 @@ export default function Templates(): JSX.Element {
   const [form, setForm] = useState({ name: '', channel: 'sms', subject: '', content: '' })
   const [busy, setBusy] = useState(false)
 
+  const [reloadTick, setReloadTick] = useState(0)
+
   const reload = async (): Promise<void> => {
-    try {
-      const r = await api.get<{ templates: MarketingTemplate[] }>('/marketing/templates')
-      setTemplates(r.templates)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load')
-    } finally {
-      setLoading(false)
-    }
+    setReloadTick((t) => t + 1)
   }
 
   useEffect(() => {
-    void reload()
-  }, [])
+    let cancelled = false
+    api
+      .get<{ templates: MarketingTemplate[] }>('/marketing/templates')
+      .then((r) => {
+        if (!cancelled) setTemplates(r.templates)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [reloadTick])
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault()

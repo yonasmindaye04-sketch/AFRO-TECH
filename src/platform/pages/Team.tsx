@@ -32,7 +32,11 @@ export default function Team(): JSX.Element {
     setBusy(true)
     setError(null)
     try {
-      const payload: any = { full_name: form.full_name.trim(), email: form.email.trim().toLowerCase(), password: form.password }
+      const payload: { full_name: string; email: string; password: string; role_id?: string } = {
+        full_name: form.full_name.trim(),
+        email: form.email.trim().toLowerCase(),
+        password: form.password,
+      }
       if (form.role_id) payload.role_id = form.role_id
 
       await api.post('/users', payload)

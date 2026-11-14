@@ -141,6 +141,26 @@ export default function Login(): JSX.Element {
             <button type="submit" className="pl-btn pl-btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={busy}>
               {busy ? 'Signing in…' : 'Sign in'}
             </button>
+            <button
+              type="button"
+              className="pl-btn pl-btn-ghost"
+              style={{ width: '100%', justifyContent: 'center', marginTop: 10 }}
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true)
+                setError(null)
+                try {
+                  await login('demo@afrotech.et', 'password123')
+                  navigate('/app', { replace: true })
+                } catch (err) {
+                  setError(err instanceof ApiError ? err.message : 'Demo login unavailable')
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true" /> Explore Demo Workspace
+            </button>
           </form>
 
           {(providers?.google || providers?.telegram_bot) && (

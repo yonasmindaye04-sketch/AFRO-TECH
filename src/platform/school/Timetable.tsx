@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { api } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
@@ -24,7 +24,8 @@ const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
 
 export default function Timetable(): JSX.Element {
   const classesQ = useApiData<{ classes: ClassOpt[] }>('/school/classes')
-  const [classId, setClassId] = useState('')
+  const [selectedClassId, setSelectedClassId] = useState('')
+  const classId = selectedClassId || classesQ.data?.classes[0]?.id || ''
   const ttQ = useApiData<{ slots: Slot[] }>(classId ? `/school/timetable?class_id=${classId}` : null)
   const teachersQ = useApiData<{ teachers: TeacherOpt[] }>('/school/teachers')
 
@@ -32,10 +33,6 @@ export default function Timetable(): JSX.Element {
   const [form, setForm] = useState({ day_of_week: '1', start_time: '08:00', end_time: '08:45', subject: '', teacher_id: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!classId && classesQ.data?.classes.length) setClassId(classesQ.data.classes[0].id)
-  }, [classesQ.data, classId])
 
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
@@ -79,8 +76,8 @@ export default function Timetable(): JSX.Element {
         }
       />
       <div className="pl-toolbar">
-        <select className="pl-select" value={classId} onChange={(e) => setClassId(e.target.value)} aria-label="Filter by class">
-          <option value="">Select classâ€¦</option>
+        <select className="pl-select" value={classId} onChange={(e) => setSelectedClassId(e.target.value)} aria-label="Filter by class">
+          <option value="">Select class…</option>
           {(classesQ.data?.classes ?? []).map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}

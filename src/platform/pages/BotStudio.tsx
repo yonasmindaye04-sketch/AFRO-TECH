@@ -109,39 +109,49 @@ export default function BotStudio(): JSX.Element {
   const [botSlug, setBotSlug] = useState('')
   const [savingBrand, setSavingBrand] = useState(false)
 
+  const [reloadTick, setReloadTick] = useState(0)
+
   const reload = async (): Promise<void> => {
-    try {
-      const r = await api.get<{ bot: TenantBot | null }>('/tenant-bot')
-      setBot(r.bot ?? null)
-      if (r.bot) {
-        setWelcomeMessage(r.bot.welcome_message)
-        setAutoReply(r.bot.auto_reply)
-        setLimitPerDay(r.bot.broadcast_limit_per_day)
-        setCommands(Array.isArray(r.bot.commands) ? r.bot.commands : [])
-        const [s, h, rc, ma] = await Promise.all([
-          api.get<{ subscribers: Subscriber[] }>('/tenant-bot/subscribers'),
-          api.get<{ broadcasts: Broadcast[] }>('/tenant-bot/broadcasts'),
-          api.get<{ receipts: Receipt[] }>('/tenant-bot/receipts'),
-          api.get<{ miniapp: MiniAppConfig }>('/tenant-bot/miniapp'),
-        ])
-        setSubscribers(Array.isArray(s.subscribers) ? s.subscribers : [])
-        setBroadcasts(Array.isArray(h.broadcasts) ? h.broadcasts : [])
-        setReceipts(Array.isArray(rc.receipts) ? rc.receipts : [])
-        setMiniapp(ma.miniapp)
-        setPrimary(ma.miniapp.brand.primary ?? '#1f6f5c')
-        setAccent(ma.miniapp.brand.accent ?? '#e0a33e')
-        setLogoUrl(ma.miniapp.brand.logo_url ?? '')
-        setTagline(ma.miniapp.brand.tagline ?? '')
-        setBotSlug(ma.miniapp.bot_slug ?? ma.miniapp.slug)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load')
-    }
+    setReloadTick((t) => t + 1)
   }
 
   useEffect(() => {
-    void reload()
-  }, [])
+    let cancelled = false
+    api
+      .get<{ bot: TenantBot | null }>('/tenant-bot')
+      .then(async (r) => {
+        if (cancelled) return
+        setBot(r.bot ?? null)
+        if (r.bot) {
+          setWelcomeMessage(r.bot.welcome_message)
+          setAutoReply(r.bot.auto_reply)
+          setLimitPerDay(r.bot.broadcast_limit_per_day)
+          setCommands(Array.isArray(r.bot.commands) ? r.bot.commands : [])
+          const [s, h, rc, ma] = await Promise.all([
+            api.get<{ subscribers: Subscriber[] }>('/tenant-bot/subscribers'),
+            api.get<{ broadcasts: Broadcast[] }>('/tenant-bot/broadcasts'),
+            api.get<{ receipts: Receipt[] }>('/tenant-bot/receipts'),
+            api.get<{ miniapp: MiniAppConfig }>('/tenant-bot/miniapp'),
+          ])
+          if (cancelled) return
+          setSubscribers(Array.isArray(s.subscribers) ? s.subscribers : [])
+          setBroadcasts(Array.isArray(h.broadcasts) ? h.broadcasts : [])
+          setReceipts(Array.isArray(rc.receipts) ? rc.receipts : [])
+          setMiniapp(ma.miniapp)
+          setPrimary(ma.miniapp.brand.primary ?? '#1f6f5c')
+          setAccent(ma.miniapp.brand.accent ?? '#e0a33e')
+          setLogoUrl(ma.miniapp.brand.logo_url ?? '')
+          setTagline(ma.miniapp.brand.tagline ?? '')
+          setBotSlug(ma.miniapp.bot_slug ?? ma.miniapp.slug)
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [reloadTick])
 
   const shareUrl = bot?.share_url ?? (bot?.bot_username ? `https://t.me/${bot.bot_username}` : '')
   const todayBroadcasts = useMemo(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
+import { useState, type CSSProperties, type FormEvent } from 'react'
 import { api, fmtDateTime } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, Card, EmptyState, ErrorBox, Field, FormRow, Modal, PageHeader, Spinner } from '../ui'
@@ -125,15 +125,21 @@ export default function Teaching(): JSX.Element {
   // ── submissions modal ──
   const [subActivity, setSubActivity] = useState<ActivityRow | null>(null)
   const subsQ = useApiData<{ submissions: SubmissionRow[] }>(subActivity ? `/teaching/activities/${subActivity.id}/submissions` : null)
-  const [marks, setMarks] = useState<Record<string, { status: string; score: string }>>({})
+  const [markOverrides, setMarkOverrides] = useState<Record<string, { status: string; score: string }>>({})
   const [subsBusy, setSubsBusy] = useState(false)
   const [subsError, setSubsError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (subsQ.data) {
-      setMarks(Object.fromEntries(subsQ.data.submissions.map((s) => [s.student_id, { status: s.status, score: s.score?.toString() ?? '' }])))
-    }
-  }, [subsQ.data])
+  const marks: Record<string, { status: string; score: string }> = Object.fromEntries(
+    (subsQ.data?.submissions ?? []).map((s) => {
+      const key = `${subActivity?.id ?? ''}:${s.student_id}`
+      return [s.student_id, markOverrides[key] ?? { status: s.status, score: s.score?.toString() ?? '' }]
+    })
+  )
+
+  const setStudentMark = (studentId: string, val: { status: string; score: string }): void => {
+    const key = `${subActivity?.id ?? ''}:${studentId}`
+    setMarkOverrides((prev) => ({ ...prev, [key]: val }))
+  }
 
   const saveSubs = async (): Promise<void> => {
     if (!subActivity || !subsQ.data) return
@@ -310,7 +316,7 @@ export default function Teaching(): JSX.Element {
                       key={st}
                       type="button"
                       className={(marks[s.student_id]?.status ?? s.status) === st ? 'on' : ''}
-                      onClick={() => setMarks({ ...marks, [s.student_id]: { status: st, score: marks[s.student_id]?.score ?? '' } })}
+                      onClick={() => setStudentMark(s.student_id, { status: st, score: marks[s.student_id]?.score ?? '' })}
                     >
                       {st}
                     </button>
@@ -324,7 +330,7 @@ export default function Teaching(): JSX.Element {
                   style={{ width: 90 }}
                   placeholder="Score"
                   value={marks[s.student_id]?.score ?? ''}
-                  onChange={(e) => setMarks({ ...marks, [s.student_id]: { status: marks[s.student_id]?.status ?? s.status, score: e.target.value } })}
+                  onChange={(e) => setStudentMark(s.student_id, { status: marks[s.student_id]?.status ?? s.status, score: e.target.value })}
                   aria-label={`Score for ${s.student_name}`}
                 />
               </div>

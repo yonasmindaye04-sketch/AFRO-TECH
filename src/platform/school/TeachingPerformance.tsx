@@ -50,8 +50,8 @@ const dim: CSSProperties = { color: 'var(--text-dim)' }
 const isoDay = (d: Date): string => d.toISOString().slice(0, 10)
 
 export default function TeachingPerformance(): JSX.Element {
-  const [from, setFrom] = useState(isoDay(new Date(Date.now() - 29 * 864e5)))
-  const [to, setTo] = useState(isoDay(new Date()))
+  const [from, setFrom] = useState(() => isoDay(new Date(Date.now() - 29 * 864e5)))
+  const [to, setTo] = useState(() => isoDay(new Date()))
   const qs = `from=${from}&to=${to}`
   const overviewQ = useApiData<Overview>(`/teaching/reports/overview?${qs}`)
   const teachersQ = useApiData<{ teachers: TeacherRow[] }>(`/teaching/reports/teachers?${qs}`)

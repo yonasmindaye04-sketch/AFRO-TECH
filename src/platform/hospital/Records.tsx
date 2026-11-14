@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { api, fmtDate } from '../api'
 import { useApiData } from '../hooks/useApiData'
-import { DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
+import { DataTable, EmptyState, Field, Modal, OkBox, PageHeader, Spinner } from '../ui'
 
 interface RecordRow {
   id: string
+  patient_id?: string
   visit_date: string
   doctor_name: string | null
   diagnosis: string | null
@@ -31,6 +32,9 @@ export default function Records(): JSX.Element {
   const [vitals, setVitals] = useState({ bp: '', temperature: '', pulse: '', weight: '', height: '', spo2: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [billRecord, setBillRecord] = useState<RecordRow | null>(null)
+  const [billForm, setBillForm] = useState({ description: '', amount: '500', paid_amount: '0' })
 
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
@@ -66,6 +70,37 @@ export default function Records(): JSX.Element {
     }
   }
 
+  const openBillModal = (r: RecordRow): void => {
+    const summary = [r.diagnosis ? `Consult: ${r.diagnosis}` : 'Consultation', r.prescription ? `Rx: ${r.prescription}` : null].filter(Boolean).join(' · ')
+    setBillForm({ description: summary, amount: '500', paid_amount: '0' })
+    setBillRecord(r)
+  }
+
+  const submitBill = async (e: FormEvent): Promise<void> => {
+    e.preventDefault()
+    if (!billRecord) return
+    setBusy(true)
+    setError(null)
+    try {
+      const matchedPatient =
+        billRecord.patient_id ||
+        (patientsQ.data?.patients ?? []).find((p) => p.code === billRecord.patient_code)?.id ||
+        null
+      await api.post('/hospital/invoices', {
+        patient_id: matchedPatient,
+        description: billForm.description.trim() || 'Consultation & Prescription',
+        amount: Number(billForm.amount) || 0,
+        paid_amount: Number(billForm.paid_amount) || 0,
+      })
+      setNotice(`Medical invoice created for ${billRecord.patient_name}. View it under Billing.`)
+      setBillRecord(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create invoice')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -77,6 +112,7 @@ export default function Records(): JSX.Element {
           </button>
         }
       />
+      {notice && <OkBox message={notice} />}
       <div className="pl-toolbar">
         <select className="pl-select" value={patientFilter} onChange={(e) => setPatientFilter(e.target.value)} aria-label="Filter by patient">
           <option value="">All patients</option>
@@ -120,6 +156,18 @@ export default function Records(): JSX.Element {
             { key: 'diag', header: 'Diagnosis', render: (r) => r.diagnosis ?? '—' },
             { key: 'rx', header: 'Prescription', render: (r) => r.prescription ?? '—' },
             { key: 'notes', header: 'Notes', render: (r) => r.notes ?? '—' },
+            {
+              key: 'act',
+              header: '',
+              width: '125px',
+              render: (r) => (
+                <div className="pl-row-actions">
+                  <button type="button" className="pl-btn pl-btn-ghost pl-btn-sm" onClick={() => openBillModal(r)}>
+                    Bill Visit
+                  </button>
+                </div>
+              ),
+            },
           ]}
         />
       )}
@@ -175,6 +223,29 @@ export default function Records(): JSX.Element {
             </button>
           </div>
         </form>
+      </Modal>
+
+      <Modal open={billRecord !== null} title={billRecord ? `Bill ${billRecord.patient_name}` : 'Create Medical Invoice'} onClose={() => setBillRecord(null)}>
+        {billRecord && (
+          <form onSubmit={submitBill}>
+            <Field label="Description">
+              <input className="pl-input" required value={billForm.description} onChange={(e) => setBillForm((f) => ({ ...f, description: e.target.value }))} />
+            </Field>
+            <div className="pl-grid-2">
+              <Field label="Total Amount (ETB)">
+                <input className="pl-input" type="number" min="0" step="0.01" required value={billForm.amount} onChange={(e) => setBillForm((f) => ({ ...f, amount: e.target.value }))} />
+              </Field>
+              <Field label="Paid Now (ETB)">
+                <input className="pl-input" type="number" min="0" step="0.01" value={billForm.paid_amount} onChange={(e) => setBillForm((f) => ({ ...f, paid_amount: e.target.value }))} />
+              </Field>
+            </div>
+            <div className="pl-form-actions">
+              <button type="submit" className="pl-btn pl-btn-primary" disabled={busy}>
+                {busy ? 'Creating…' : 'Create Medical Invoice'}
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   )

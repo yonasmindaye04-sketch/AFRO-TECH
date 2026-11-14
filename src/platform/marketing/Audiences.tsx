@@ -45,24 +45,33 @@ export default function Audiences(): JSX.Element {
   const [memberIds, setMemberIds] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
 
+  const [reloadTick, setReloadTick] = useState(0)
+
   const reload = async (): Promise<void> => {
-    try {
-      const [a, c] = await Promise.all([
-        api.get<{ audiences: MarketingAudience[] }>('/marketing/audiences'),
-        api.get<{ contacts: MarketingContact[] }>('/marketing/contacts?limit=200'),
-      ])
-      setAudiences(a.audiences)
-      setContacts(c.contacts)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load')
-    } finally {
-      setLoading(false)
-    }
+    setReloadTick((t) => t + 1)
   }
 
   useEffect(() => {
-    void reload()
-  }, [])
+    let cancelled = false
+    Promise.all([
+      api.get<{ audiences: MarketingAudience[] }>('/marketing/audiences'),
+      api.get<{ contacts: MarketingContact[] }>('/marketing/contacts?limit=200'),
+    ])
+      .then(([a, c]) => {
+        if (cancelled) return
+        setAudiences(a.audiences)
+        setContacts(c.contacts)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [reloadTick])
 
   const openNew = (): void => {
     setForm({ name: '', description: '', type: 'dynamic' })

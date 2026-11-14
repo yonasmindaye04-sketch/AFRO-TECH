@@ -31,7 +31,20 @@ const tone = (s: FeeRow['status']): 'good' | 'warn' | 'bad' => (s === 'paid' ? '
 
 export default function Fees(): JSX.Element {
   const { me } = useAuth()
-  const settingsQ = useApiData<{ settings: Record<string, any> }>('/tenant/settings')
+  const settingsQ = useApiData<{
+    settings: {
+      business_name?: string
+      tin_number?: string
+      vat_number?: string
+      business_phone?: string
+      business_address?: string
+      receipt_header?: string
+      receipt_footer?: string
+      academic_year?: string
+      currency?: string
+      tax_rate?: number
+    }
+  }>('/tenant/settings')
   const [receiptFee, setReceiptFee] = useState<FeeRow | null>(null)
   const [statusFilter, setStatusFilter] = useState('')
   const feesQ = useApiData<{ fees: FeeRow[] }>(`/school/fees${statusFilter ? `?status=${statusFilter}` : ''}`)

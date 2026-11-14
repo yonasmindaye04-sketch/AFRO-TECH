@@ -25,21 +25,30 @@ export default function Contacts(): JSX.Element {
   })
   const [busy, setBusy] = useState(false)
 
+  const [reloadTick, setReloadTick] = useState(0)
+
   const reload = useCallback(async (): Promise<void> => {
-    try {
-      const q = debouncedSearch ? `?search=${encodeURIComponent(debouncedSearch)}` : ''
-      const r = await api.get<{ contacts: MarketingContact[] }>(`/marketing/contacts${q}`)
-      setContacts(r.contacts)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load')
-    } finally {
-      setLoading(false)
-    }
-  }, [debouncedSearch])
+    setReloadTick((t) => t + 1)
+  }, [])
 
   useEffect(() => {
-    void reload()
-  }, [reload])
+    let cancelled = false
+    const q = debouncedSearch ? `?search=${encodeURIComponent(debouncedSearch)}` : ''
+    api
+      .get<{ contacts: MarketingContact[] }>(`/marketing/contacts${q}`)
+      .then((r) => {
+        if (!cancelled) setContacts(r.contacts)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [debouncedSearch, reloadTick])
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault()

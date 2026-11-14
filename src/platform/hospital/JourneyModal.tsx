@@ -64,24 +64,37 @@ export default function JourneyModal({ visitId, onClose, onChanged }: { visitId:
   const [fee, setFee] = useState('0')
   const [details, setDetails] = useState<Record<string, string>>({})
 
-  const load = async (): Promise<void> => {
-    if (!visitId) return
-    setLoading(true)
-    setError(null)
-    try {
-      const [d, dd] = await Promise.all([api.get<VisitDetail>(`/flow/visits/${visitId}`), api.get<{ departments: Department[] }>('/flow/departments')])
-      setData(d)
-      setDepts(dd.departments)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load')
-    } finally {
-      setLoading(false)
-    }
+  const [reloadTick, setReloadTick] = useState(0)
+
+  const load = (): void => {
+    setReloadTick((t) => t + 1)
   }
 
   useEffect(() => {
-    void load()
-  }, [visitId])
+    if (!visitId) return
+    let cancelled = false
+    Promise.resolve().then(() => {
+      if (!cancelled) {
+        setLoading(true)
+        setError(null)
+      }
+    })
+    Promise.all([api.get<VisitDetail>(`/flow/visits/${visitId}`), api.get<{ departments: Department[] }>('/flow/departments')])
+      .then(([d, dd]) => {
+        if (cancelled) return
+        setData(d)
+        setDepts(dd.departments)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [visitId, reloadTick])
 
   const createOrder = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault()

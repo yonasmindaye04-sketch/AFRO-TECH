@@ -400,7 +400,7 @@ export default function ReportCards(): JSX.Element {
   const [reportConfig, setReportConfig] = useState<ReportCardConfig>(() => {
     const saved = localStorage.getItem('afro_report_config')
     if (saved) {
-      try { return JSON.parse(saved) } catch (e) {}
+      try { return JSON.parse(saved) } catch { /* ignore */ }
     }
     return {
       principalName: 'Stephen Winters',

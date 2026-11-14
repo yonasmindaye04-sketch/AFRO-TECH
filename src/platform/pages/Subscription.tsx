@@ -74,23 +74,10 @@ export default function Subscription(): JSX.Element {
   const [providers, setProviders] = useState<ProviderInfo[]>([])
   const [provider, setProvider] = useState<string>('')
 
-  const load = async (): Promise<void> => {
-    setError(null)
-    try {
-      const [p, s, pay] = await Promise.all([
-        api.get<{ plans: Plan[] }>('/billing/plans'),
-        api.get<{ subscription: Subscription | null; access_until: string | null }>('/billing/subscription'),
-        api.get<{ payments: PaymentRow[] }>('/billing/payments'),
-      ])
-      setPlans(p.plans)
-      setSubscription(s.subscription)
-      setAccessUntil(s.access_until)
-      setPayments(pay.payments)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load billing info')
-    } finally {
-      setLoading(false)
-    }
+  const [reloadTick, setReloadTick] = useState(0)
+
+  const load = (): void => {
+    setReloadTick((t) => t + 1)
   }
 
   // Available payment providers (independent of plan state)
@@ -106,8 +93,30 @@ export default function Subscription(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    void load()
-  }, [])
+    let cancelled = false
+    Promise.all([
+      api.get<{ plans: Plan[] }>('/billing/plans'),
+      api.get<{ subscription: Subscription | null; access_until: string | null }>('/billing/subscription'),
+      api.get<{ payments: PaymentRow[] }>('/billing/payments'),
+    ])
+      .then(([p, s, pay]) => {
+        if (cancelled) return
+        setError(null)
+        setPlans(p.plans)
+        setSubscription(s.subscription)
+        setAccessUntil(s.access_until)
+        setPayments(pay.payments)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load billing info')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [reloadTick])
 
   // Poll: when we land here after a payment redirect, auto-verify
   useEffect(() => {
@@ -154,7 +163,7 @@ export default function Subscription(): JSX.Element {
         setError('Development mode: use the MOCKS section in the admin panel to confirm this payment.')
         void load()
       } else if (res.checkout_url) {
-        window.location.href = res.checkout_url
+        window.location.assign(res.checkout_url)
       } else if (res.provider === 'cbe') {
         // Manual bank transfer: no hosted checkout — the team confirms the transfer.
         setOk(`Manual transfer initiated — reference ${res.tx_ref}. Pay ${period} month(s) via CBE Birr / bank transfer quoting this reference; your workspace is activated once the payment is confirmed by AFRO-TECH.`)

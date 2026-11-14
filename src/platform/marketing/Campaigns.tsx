@@ -30,26 +30,35 @@ export default function Campaigns(): JSX.Element {
   const [channels, setChannels] = useState<ChannelRow[]>([])
   const [busy, setBusy] = useState(false)
 
+  const [reloadTick, setReloadTick] = useState(0)
+
   const reload = async (): Promise<void> => {
-    try {
-      const [c, a, t] = await Promise.all([
-        api.get<{ campaigns: MarketingCampaign[] }>('/marketing/campaigns'),
-        api.get<{ audiences: MarketingAudience[] }>('/marketing/audiences'),
-        api.get<{ templates: MarketingTemplate[] }>('/marketing/templates'),
-      ])
-      setCampaigns(c.campaigns)
-      setAudiences(a.audiences)
-      setTemplates(t.templates)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load')
-    } finally {
-      setLoading(false)
-    }
+    setReloadTick((t) => t + 1)
   }
 
   useEffect(() => {
-    void reload()
-  }, [])
+    let cancelled = false
+    Promise.all([
+      api.get<{ campaigns: MarketingCampaign[] }>('/marketing/campaigns'),
+      api.get<{ audiences: MarketingAudience[] }>('/marketing/audiences'),
+      api.get<{ templates: MarketingTemplate[] }>('/marketing/templates'),
+    ])
+      .then(([c, a, t]) => {
+        if (cancelled) return
+        setCampaigns(c.campaigns)
+        setAudiences(a.audiences)
+        setTemplates(t.templates)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [reloadTick])
 
   const openNew = (): void => {
     setForm({ name: '', description: '', audience_id: '', scheduled_at: '' })

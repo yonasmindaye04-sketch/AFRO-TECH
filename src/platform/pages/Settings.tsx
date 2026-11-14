@@ -71,15 +71,26 @@ export default function Settings(): JSX.Element {
 
     // Load latest real transaction from the platform to populate receipt with actual company data
     if (firmType === 'school') {
+      interface FeeLite {
+        id: string
+        status?: string
+        paid_amount?: string | number
+        amount?: string | number
+        student_name?: string
+        class_name?: string
+        paid_at?: string
+        created_at?: string
+        title?: string
+      }
       api
-        .get<{ fees: any[] }>('/school/fees')
+        .get<{ fees: FeeLite[] }>('/school/fees')
         .then((r) => {
           const f = r.fees?.find((x) => x.status === 'paid') || r.fees?.[0]
           if (f) {
             const amt = Number(f.paid_amount || f.amount || 0)
             setLiveTransaction({
               invoice_no: `FEE-${f.id.slice(0, 8).toUpperCase()}`,
-              customer_name: `${f.student_name} (${f.class_name || 'Student'})`,
+              customer_name: `${f.student_name ?? 'Student'} (${f.class_name || 'Student'})`,
               cashier_name: me?.full_name || 'Bursar / Cashier',
               created_at: f.paid_at || f.created_at,
               items: [{ name: f.title || 'Tuition Fee', quantity: 1, unit_price: amt, line_total: amt }],
@@ -94,8 +105,17 @@ export default function Settings(): JSX.Element {
         })
         .catch(() => undefined)
     } else if (firmType === 'hospital') {
+      interface InvoiceLite {
+        id: string
+        number?: string
+        amount?: string | number
+        paid_amount?: string | number
+        patient_name?: string
+        issued_on?: string
+        description?: string
+      }
       api
-        .get<{ invoices: any[] }>('/hospital/invoices')
+        .get<{ invoices: InvoiceLite[] }>('/hospital/invoices')
         .then((r) => {
           const inv = r.invoices?.[0]
           if (inv) {
@@ -118,9 +138,32 @@ export default function Settings(): JSX.Element {
         })
         .catch(() => undefined)
     } else {
+      interface SaleItemLite {
+        name: string
+        quantity: number
+        unit_price: string | number
+        sold_as_pills?: boolean
+      }
+      interface SaleLite {
+        id: string
+        invoice_no?: string
+        subtotal?: string | number
+        discount?: string | number
+        total?: string | number
+        customer_name?: string
+        cashier?: string
+        created_at?: string
+        payment_method?: string
+        items?: SaleItemLite[]
+      }
+      interface ProductLite {
+        name: string
+        sell_price: string | number
+        sell_by_pill?: boolean
+      }
       // Store / Pharmacy
       api
-        .get<{ sales: any[] }>('/retail/sales?limit=1')
+        .get<{ sales: SaleLite[] }>('/retail/sales?limit=1')
         .then((r) => {
           const s = r.sales?.[0]
           if (s && s.items && s.items.length > 0) {
@@ -132,7 +175,7 @@ export default function Settings(): JSX.Element {
               customer_name: s.customer_name || 'Walk-in Customer',
               cashier_name: s.cashier || me?.full_name || 'Cashier',
               created_at: s.created_at,
-              items: s.items.map((it: any) => ({
+              items: s.items.map((it) => ({
                 name: it.name,
                 quantity: it.quantity,
                 unit_price: Number(it.unit_price),
@@ -148,7 +191,7 @@ export default function Settings(): JSX.Element {
             })
           } else {
             api
-              .get<{ products: any[] }>('/retail/products')
+              .get<{ products: ProductLite[] }>('/retail/products')
               .then((pr) => {
                 if (pr.products && pr.products.length > 0) {
                   const p1 = pr.products[0]
