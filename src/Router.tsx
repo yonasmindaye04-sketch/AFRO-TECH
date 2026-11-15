@@ -1,6 +1,7 @@
 import { Suspense, lazy } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { ThemeProvider } from './context/ThemeContext'
+import { LanguageProvider } from './context/LanguageContext'
 
 /* Route-level code splitting: every page group is only downloaded when its
    route is visited. This keeps /app/* routes free of landing-page code
@@ -19,16 +20,18 @@ function Fallback(): JSX.Element {
 export default function Router(): JSX.Element {
   return (
     <ThemeProvider>
-      <BrowserRouter>
-        <Suspense fallback={<Fallback />}>
-          <Routes>
-            <Route path="/" element={<App />} />
-            <Route path="/services" element={<ServicesPage />} />
-            <Route path="/products" element={<ProductsPage />} />
-            <Route path="/app/*" element={<PlatformRoot />} />
-          </Routes>
-        </Suspense>
-      </BrowserRouter>
+      <LanguageProvider>
+        <BrowserRouter>
+          <Suspense fallback={<Fallback />}>
+            <Routes>
+              <Route path="/" element={<App />} />
+              <Route path="/services" element={<ServicesPage />} />
+              <Route path="/products" element={<ProductsPage />} />
+              <Route path="/app/*" element={<PlatformRoot />} />
+            </Routes>
+          </Suspense>
+        </BrowserRouter>
+      </LanguageProvider>
     </ThemeProvider>
   )
 }

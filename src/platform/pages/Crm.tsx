@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { api, fmtDate, fmtMoney } from '../api'
 import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
-import { Badge, DataTable, EmptyState, ErrorBox, Field, Modal, OkBox, PageHeader, Spinner, StatCard } from '../ui'
+import { Badge, DataTable, EmptyState, ErrorBox, Field, Modal, OkBox, PageHeader, SearchInput, Spinner, StatCard } from '../ui'
 
 type LeadStage = 'lead' | 'qualified' | 'proposal' | 'won' | 'lost'
 
@@ -42,6 +42,7 @@ export default function Crm(): JSX.Element {
   const leadsQ = useApiData<{ leads: Lead[] }>('/erp/leads')
 
   const [stageFilter, setStageFilter] = useState<string>('')
+  const [search, setSearch] = useState<string>('')
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({
     name: '',
@@ -59,7 +60,15 @@ export default function Crm(): JSX.Element {
   const [errMsg, setErrMsg] = useState<string | null>(null)
 
   const allLeads = leadsQ.data?.leads ?? []
-  const filteredLeads = stageFilter ? allLeads.filter((l) => l.stage === stageFilter) : allLeads
+  const filteredLeads = allLeads.filter((l) => {
+    if (stageFilter && l.stage !== stageFilter) return false
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      const hay = `${l.name} ${l.organization ?? ''} ${l.phone ?? ''} ${l.email ?? ''} ${l.source ?? ''}`.toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  })
 
   const qualifiedCount = allLeads.filter((l) => l.stage === 'qualified' || l.stage === 'proposal').length
   const wonCount = allLeads.filter((l) => l.stage === 'won').length
@@ -145,13 +154,14 @@ export default function Crm(): JSX.Element {
       {notice && <OkBox message={notice} />}
       {errMsg && <ErrorBox message={errMsg} />}
 
-      <div className="pl-toolbar">
+      <div className="pl-toolbar" style={{ justifyContent: 'space-between' }}>
         <select className="pl-select" value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} aria-label="Filter by stage">
           <option value="">All stages</option>
           {(Object.keys(STAGE_LABEL) as LeadStage[]).map((st) => (
             <option key={st} value={st}>{STAGE_LABEL[st]}</option>
           ))}
         </select>
+        <SearchInput value={search} onChange={setSearch} placeholder="Search leads…" />
       </div>
 
       {leadsQ.loading ? (
@@ -161,7 +171,7 @@ export default function Crm(): JSX.Element {
       ) : (
         <DataTable
           rows={filteredLeads}
-          searchPlaceholder="Search leads…"
+          searchable={false}
           columns={[
             {
               key: 'name',

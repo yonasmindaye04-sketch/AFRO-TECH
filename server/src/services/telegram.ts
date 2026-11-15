@@ -44,6 +44,60 @@ export async function sendMessage(chatId: number | string, text: string, keyboar
   })
 }
 
+export async function sendContactFormTelegramNotification(
+  payload: { name: string; email: string; phone?: string; message: string; timestamp?: string },
+  chatIdOverride?: string | number
+): Promise<{ sent: boolean; reason?: string }> {
+  const token = (process.env.TELEGRAM_BOT_TOKEN || BOT_TOKEN).trim()
+  const chatId = String(
+    chatIdOverride ?? process.env.TELEGRAM_CONTACT_CHAT_ID ?? process.env.TELEGRAM_CHAT_ID ?? ''
+  ).trim()
+
+  if (!token) return { sent: false, reason: 'missing_bot_token' }
+  if (!chatId) return { sent: false, reason: 'missing_chat_id' }
+
+  const safeName = escapeHtml(payload.name.trim())
+  const safeEmail = escapeHtml(payload.email.trim())
+  const safePhone = payload.phone?.trim() ? escapeHtml(payload.phone.trim()) : 'Not provided'
+  const safeMessage = escapeHtml(payload.message.trim())
+  const sentAt = escapeHtml(payload.timestamp || new Date().toISOString())
+
+  const text = [
+    '📩 <b>New AFRO-TECH Contact Inquiry</b>',
+    '',
+    `<b>Name:</b> ${safeName}`,
+    `<b>Email:</b> ${safeEmail}`,
+    `<b>Phone:</b> ${safePhone}`,
+    '',
+    '<b>Message:</b>',
+    safeMessage,
+    '',
+    `<i>Submitted: ${sentAt}</i>`,
+  ].join('\n')
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+      }),
+    })
+    const json = (await res.json().catch(() => null)) as { ok?: boolean; description?: string } | null
+    if (!res.ok || !json?.ok) {
+      console.warn(`[telegram] contact notification failed: ${json?.description || `HTTP ${res.status}`}`)
+      return { sent: false, reason: 'telegram_api_error' }
+    }
+    return { sent: true }
+  } catch (err) {
+    console.warn('[telegram] contact notification error:', err instanceof Error ? err.message : err)
+    return { sent: false, reason: 'network_error' }
+  }
+}
+
 export async function getMe(): Promise<{ id: number; username: string } | null> {
   return api<{ id: number; username: string }>('getMe')
 }

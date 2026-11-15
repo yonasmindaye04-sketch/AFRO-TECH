@@ -36,14 +36,16 @@
 .pl-type-opt.active { border-color: var(--accent); background: rgba(var(--accent-rgb), .1); }
 .pl-type-opt.active i { color: var(--accent); }
 
-/* â”€â”€ Shell â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-.pl-shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+/* ── Shell ──────────────────────────────────────────────── */
+.pl-shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; transition: grid-template-columns .2s ease; }
 .pl-sidebar {
   position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column;
   background: var(--surface); border-right: 1px solid var(--border); padding: 18px 14px;
+  transition: padding .2s ease;
 }
 .pl-side-brand { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 4px 8px 16px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 1.05rem; }
 .pl-side-brand span { color: var(--accent); }
+.pl-side-actions { display: flex; align-items: center; gap: 6px; }
 .pl-firm-pill {
   display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 6px;
   font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
@@ -56,14 +58,19 @@
 .pl-firm-pill.store { color: #d4a843; }
 .pl-nav {
   flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+  padding-right: 4px;
 }
 .pl-nav::-webkit-scrollbar {
-  display: none;
+  width: 5px;
+}
+.pl-nav::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 999px;
 }
 /* The marketing stylesheet (index.css) styles the bare `nav` element
-   (position:fixed; width:100%; padding:20px 6%; â€¦). Reset every property it
+   (position:fixed; width:100%; padding:20px 6%; …). Reset every property it
    sets so the platform sidebar nav renders as a normal column. */
 .pl-sidebar nav.pl-nav,
 .pl-root nav {
@@ -79,19 +86,53 @@
   transition: none;
 }
 .pl-nav a {
-  display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 10px;
-  color: var(--text-dim); text-decoration: none; font-size: .93rem; font-weight: 500;
+  display: flex; align-items: center; gap: 10px; padding: 8px 11px; border-radius: 9px;
+  color: var(--text-dim); text-decoration: none; font-size: .88rem; font-weight: 500;
   transition: background .15s, color .15s;
 }
-.pl-nav a i { width: 18px; text-align: center; font-size: .95rem; }
+.pl-nav a i { width: 18px; text-align: center; font-size: .95rem; flex-shrink: 0; }
 .pl-nav a:hover { background: rgba(var(--accent-rgb), .07); color: var(--text); }
 .pl-nav a.active { background: rgba(var(--accent-rgb), .13); color: var(--accent); }
+.pl-nav-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pl-side-foot { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 10px; }
 .pl-user-chip { display: flex; align-items: center; gap: 10px; padding: 6px 8px; }
 .pl-avatar { width: 34px; height: 34px; border-radius: 50%; background: rgba(var(--accent-rgb), .16); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
 .pl-user-meta { min-width: 0; }
 .pl-user-meta strong { display: block; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pl-user-meta small { color: var(--text-dim); font-size: .74rem; text-transform: capitalize; }
+
+@media (min-width: 821px) {
+  .pl-shell.sidebar-collapsed { grid-template-columns: 72px 1fr; }
+  .pl-sidebar.collapsed { padding: 18px 10px; }
+  .pl-sidebar.collapsed .pl-side-brand {
+    justify-content: center;
+    flex-direction: column;
+    padding: 0 0 14px;
+    gap: 8px;
+  }
+  .pl-sidebar.collapsed .pl-brand-wordmark,
+  .pl-sidebar.collapsed .pl-firm-pill,
+  .pl-sidebar.collapsed .pl-nav-label,
+  .pl-sidebar.collapsed .pl-user-meta {
+    display: none;
+  }
+  .pl-sidebar.collapsed .pl-side-actions {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .pl-sidebar.collapsed .pl-nav { padding-right: 0; }
+  .pl-sidebar.collapsed .pl-nav a {
+    justify-content: center;
+    padding: 10px;
+  }
+  .pl-sidebar.collapsed .pl-user-chip {
+    justify-content: center;
+    padding: 6px 0;
+  }
+  .pl-sidebar.collapsed .pl-signout-btn {
+    padding: 8px 0;
+  }
+}
 
 .pl-main { padding: 26px clamp(16px, 3vw, 40px) 60px; min-width: 0; }
 .pl-trial-banner {
@@ -122,6 +163,7 @@
 .pl-btn-danger { background: transparent; border-color: #b34141; color: #e07a7a; }
 .pl-btn-danger:hover:not(:disabled) { background: rgba(179,65,65,.12); }
 .pl-btn-sm { padding: 6px 12px; font-size: .82rem; border-radius: 8px; }
+.pl-table .pl-btn { white-space: nowrap; }
 
 .pl-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .pl-field-label { font-size: .84rem; font-weight: 600; color: var(--text-mid); }
@@ -305,8 +347,9 @@ label:has(input[type="radio"]) {
 
 /* Shared search input (DataTable + page toolbars) */
 .pl-search { position: relative; display: inline-flex; flex: 1; min-width: 0; max-width: 340px; }
-.pl-search .fa-search { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-dim); pointer-events: none; }
-.pl-search .pl-input { padding-left: 32px; width: 100%; }
+.pl-search .fa-search,
+.pl-search svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-dim); pointer-events: none; font-size: .86rem; }
+.pl-search .pl-input { padding-left: 38px !important; width: 100%; }
 
 /* â”€â”€ Responsive sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @media (max-width: 820px) {
@@ -317,6 +360,7 @@ label:has(input[type="radio"]) {
   }
   .pl-sidebar.open { left: 0; }
   .pl-menu-toggle { display: inline-grid !important; }
+  .pl-collapse-btn { display: none !important; }
   .pl-main { padding-top: 74px; }
 }
 .pl-menu-toggle { display: none; position: fixed; top: 14px; left: 16px; z-index: 1600; width: 42px; height: 42px; border-radius: 10px; border: 1px solid var(--border2); background: var(--surface); color: var(--text); place-items: center; cursor: pointer; }

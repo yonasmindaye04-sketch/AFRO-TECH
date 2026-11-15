@@ -26,6 +26,7 @@ const RETAIL_NAV: NavItem[] = [
   { to: '/app/orders', icon: 'fa-solid fa-file-signature', label: 'Orders & Quotes' },
   { to: '/app/purchases', icon: 'fa-solid fa-truck-ramp-box', label: 'Purchases' },
   { to: '/app/warehouses', icon: 'fa-solid fa-warehouse', label: 'Warehouses & Ledger' },
+  { to: '/app/manufacturing', icon: 'fa-solid fa-industry', label: 'Manufacturing & Assets' },
   { to: '/app/stock', icon: 'fa-solid fa-sliders', label: 'Stock Adjustments' },
   { to: '/app/expiry', icon: 'fa-solid fa-hourglass-half', label: 'Expiry' },
   { to: '/app/suppliers', icon: 'fa-solid fa-truck-field', label: 'Suppliers' },
@@ -53,6 +54,7 @@ const HOSPITAL_NAV: NavItem[] = [
   { to: '/app/expenses', icon: 'fa-solid fa-coins', label: 'Expenses' },
   { to: '/app/payroll', icon: 'fa-solid fa-money-check-dollar', label: 'Payroll' },
   { to: '/app/accounting', icon: 'fa-solid fa-scale-balanced', label: 'Accounting & GL' },
+  { to: '/app/manufacturing', icon: 'fa-solid fa-building-columns', label: 'Fixed Assets' },
   { to: '/app/hospital-reports', icon: 'fa-solid fa-chart-line', label: 'Reports' },
 ]
 
@@ -72,6 +74,7 @@ const SCHOOL_NAV: NavItem[] = [
   { to: '/app/expenses', icon: 'fa-solid fa-coins', label: 'Expenses' },
   { to: '/app/payroll', icon: 'fa-solid fa-money-check-dollar', label: 'Payroll' },
   { to: '/app/accounting', icon: 'fa-solid fa-scale-balanced', label: 'Accounting & GL' },
+  { to: '/app/manufacturing', icon: 'fa-solid fa-building-columns', label: 'Fixed Assets' },
   { to: '/app/school-reports', icon: 'fa-solid fa-chart-line', label: 'Reports' },
 ]
 
@@ -85,6 +88,13 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
   const { me, logout } = useAuth()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('afro-sidebar-collapsed') === '1'
+    } catch {
+      return false
+    }
+  })
   const tenant = me?.tenant
   const firmType = tenant?.business_type || 'store'
   const baseItems = tenant ? navFor(tenant.business_type) : []
@@ -96,6 +106,18 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
     .toUpperCase()
 
   const { dark, toggle: toggleTheme } = useTheme()
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem('afro-sidebar-collapsed', next ? '1' : '0')
+      } catch {
+        // Ignore storage errors
+      }
+      return next
+    })
+  }
 
   useEffect(() => {
     document.documentElement.setAttribute('data-firm', firmType)
@@ -162,6 +184,8 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
         return permissions.includes('sales.view') || permissions.includes('purchases.view')
       case '/app/warehouses':
         return permissions.includes('inventory.view') || permissions.includes('inventory.manage')
+      case '/app/manufacturing':
+        return permissions.includes('inventory.manage') || permissions.includes('billing.view') || permissions.includes('payments.view')
       case '/app/purchases':
         // Purchases: purchases.create
         return permissions.includes('purchases.create')
@@ -247,11 +271,11 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
         <i className="fa-solid fa-bars" aria-hidden="true" />
       </button>
       {open && <div className="pl-scrim" onClick={() => setOpen(false)} />}
-      <div className={`pl-shell ${open ? 'sidebar-open' : ''}`}>
-        <aside className={`pl-sidebar ${open ? 'open' : ''}`}>
+      <div className={`pl-shell ${open ? 'sidebar-open' : ''} ${collapsed ? 'sidebar-collapsed' : ''}`}>
+        <aside className={`pl-sidebar ${open ? 'open' : ''} ${collapsed ? 'collapsed' : ''}`}>
           <div className="pl-side-brand">
-            <div>AFRO<span>SUITE</span></div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className="pl-brand-wordmark">AFRO<span>SUITE</span></div>
+            <div className="pl-side-actions">
               {tenant && (
                 <span className={`pl-firm-pill ${firmType}`}>
                   <i className={FIRM_ICONS[firmType] || 'fa-solid fa-building'} aria-hidden="true" />
@@ -267,41 +291,66 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
               >
                 <i className={dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon'} aria-hidden="true" />
               </button>
+              <button
+                type="button"
+                className="pl-theme-toggle pl-collapse-btn"
+                onClick={toggleCollapsed}
+                title={collapsed ? 'Expand sidebar' : 'Minimize sidebar'}
+                aria-label={collapsed ? 'Expand sidebar' : 'Minimize sidebar'}
+                aria-expanded={!collapsed}
+                data-testid="sidebar-collapse-btn"
+              >
+                <i className={collapsed ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left'} aria-hidden="true" />
+              </button>
             </div>
           </div>
           <nav className="pl-nav" aria-label="Main">
             {items.map((item) => (
-              <NavLink key={item.to} to={item.to} end={item.end} onClick={() => setOpen(false)}>
-                <i className={item.icon} aria-hidden="true" /> {item.label}
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                onClick={() => setOpen(false)}
+                title={item.label}
+                aria-label={item.label}
+              >
+                <i className={item.icon} aria-hidden="true" />
+                <span className="pl-nav-label">{item.label}</span>
               </NavLink>
             ))}
             {(me?.role === 'afrotech_admin') && (
-              <NavLink to="/app" end>
-                <i className="fa-solid fa-shield-halved" aria-hidden="true" /> Admin Panel
+              <NavLink to="/app" end title="Admin Panel" aria-label="Admin Panel">
+                <i className="fa-solid fa-shield-halved" aria-hidden="true" />
+                <span className="pl-nav-label">Admin Panel</span>
               </NavLink>
             )}
             {me?.role === 'owner' && tenant && (
               <>
-                <NavLink to="/app/users" onClick={() => setOpen(false)}>
-                  <i className="fa-solid fa-users-gear" aria-hidden="true" /> Team
+                <NavLink to="/app/users" onClick={() => setOpen(false)} title="Team" aria-label="Team">
+                  <i className="fa-solid fa-users-gear" aria-hidden="true" />
+                  <span className="pl-nav-label">Team</span>
                 </NavLink>
-                <NavLink to="/app/settings" onClick={() => setOpen(false)}>
-                  <i className="fa-solid fa-gear" aria-hidden="true" /> Settings
+                <NavLink to="/app/settings" onClick={() => setOpen(false)} title="Settings" aria-label="Settings">
+                  <i className="fa-solid fa-gear" aria-hidden="true" />
+                  <span className="pl-nav-label">Settings</span>
                 </NavLink>
-                <NavLink to="/app/bot-studio" onClick={() => setOpen(false)}>
-                  <i className="fa-solid fa-robot" aria-hidden="true" /> My Telegram Bot
+                <NavLink to="/app/bot-studio" onClick={() => setOpen(false)} title="My Telegram Bot" aria-label="My Telegram Bot">
+                  <i className="fa-solid fa-robot" aria-hidden="true" />
+                  <span className="pl-nav-label">My Telegram Bot</span>
                 </NavLink>
-                <NavLink to="/app/marketing" onClick={() => setOpen(false)}>
-                  <i className="fa-solid fa-bullhorn" aria-hidden="true" /> Marketing
+                <NavLink to="/app/marketing" onClick={() => setOpen(false)} title="Marketing" aria-label="Marketing">
+                  <i className="fa-solid fa-bullhorn" aria-hidden="true" />
+                  <span className="pl-nav-label">Marketing</span>
                 </NavLink>
-                <NavLink to="/app/subscription" onClick={() => setOpen(false)}>
-                  <i className="fa-solid fa-receipt" aria-hidden="true" /> Subscription
+                <NavLink to="/app/subscription" onClick={() => setOpen(false)} title="Subscription" aria-label="Subscription">
+                  <i className="fa-solid fa-receipt" aria-hidden="true" />
+                  <span className="pl-nav-label">Subscription</span>
                 </NavLink>
               </>
             )}
           </nav>
           <div className="pl-side-foot">
-            <div className="pl-user-chip">
+            <div className="pl-user-chip" title={me?.full_name || 'User'}>
               <span className="pl-avatar">{initials}</span>
               <div className="pl-user-meta">
                 <strong>{me?.full_name}</strong>
@@ -311,14 +360,17 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
 
             <button
               type="button"
-              className="pl-btn pl-btn-ghost pl-btn-sm"
+              className="pl-btn pl-btn-ghost pl-btn-sm pl-signout-btn"
               style={{ width: '100%', justifyContent: 'center', marginTop: 6 }}
+              title="Sign out"
+              aria-label="Sign out"
               onClick={() => {
                 logout()
                 navigate('/app/login')
               }}
             >
-              <i className="fa-solid fa-arrow-right-from-bracket" aria-hidden="true" /> Sign out
+              <i className="fa-solid fa-arrow-right-from-bracket" aria-hidden="true" />
+              <span className="pl-nav-label">Sign out</span>
             </button>
           </div>
         </aside>

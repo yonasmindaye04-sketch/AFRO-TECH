@@ -58,6 +58,7 @@ const Expenses = lazy(() => import('./pages/Expenses'))
 const Payroll = lazy(() => import('./pages/Payroll'))
 const Accounting = lazy(() => import('./pages/Accounting'))
 const Crm = lazy(() => import('./pages/Crm'))
+const Manufacturing = lazy(() => import('./pages/Manufacturing'))
 const MarketingDashboard = lazy(() => import('./marketing/MarketingDashboard'))
 const Contacts = lazy(() => import('./marketing/Contacts'))
 const Audiences = lazy(() => import('./marketing/Audiences'))
@@ -185,6 +186,7 @@ function Inner(): JSX.Element {
             <Route path="payroll" element={<Payroll />} />
             <Route path="accounting" element={<Accounting />} />
             <Route path="crm" element={<Crm />} />
+            <Route path="manufacturing" element={<Manufacturing />} />
             <Route path="users" element={me?.role === 'owner' ? <Team /> : <Navigate to="/app" replace />} />
             <Route path="settings" element={me?.role === 'owner' ? <Settings /> : <Navigate to="/app" replace />} />
             <Route path="subscription" element={me?.role === 'owner' ? <Subscription /> : <Navigate to="/app" replace />} />

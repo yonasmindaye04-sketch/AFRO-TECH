@@ -4,9 +4,11 @@ import Lenis from 'lenis';
 import Navbar from '../components/Navbar';
 import { useReveal } from '../hooks/useReveal';
 import { services, tierLabels, tierColors } from '../data';
+import { useLanguage } from '../context/languageCtx';
 import '../index.css';
 
 export default function ServicesPage() {
+  const { t } = useLanguage();
   const [activeFilter, setActiveFilter] = useState('all');
   const [scrollPct, setScrollPct] = useState(0);
   const [showTop, setShowTop] = useState(false);
@@ -67,11 +69,11 @@ export default function ServicesPage() {
       <section className="services-hero">
         <div className="services-hero-inner">
           <Link to="/" className="services-hero-back">
-            <i className="fa-solid fa-arrow-left" /> Back to Home
+            <i className="fa-solid fa-arrow-left" /> {t('servicesPage.backHome')}
           </Link>
-          <h1 className="services-hero-title">Services & Pricing</h1>
+          <h1 className="services-hero-title">{t('servicesPage.title')}</h1>
           <p className="services-hero-sub">
-            From simple landing pages to full enterprise platforms — transparent pricing, no hidden fees.
+            {t('servicesPage.sub')}
           </p>
         </div>
       </section>
@@ -82,7 +84,7 @@ export default function ServicesPage() {
           <div className="filter-tabs">
             {filters.map(f => (
               <button key={f} className={`filter-tab ${activeFilter === f ? 'active' : ''}`} onClick={() => setActiveFilter(f)}>
-                {f === 'all' ? 'All' : tierLabels[f]}
+                {f === 'all' ? t('servicesPage.all') : tierLabels[f]}
               </button>
             ))}
           </div>
@@ -113,7 +115,7 @@ export default function ServicesPage() {
                   <div className="price-range">{s.price} <span>ETB</span></div>
                 </div>
                 <button className="btn-plan-card" onClick={() => scrollTo('services-cta')}>
-                  Get a Quote <i className="fa-solid fa-arrow-right" />
+                  {t('servicesPage.getQuote')} <i className="fa-solid fa-arrow-right" />
                 </button>
               </div>
             </div>
@@ -121,10 +123,10 @@ export default function ServicesPage() {
         </div>
 
         <div className="services-footer">
-          <span className="services-footer-text">All projects include:</span>
+          <span className="services-footer-text">{t('servicesPage.allInclude')}</span>
           <div className="services-footer-tags">
-            {['Responsive Design', 'SEO', 'Admin Dashboard', 'Security', 'Training & Support'].map(t => (
-              <span key={t} className="tag"><i className="fa-solid fa-check" /> {t}</span>
+            {['Responsive Design', 'SEO', 'Admin Dashboard', 'Security', 'Training & Support'].map(tag => (
+              <span key={tag} className="tag"><i className="fa-solid fa-check" /> {tag}</span>
             ))}
           </div>
         </div>
@@ -133,10 +135,10 @@ export default function ServicesPage() {
       {/* ── FEATURE COMPARISON TABLE ───────────────────────── */}
       <div className="comparison-wrap">
         <div className="comparison-inner">
-          <h2 className="section-title">What's Included</h2>
+          <h2 className="section-title">{t('servicesPage.whatsIncluded')}</h2>
           <div className="comparison-table">
             <div className="comparison-header">
-              <div className="comparison-col comp-feature">Feature</div>
+              <div className="comparison-col comp-feature">{t('servicesPage.feature')}</div>
               <div className="comparison-col comp-tier">Starter</div>
               <div className="comparison-col comp-tier comp-popular">Professional</div>
               <div className="comparison-col comp-tier">Enterprise</div>
@@ -162,14 +164,14 @@ export default function ServicesPage() {
       {/* ── CTA ────────────────────────────────────────────── */}
       <div className="services-cta-wrap" id="services-cta">
         <div className="services-cta-inner">
-          <h2 className="services-cta-title">Ready to start?</h2>
-          <p className="services-cta-sub">Tell us about your project and we'll send you a detailed proposal within 24 hours.</p>
+          <h2 className="services-cta-title">{t('servicesPage.readyTitle')}</h2>
+          <p className="services-cta-sub">{t('servicesPage.readySub')}</p>
           <div className="services-cta-actions">
             <Link to="/#contact-section" className="btn-primary">
-              Start a Project <i className="fa-solid fa-arrow-right" />
+              {t('hero.ctaStart')} <i className="fa-solid fa-arrow-right" />
             </Link>
             <a href="https://wa.me/251910011818" target="_blank" rel="noopener noreferrer" className="btn-ghost">
-              <i className="fa-brands fa-whatsapp" /> WhatsApp Us
+              <i className="fa-brands fa-whatsapp" /> {t('servicesPage.whatsappUs')}
             </a>
           </div>
         </div>
@@ -182,7 +184,7 @@ export default function ServicesPage() {
           <img src="/logo/Untitled_design-removebg-preview.png" alt="AFRO-TECH" className="logo-img" width="40" height="40" />
           <span className="logo-text">AFRO<span>-TECH</span></span>
         </div>
-        <div className="footer-copy">&copy; 2026 &middot; Made in Addis Ababa</div>
+        <div className="footer-copy">{t('footer.copy')}</div>
         <div className="footer-links">
           {[
             ['mailto:yonasmindaye04@gmail.com', 'fa-solid fa-envelope', 'Email us'],

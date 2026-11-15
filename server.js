@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import { sendContactTelegramNotification } from './server/contactTelegram.js';
 
 dotenv.config();
 
@@ -38,12 +39,15 @@ const DEFAULT_COA = [
   { code: '1120', name: 'CBE / Bank Account', root_type: 'Asset', account_type: 'Bank', balance: 120000 },
   { code: '1210', name: 'Accounts Receivable', root_type: 'Asset', account_type: 'Receivable', balance: 1450 },
   { code: '1410', name: 'Inventory Stock Asset', root_type: 'Asset', account_type: 'Stock', balance: 15320 },
+  { code: '1510', name: 'Property, Equipment & Hardware', root_type: 'Asset', account_type: 'Fixed Asset', balance: 85000 },
+  { code: '1590', name: 'Accumulated Depreciation', root_type: 'Liability', account_type: 'Accumulated Depreciation', balance: 8500 },
   { code: '2110', name: 'Accounts Payable', root_type: 'Liability', account_type: 'Payable', balance: 0 },
   { code: '2210', name: 'Payroll & Tax Payable', root_type: 'Liability', account_type: 'Tax', balance: 0 },
-  { code: '3100', name: 'Owner Equity / Capital', root_type: 'Equity', account_type: 'Equity', balance: 180320 },
+  { code: '3100', name: 'Owner Equity / Capital', root_type: 'Equity', account_type: 'Equity', balance: 256820 },
   { code: '4100', name: 'Sales & Service Revenue', root_type: 'Income', account_type: 'Income', balance: 1260 },
   { code: '5100', name: 'Cost of Goods Sold', root_type: 'Expense', account_type: 'Expense', balance: 850 },
   { code: '5200', name: 'Operating & Admin Expenses', root_type: 'Expense', account_type: 'Expense', balance: 2400 },
+  { code: '5300', name: 'Depreciation Expense', root_type: 'Expense', account_type: 'Depreciation', balance: 0 },
 ];
 
 function appendGlEntry(store, { voucher_type, voucher_no, account_code, debit = 0, credit = 0, party = null, remarks = '' }) {
@@ -350,6 +354,51 @@ function ensureTenantStore(tenantId, businessType = 'pharmacy', tenantName = 'Wo
           created_at: new Date().toISOString(),
         },
       ],
+      boms: [
+        {
+          id: 'bom-1',
+          code: 'BOM-001',
+          name: businessType === 'pharmacy' ? 'First-Aid & Relief Kit' : 'Ethiopian Hospitality Gift Pack',
+          output_product_id: 'prod-1',
+          output_product_name: initialProducts[0].name,
+          output_qty: 1,
+          components: [{ product_id: 'prod-2', product_name: initialProducts[1].name, qty_per_unit: 2, unit_cost: Number(initialProducts[1].cost_price) }],
+          notes: 'Standard assembly bundle',
+          created_at: new Date().toISOString(),
+        },
+      ],
+      workOrders: [
+        {
+          id: 'wo-1',
+          number: 'MFG-1001',
+          bom_id: 'bom-1',
+          bom_name: businessType === 'pharmacy' ? 'First-Aid & Relief Kit' : 'Ethiopian Hospitality Gift Pack',
+          output_product_id: 'prod-1',
+          output_product_name: initialProducts[0].name,
+          qty_to_produce: 2,
+          estimated_cost: Number(initialProducts[1].cost_price) * 4,
+          status: 'planned',
+          due_date: in25Days,
+          created_at: new Date().toISOString(),
+        },
+      ],
+      assets: [
+        {
+          id: 'ast-1',
+          code: 'AST-1001',
+          name: businessType === 'hospital' ? 'Digital Hematology Analyzer' : businessType === 'school' ? 'Computer Lab Workstations (10x)' : 'POS Counter Terminal & Scanner Set',
+          category: 'Equipment',
+          location: 'Main Branch',
+          purchase_date: today,
+          purchase_cost: 85000,
+          salvage_value: 5000,
+          useful_life_months: 48,
+          accumulated_depreciation: 8500,
+          status: 'active',
+          created_at: new Date().toISOString(),
+        },
+      ],
+      telegramLink: { linked: false, code: null },
       expenses: [
         {
           id: 'exp-1',
@@ -506,6 +555,7 @@ app.post('/api/contact', async (req, res) => {
   const EMAIL = (process.env.EMAIL || process.env.CONTACT_USER || '').trim();
   const EMAIL_PASS = (process.env.EMAIL_PASS || process.env.CONTACT_PASS || '').replace(/\s+/g, '');
 
+  let emailSent = false;
   if (EMAIL && EMAIL_PASS) {
     try {
       const transporter = nodemailer.createTransport({
@@ -519,12 +569,23 @@ app.post('/api/contact', async (req, res) => {
         subject: `New Inquiry from ${name.trim()}`,
         text: `Name: ${name}\nEmail: ${email}\nPhone: ${phone || 'Not provided'}\n\n${message}`,
       });
+      emailSent = true;
     } catch (err) {
       console.warn('[contact] SMTP send skipped:', err instanceof Error ? err.message : err);
     }
   }
 
-  return res.json({ ok: true, success: true });
+  const telegram = await sendContactTelegramNotification({ name, email, phone, message });
+
+  return res.json({
+    ok: true,
+    success: true,
+    emailSent,
+    telegram: {
+      sent: telegram.sent,
+      ...(telegram.reason ? { reason: telegram.reason } : {}),
+    },
+  });
 });
 
 /* ── Auth (/api/v1/auth/*) ─────────────────────────────────── */
@@ -618,6 +679,47 @@ app.post('/api/v1/auth/change-password', (req, res) => {
   }
   user.password = String(new_password);
   return res.json({ ok: true });
+});
+
+app.post('/api/v1/auth/complete-social', (req, res) => {
+  const { company_name = 'New Workspace', business_type = 'pharmacy', owner_name = 'Workspace Owner', email } = req.body ?? {};
+  const cleanEmail = String(email || `social-${crypto.randomUUID().slice(0, 6)}@afrotech.et`).trim().toLowerCase();
+  let user = users.get(cleanEmail);
+  if (!user) {
+    const tenantId = `tenant-${crypto.randomUUID().slice(0, 8)}`;
+    const userId = `user-${crypto.randomUUID().slice(0, 8)}`;
+    const slug = String(company_name).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'workspace';
+    const tenant = {
+      id: tenantId,
+      name: String(company_name).trim(),
+      slug,
+      business_type,
+      status: 'trial',
+      trial_ends_at: new Date(Date.now() + TRIAL_DAYS * 86400000).toISOString(),
+      trial_days_left: TRIAL_DAYS,
+      owner_id: userId,
+      owner_name: String(owner_name).trim(),
+      owner_email: cleanEmail,
+      created_at: new Date().toISOString(),
+    };
+    tenants.set(tenantId, tenant);
+    ensureTenantStore(tenantId, business_type, tenant.name);
+    user = {
+      id: userId,
+      email: cleanEmail,
+      password: crypto.randomUUID(),
+      full_name: String(owner_name).trim(),
+      role: 'owner',
+      is_active: true,
+      tenant_id: tenantId,
+      created_at: new Date().toISOString(),
+      profile_values: { BASE_SALARY: 0, TRANSPORT_ALLOW: 0, HOUSING_ALLOW: 0 },
+    };
+    users.set(cleanEmail, user);
+  }
+  const token = `tok_${crypto.randomUUID()}`;
+  sessions.set(token, cleanEmail);
+  return res.json({ token, me: buildMe(user) });
 });
 
 /* ── Tenant & Settings ─────────────────────────────────────── */
@@ -1751,6 +1853,185 @@ app.delete('/api/v1/erp/leads/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// Payment Entries (Customer Receipt / Supplier Payment -> Double-entry GL)
+app.post('/api/v1/erp/payment-entries', (req, res) => {
+  const { store } = activeCtx(req);
+  const { direction = 'receive', party_id = '', amount = 0, payment_method = 'cash', remarks = '' } = req.body ?? {};
+  const amt = Math.max(0, Number(amount || 0));
+  if (amt <= 0) return res.status(400).json({ error: 'Amount must be greater than zero' });
+  const cashAcct = payment_method === 'cash' ? '1110' : '1120';
+  if (direction === 'receive') {
+    const cust = store.customers.find((c) => c.id === party_id);
+    if (cust) cust.balance = Math.max(0, Number(cust.balance || 0) - amt).toFixed(2);
+    const voucherNo = `PE-R-${1001 + store.glEntries.length}`;
+    appendGlEntry(store, { voucher_type: 'Payment Entry', voucher_no: voucherNo, account_code: cashAcct, debit: amt, credit: 0, party: cust?.name || 'Customer', remarks: remarks || 'Customer receipt' });
+    appendGlEntry(store, { voucher_type: 'Payment Entry', voucher_no: voucherNo, account_code: '1210', debit: 0, credit: amt, party: cust?.name || 'Customer', remarks: remarks || 'Receivable settlement' });
+    return res.status(201).json({ ok: true, voucher_no: voucherNo });
+  }
+  const sup = store.suppliers.find((s) => s.id === party_id);
+  if (sup) sup.balance = Math.max(0, Number(sup.balance || 0) - amt).toFixed(2);
+  const voucherNo = `PE-P-${1001 + store.glEntries.length}`;
+  appendGlEntry(store, { voucher_type: 'Payment Entry', voucher_no: voucherNo, account_code: '2110', debit: amt, credit: 0, party: sup?.name || 'Supplier', remarks: remarks || 'Supplier payment' });
+  appendGlEntry(store, { voucher_type: 'Payment Entry', voucher_no: voucherNo, account_code: cashAcct, debit: 0, credit: amt, party: sup?.name || 'Supplier', remarks: remarks || 'Supplier payment' });
+  return res.status(201).json({ ok: true, voucher_no: voucherNo });
+});
+
+// Manufacturing: Bills of Materials (BOM) & Work Orders
+app.get('/api/v1/erp/boms', (req, res) => {
+  const { store } = activeCtx(req);
+  res.json({ boms: store.boms, products: store.products });
+});
+app.post('/api/v1/erp/boms', (req, res) => {
+  const { store } = activeCtx(req);
+  const b = req.body ?? {};
+  const outProd = store.products.find((p) => p.id === b.output_product_id);
+  const comps = (Array.isArray(b.components) ? b.components : []).map((c) => {
+    const p = store.products.find((x) => x.id === c.product_id);
+    return {
+      product_id: c.product_id,
+      product_name: p?.name || 'Material',
+      qty_per_unit: Math.max(0.01, Number(c.qty_per_unit || 1)),
+      unit_cost: Number(p?.cost_price || c.unit_cost || 0),
+    };
+  });
+  const bom = {
+    id: `bom-${crypto.randomUUID().slice(0, 8)}`,
+    code: `BOM-${String(store.boms.length + 1).padStart(3, '0')}`,
+    name: String(b.name || (outProd ? `${outProd.name} Assembly` : 'New BOM')).trim(),
+    output_product_id: outProd?.id || b.output_product_id,
+    output_product_name: outProd?.name || 'Finished Product',
+    output_qty: Math.max(1, Number(b.output_qty || 1)),
+    components: comps,
+    notes: b.notes || null,
+    created_at: new Date().toISOString(),
+  };
+  store.boms.unshift(bom);
+  res.status(201).json({ bom });
+});
+
+app.get('/api/v1/erp/work-orders', (req, res) => {
+  res.json({ work_orders: activeCtx(req).store.workOrders });
+});
+app.post('/api/v1/erp/work-orders', (req, res) => {
+  const { store } = activeCtx(req);
+  const b = req.body ?? {};
+  const bom = store.boms.find((x) => x.id === b.bom_id);
+  if (!bom) return res.status(404).json({ error: 'BOM not found' });
+  const qty = Math.max(1, Number(b.qty_to_produce || 1));
+  const unitCost = (bom.components || []).reduce((s, c) => s + Number(c.qty_per_unit || 0) * Number(c.unit_cost || 0), 0);
+  const wo = {
+    id: `wo-${crypto.randomUUID().slice(0, 8)}`,
+    number: `MFG-${1001 + store.workOrders.length}`,
+    bom_id: bom.id,
+    bom_name: bom.name,
+    output_product_id: bom.output_product_id,
+    output_product_name: bom.output_product_name,
+    qty_to_produce: qty,
+    estimated_cost: Number((unitCost * qty).toFixed(2)),
+    status: 'planned',
+    due_date: b.due_date || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
+    created_at: new Date().toISOString(),
+  };
+  store.workOrders.unshift(wo);
+  res.status(201).json({ work_order: wo });
+});
+app.post('/api/v1/erp/work-orders/:id/complete', (req, res) => {
+  const { store } = activeCtx(req);
+  const wo = store.workOrders.find((x) => x.id === req.params.id);
+  if (!wo) return res.status(404).json({ error: 'Work Order not found' });
+  if (wo.status === 'completed') return res.json({ work_order: wo });
+  const bom = store.boms.find((b) => b.id === wo.bom_id);
+  const defWh = store.warehouses[0];
+  let totalConsumedValue = 0;
+
+  for (const comp of bom?.components ?? []) {
+    const rawProd = store.products.find((p) => p.id === comp.product_id);
+    const consumeQty = Math.ceil(Number(comp.qty_per_unit || 1) * Number(wo.qty_to_produce || 1));
+    if (rawProd) {
+      syncProductStock(rawProd, -consumeQty);
+      if (defWh) defWh.stock_map[rawProd.id] = Math.max(0, Number(defWh.stock_map[rawProd.id] ?? rawProd.stock));
+      const rate = Number(rawProd.cost_price || comp.unit_cost || 0);
+      totalConsumedValue += consumeQty * rate;
+      appendStockLedger(store, {
+        voucher_type: 'Manufacture (Consume)',
+        voucher_no: wo.number,
+        product: rawProd,
+        warehouse_id: defWh?.id,
+        qty_change: -consumeQty,
+        rate,
+      });
+    }
+  }
+
+  const outProd = store.products.find((p) => p.id === wo.output_product_id);
+  const producedQty = Number(wo.qty_to_produce || 1) * Number(bom?.output_qty || 1);
+  if (outProd) {
+    syncProductStock(outProd, producedQty);
+    if (defWh) defWh.stock_map[outProd.id] = Number(defWh.stock_map[outProd.id] || 0) + producedQty;
+    appendStockLedger(store, {
+      voucher_type: 'Manufacture (Produce)',
+      voucher_no: wo.number,
+      product: outProd,
+      warehouse_id: defWh?.id,
+      qty_change: producedQty,
+      rate: producedQty > 0 ? Number((totalConsumedValue / producedQty).toFixed(2)) : Number(outProd.cost_price || 0),
+    });
+  }
+
+  wo.status = 'completed';
+  wo.completed_at = new Date().toISOString();
+  res.json({ work_order: wo });
+});
+
+// Fixed Assets & Depreciation
+app.get('/api/v1/erp/assets', (req, res) => {
+  res.json({ assets: activeCtx(req).store.assets });
+});
+app.post('/api/v1/erp/assets', (req, res) => {
+  const { store } = activeCtx(req);
+  const b = req.body ?? {};
+  const cost = Math.max(0, Number(b.purchase_cost || 0));
+  const asset = {
+    id: `ast-${crypto.randomUUID().slice(0, 8)}`,
+    code: `AST-${1001 + store.assets.length}`,
+    name: String(b.name || 'New Asset').trim(),
+    category: String(b.category || 'Equipment').trim(),
+    location: String(b.location || 'Main Branch').trim(),
+    purchase_date: b.purchase_date || new Date().toISOString().slice(0, 10),
+    purchase_cost: cost,
+    salvage_value: Math.max(0, Number(b.salvage_value || 0)),
+    useful_life_months: Math.max(1, Number(b.useful_life_months || 36)),
+    accumulated_depreciation: 0,
+    status: 'active',
+    created_at: new Date().toISOString(),
+  };
+  store.assets.unshift(asset);
+  if (cost > 0) {
+    appendGlEntry(store, { voucher_type: 'Asset Capitalization', voucher_no: asset.code, account_code: '1510', debit: cost, credit: 0, remarks: `Capitalize ${asset.name}` });
+    appendGlEntry(store, { voucher_type: 'Asset Capitalization', voucher_no: asset.code, account_code: '1120', debit: 0, credit: cost, remarks: `Payment for ${asset.name}` });
+  }
+  res.status(201).json({ asset });
+});
+app.post('/api/v1/erp/assets/:id/depreciate', (req, res) => {
+  const { store } = activeCtx(req);
+  const asset = store.assets.find((a) => a.id === req.params.id);
+  if (!asset) return res.status(404).json({ error: 'Asset not found' });
+  const depreciable = Math.max(0, Number(asset.purchase_cost) - Number(asset.salvage_value));
+  const remaining = Math.max(0, depreciable - Number(asset.accumulated_depreciation));
+  if (remaining <= 0.005) {
+    asset.status = 'fully_depreciated';
+    return res.json({ asset, posted_amount: 0 });
+  }
+  const monthly = Number(((depreciable / Math.max(1, Number(asset.useful_life_months)))).toFixed(2));
+  const postAmt = Math.min(remaining, monthly);
+  asset.accumulated_depreciation = Number((Number(asset.accumulated_depreciation) + postAmt).toFixed(2));
+  if (asset.accumulated_depreciation >= depreciable - 0.01) asset.status = 'fully_depreciated';
+  const voucherNo = `DEP-${asset.code}-${store.glEntries.length + 1}`;
+  appendGlEntry(store, { voucher_type: 'Depreciation Entry', voucher_no: voucherNo, account_code: '5300', debit: postAmt, credit: 0, remarks: `Monthly depreciation: ${asset.name}` });
+  appendGlEntry(store, { voucher_type: 'Depreciation Entry', voucher_no: voucherNo, account_code: '1590', debit: 0, credit: postAmt, remarks: `Accumulated depreciation: ${asset.name}` });
+  res.json({ asset, posted_amount: postAmt });
+});
+
 /* ── Hospital & Flow (/api/v1/hospital/*, /api/v1/flow/*) ──── */
 app.get('/api/v1/hospital/dashboard', (req, res) => {
   const { store } = activeCtx(req, 'hospital');
@@ -2099,6 +2380,9 @@ app.patch('/api/v1/school/students/:id', (req, res) => {
   if (st) Object.assign(st, req.body);
   res.json({ student: st });
 });
+app.post('/api/v1/school/students/:id/notify', (_req, res) => {
+  res.json({ ok: true, emailStatus: 'sent', telegramStatus: 'queued' });
+});
 app.post('/api/v1/school/students/promote', (req, res) => {
   const { store } = activeCtx(req, 'school');
   const { from_class_id, to_class_id } = req.body ?? {};
@@ -2280,6 +2564,11 @@ app.post('/api/v1/school/announcements', (req, res) => {
   const ann = { id: `ann-${crypto.randomUUID().slice(0, 8)}`, ...req.body, created_at: new Date().toISOString() };
   store.announcements.unshift(ann);
   res.status(201).json({ announcement: ann });
+});
+app.delete('/api/v1/school/announcements/:id', (req, res) => {
+  const { store } = activeCtx(req, 'school');
+  store.announcements = store.announcements.filter((a) => a.id !== req.params.id);
+  res.json({ ok: true });
 });
 
 app.get('/api/v1/school/report-cards', (req, res) => {
@@ -2472,6 +2761,22 @@ app.delete('/api/v1/teaching/expectations/:id', (req, res) => {
   const { store } = activeCtx(req, 'school');
   store.expectations = store.expectations.filter((e) => e.id !== req.params.id);
   res.json({ ok: true });
+});
+app.post('/api/v1/teaching/teachers/:id/link-account', (req, res) => {
+  const { store } = activeCtx(req, 'school');
+  const t = store.teachers.find((x) => x.id === req.params.id);
+  if (t) t.user_id = req.body?.user_id || null;
+  res.json({ ok: true, teacher: t });
+});
+app.post('/api/v1/teaching/sessions/:id/override', (req, res) => {
+  const { store } = activeCtx(req, 'school');
+  const s = store.teachingSessions.find((x) => x.id === req.params.id);
+  if (s) {
+    if (req.body?.status) s.status = req.body.status;
+    if (req.body?.status_reason !== undefined) s.status_reason = req.body.status_reason;
+    if (req.body?.substitute_name !== undefined) s.substitute_name = req.body.substitute_name;
+  }
+  res.json({ session: s });
 });
 
 /* ── Expenses, Payroll, Users, Billing, Bot, Marketing, Admin ─ */
@@ -2741,9 +3046,20 @@ app.post('/api/v1/billing/verify', (_req, res) => res.json({ ok: true, access_un
 app.get('/api/v1/telegram/config', (req, res) => {
   const { store } = activeCtx(req);
   if (store.tenantBot) {
-    return res.json({ enabled: store.tenantBot.is_active, bot_username: store.tenantBot.bot_username, is_tenant_bot: true, linked: true, app_url: store.tenantBot.share_url });
+    return res.json({ enabled: store.tenantBot.is_active, bot_username: store.tenantBot.bot_username, is_tenant_bot: true, linked: Boolean(store.telegramLink?.linked || true), app_url: store.tenantBot.share_url });
   }
-  res.json({ enabled: false, bot_username: null, linked: false, app_url: '' });
+  res.json({ enabled: false, bot_username: null, linked: Boolean(store.telegramLink?.linked), app_url: '' });
+});
+app.post('/api/v1/telegram/link-code', (req, res) => {
+  const { store } = activeCtx(req);
+  const code = `AFRO-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  store.telegramLink = { linked: false, code };
+  res.json({ code, bot_username: store.tenantBot?.bot_username || 'afro_suite_bot', expires_in: 600 });
+});
+app.post('/api/v1/telegram/unlink', (req, res) => {
+  const { store } = activeCtx(req);
+  store.telegramLink = { linked: false, code: null };
+  res.json({ ok: true });
 });
 app.get('/api/v1/tenant-bot', (req, res) => res.json({ bot: activeCtx(req).store.tenantBot }));
 app.post('/api/v1/tenant-bot/register', (req, res) => {
@@ -2786,6 +3102,12 @@ app.patch('/api/v1/tenant-bot', (req, res) => {
 app.get('/api/v1/tenant-bot/subscribers', (req, res) => res.json({ subscribers: activeCtx(req).store.botSubscribers }));
 app.get('/api/v1/tenant-bot/broadcasts', (req, res) => res.json({ broadcasts: activeCtx(req).store.botBroadcasts }));
 app.get('/api/v1/tenant-bot/receipts', (req, res) => res.json({ receipts: activeCtx(req).store.botReceipts }));
+app.post('/api/v1/tenant-bot/receipts/:id/review', (req, res) => {
+  const { store } = activeCtx(req);
+  const rc = store.botReceipts.find((r) => r.id === req.params.id);
+  if (rc) rc.status = req.body?.status || 'approved';
+  res.json({ ok: true, receipt: rc });
+});
 app.get('/api/v1/tenant-bot/miniapp', (req, res) => {
   const { tenant, store } = activeCtx(req);
   res.json({
@@ -2893,6 +3215,12 @@ app.post('/api/v1/marketing/campaigns/:id/send', (req, res) => {
   const c = store.marketingCampaigns.find((x) => x.id === req.params.id);
   if (c) c.status = 'completed';
   res.json({ queued: c?.recipients || 0 });
+});
+app.post('/api/v1/marketing/campaigns/:id/pause', (req, res) => {
+  const { store } = activeCtx(req);
+  const c = store.marketingCampaigns.find((x) => x.id === req.params.id);
+  if (c) c.status = 'paused';
+  res.json({ ok: true, campaign: c });
 });
 
 /* ── Admin ─────────────────────────────────────────────────── */

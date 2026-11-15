@@ -25,7 +25,7 @@ import tenantBotRoutes from './routes/tenant-bots.js'
 import marketingRoutes from './routes/marketing/index.js'
 import expensesRoutes from './routes/expenses.js'
 import payrollRoutes from './routes/payroll.js'
-import { startPolling, telegramEnabled, setWebhook } from './services/telegram.js'
+import { startPolling, telegramEnabled, setWebhook, sendContactFormTelegramNotification } from './services/telegram.js'
 import { startAlertScheduler } from './services/alerts.js'
 import { startTeachingMonitor } from './services/teachingMonitor.js'
 import { startAllTenantBots } from './services/tenantBot.js'
@@ -89,13 +89,14 @@ app.use('/api/v1/payroll', payrollRoutes)
 /* ── Contact form (works on VPS — no Vercel functions needed) */
 app.post('/api/contact', async (req, res) => {
   try {
-    const { name = '', email = '', message = '' } = req.body ?? {}
+    const { name = '', email = '', phone = '', message = '' } = req.body ?? {}
     if (!name.trim() || !/.+@.+\..+/.test(email) || !message.trim()) {
-      return res.status(400).json({ ok: false, error: 'Name, a valid email and a message are required.' })
+      return res.status(400).json({ ok: false, success: false, error: 'Name, a valid email and a message are required.' })
     }
     const user = process.env.CONTACT_USER
     const pass = process.env.CONTACT_PASS
     const to = process.env.CONTACT_EMAIL
+    let emailSent = false
     if (user && pass && to) {
       const transporter = nodemailer.createTransport({
         service: 'gmail',
@@ -106,14 +107,16 @@ app.post('/api/contact', async (req, res) => {
         to,
         replyTo: email,
         subject: `New portfolio inquiry from ${name}`,
-        text: message,
-        html: `<p><b>Name:</b> ${name}</p><p><b>Email:</b> ${email}</p><p>${message.replace(/\n/g, '<br>')}</p>`,
+        text: `Name: ${name}\nEmail: ${email}\nPhone: ${phone || 'Not provided'}\n\n${message}`,
+        html: `<p><b>Name:</b> ${name}</p><p><b>Email:</b> ${email}</p><p><b>Phone:</b> ${phone || 'Not provided'}</p><p>${message.replace(/\n/g, '<br>')}</p>`,
       })
+      emailSent = true
     }
-    return res.json({ ok: true })
+    const telegram = await sendContactFormTelegramNotification({ name, email, phone, message })
+    return res.json({ ok: true, success: true, emailSent, telegram })
   } catch (err) {
     console.error('[contact]', err)
-    return res.status(500).json({ ok: false, error: 'Could not send your message right now.' })
+    return res.status(500).json({ ok: false, success: false, error: 'Could not send your message right now.' })
   }
 })
 

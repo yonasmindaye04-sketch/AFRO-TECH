@@ -1,11 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTheme } from '../context/useTheme';
+import { useLanguage } from '../context/languageCtx';
 import { usePwaInstall } from '../hooks/usePwaInstall';
+import { LANGUAGES, type TranslationKey } from '../utils/i18n';
 
 export default function Navbar() {
   const { dark, toggle } = useTheme();
+  const { lang, setLang, t } = useLanguage();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
+  const langWrapRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const isHome = location.pathname === '/';
   const { canInstall, promptInstall } = usePwaInstall();
@@ -15,6 +20,24 @@ export default function Navbar() {
     window.addEventListener('resize', h);
     return () => window.removeEventListener('resize', h);
   }, []);
+
+  useEffect(() => {
+    if (!langOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (langWrapRef.current && !langWrapRef.current.contains(e.target as Node)) {
+        setLangOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLangOpen(false);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [langOpen]);
 
   const scrollTo = (id: string) => {
     if (!isHome) {
@@ -26,14 +49,16 @@ export default function Navbar() {
     setMenuOpen(false);
   };
 
-  const navItems: [string, string][] = [
-    ['hero', 'Home'],
-    ['showcase-section', 'Showcase'],
-    ['process-section', 'Process'],
-    ['about-section', 'About'],
-    ['reviews-section', 'Reviews'],
-    ['contact-section', 'Contact'],
+  const navItems: [string, TranslationKey][] = [
+    ['hero', 'nav.home'],
+    ['showcase-section', 'nav.showcase'],
+    ['process-section', 'nav.process'],
+    ['about-section', 'nav.about'],
+    ['reviews-section', 'nav.reviews'],
+    ['contact-section', 'nav.contact'],
   ];
+
+  const activeLang = LANGUAGES.find(l => l.code === lang) ?? LANGUAGES[0];
 
   return (
     <>
@@ -44,26 +69,62 @@ export default function Navbar() {
         </Link>
 
         <div id="nav-links" className={`nav-links ${menuOpen ? 'open' : ''}`} role="navigation" aria-label="Main navigation">
-          {navItems.map(([id, label]) => (
-            <a key={id} href={`#${id}`} onClick={() => scrollTo(id)}>{label}</a>
+          {navItems.map(([id, key]) => (
+            <a key={id} href={`#${id}`} onClick={() => scrollTo(id)}>{t(key)}</a>
           ))}
           <Link
             to="/services"
             className={location.pathname.includes('/services') ? 'active' : ''}
             onClick={() => setMenuOpen(false)}
           >
-            Services
+            {t('nav.services')}
           </Link>
           <Link
             to="/products"
             className={location.pathname === '/products' ? 'active' : ''}
             onClick={() => setMenuOpen(false)}
           >
-            Products
+            {t('nav.products')}
           </Link>
         </div>
 
         <div className="nav-right">
+          <div className="lang-switcher" ref={langWrapRef}>
+            <button
+              type="button"
+              className="lang-btn"
+              onClick={() => setLangOpen(o => !o)}
+              aria-label={t('nav.languageLabel')}
+              aria-haspopup="listbox"
+              aria-expanded={langOpen}
+              data-testid="lang-switcher-btn"
+            >
+              <i className="fa-solid fa-globe" aria-hidden="true" />
+              <span>{activeLang.shortLabel}</span>
+              <i className="fa-solid fa-chevron-down" aria-hidden="true" />
+            </button>
+
+            {langOpen && (
+              <ul className="lang-menu" role="listbox" aria-label={t('nav.languageLabel')}>
+                {LANGUAGES.map(opt => (
+                  <li key={opt.code} role="option" aria-selected={opt.code === lang}>
+                    <button
+                      type="button"
+                      className={`lang-option ${opt.code === lang ? 'active' : ''}`}
+                      onClick={() => {
+                        setLang(opt.code);
+                        setLangOpen(false);
+                      }}
+                    >
+                      <span>{opt.nativeLabel}</span>
+                      <span className="lang-option-sub">{opt.englishName}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           {canInstall && (
             <button
               className="theme-toggle"

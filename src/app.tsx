@@ -5,6 +5,13 @@ import Navbar from './components/Navbar';
 import { AfroCoder } from './components/AfroCoder';
 import { useReveal } from './hooks/useReveal';
 import { whatWeDo } from './data';
+import { useLanguage } from './context/languageCtx';
+import {
+  type ContactFieldErrors,
+  type ContactFieldName,
+  validateContactField,
+  validateContactForm,
+} from './utils/contactValidation';
 import './index.css';
 
 /* ─── DATA (landing-page only) ──────────────────────────────── */
@@ -33,105 +40,149 @@ const testimonials = [
 /* ─── SHOWCASE DATA ─────────────────────────────────────────── */
 const showcase = [
   {
-    name:'ERP System', icon:'fa-solid fa-layer-group',
+    name:'ERP & Accounting', icon:'fa-solid fa-layer-group',
     color:'#c8963c',
-    sidebar:['Dashboard','Inventory','Finance','HR','Reports','Settings'],
-    stats:[{ l:'Revenue', v:'ETB 2.4M', c:'+18%' },{ l:'Orders', v:'284', c:'+12%' },{ l:'Items', v:'1,204', c:'+5%' }],
+    sidebar:[
+      { label:'Dashboard', icon:'fa-solid fa-gauge-high' },
+      { label:'Chart of Accounts', icon:'fa-solid fa-sitemap' },
+      { label:'Financial Statements', icon:'fa-solid fa-scale-balanced' },
+      { label:'Journal Entries', icon:'fa-solid fa-book' },
+      { label:'Payment Entries', icon:'fa-solid fa-money-check-dollar' },
+      { label:'CRM Pipeline', icon:'fa-solid fa-handshake' },
+    ],
+    stats:[{ l:'Net Revenue', v:'ETB 2.4M', c:'+18%' },{ l:'GL Entries', v:'1,482', c:'Balanced' },{ l:'Net Assets', v:'ETB 4.1M', c:'+9%' }],
     bars:[65,45,80,55,90,70,85],
     rows:[
-      { id:'ORD-2041', detail:'Raw materials — supplier A', status:'Completed', sc:'#34d399' },
-      { id:'ORD-2042', detail:'Packaging supplies', status:'Processing', sc:'#c8963c' },
-      { id:'ORD-2043', detail:'Office equipment', status:'Pending', sc:'#6b6358' },
+      { id:'JE-2041', detail:'Double-entry P&L & Balance Sheet sync', status:'Posted', sc:'#34d399' },
+      { id:'PE-2042', detail:'Customer receipt — Commercial Bank', status:'Reconciled', sc:'#c8963c' },
+      { id:'SO-2043', detail:'Quote converted to Sales Order', status:'Billed', sc:'#60a5fa' },
     ],
   },
   {
     name:'POS System', icon:'fa-solid fa-cash-register',
     color:'#34d399',
-    sidebar:['Sales','Products','Customers','Payments','Reports','Settings'],
+    sidebar:[
+      { label:'POS Terminal', icon:'fa-solid fa-cash-register' },
+      { label:'Cash Drawer', icon:'fa-solid fa-vault' },
+      { label:'Sales History', icon:'fa-solid fa-receipt' },
+      { label:'Quotations', icon:'fa-solid fa-file-signature' },
+      { label:'Credit & Loyalty', icon:'fa-solid fa-hand-holding-dollar' },
+      { label:'Receipts', icon:'fa-solid fa-print' },
+    ],
     stats:[{ l:'Today\'s Sales', v:'ETB 48.2K', c:'+24%' },{ l:'Transactions', v:'156', c:'+8%' },{ l:'Avg Ticket', v:'ETB 309', c:'+3%' }],
     bars:[40,70,55,85,65,90,75],
     rows:[
-      { id:'TXN-8091', detail:'Bahir Dar Cafe — 3 items', status:'Paid', sc:'#34d399' },
-      { id:'TXN-8092', detail:'Addis Mart — 7 items', status:'Paid', sc:'#34d399' },
-      { id:'TXN-8093', detail:'Hawassa Store — 2 items', status:'Refunded', sc:'#f87171' },
+      { id:'TXN-8091', detail:'Bole Flagship — Cash + Telebirr split', status:'Paid', sc:'#34d399' },
+      { id:'TXN-8092', detail:'Addis Mart — Thermal receipt printed', status:'Paid', sc:'#34d399' },
+      { id:'TXN-8093', detail:'Hawassa Store — Partial credit invoice', status:'Credit', sc:'#c8963c' },
     ],
   },
   {
     name:'Inventory & Warehouse', icon:'fa-solid fa-warehouse',
     color:'#60a5fa',
-    sidebar:['Overview','Stock','Warehouses','Suppliers','Transfers','Reports'],
-    stats:[{ l:'Total SKUs', v:'3,847', c:'+120' },{ l:'Low Stock', v:'23', c:'-5' },{ l:'In Transit', v:'156', c:'+34' }],
+    sidebar:[
+      { label:'Warehouses', icon:'fa-solid fa-warehouse' },
+      { label:'Stock Ledger', icon:'fa-solid fa-clipboard-list' },
+      { label:'Transfers', icon:'fa-solid fa-right-left' },
+      { label:'Reorder Alerts', icon:'fa-solid fa-bell' },
+      { label:'Purchase Orders', icon:'fa-solid fa-truck-ramp-box' },
+      { label:'FEFO Expiry', icon:'fa-solid fa-hourglass-half' },
+    ],
+    stats:[{ l:'Total SKUs', v:'3,847', c:'+120' },{ l:'Reorder Alerts', v:'6', c:'1-Click PO' },{ l:'Warehouses', v:'4', c:'Synced' }],
     bars:[80,60,45,70,55,85,65],
     rows:[
-      { id:'SKU-4401', detail:'Cotton fabric — 2,400m', status:'In Stock', sc:'#34d399' },
-      { id:'SKU-4402', detail:'Packaging boxes — 800 units', status:'Low Stock', sc:'#c8963c' },
-      { id:'SKU-4403', detail:'Labels — 5,000 pcs', status:'In Transit', sc:'#60a5fa' },
+      { id:'SLE-4401', detail:'Main Warehouse -> Bole Branch transfer', status:'Posted', sc:'#34d399' },
+      { id:'PO-4402', detail:'Auto-generated PO from low stock alert', status:'Ordered', sc:'#c8963c' },
+      { id:'FEFO-4403', detail:'Batch expiring in 30 days flagged', status:'Alert', sc:'#60a5fa' },
     ],
   },
   {
-    name:'School Management', icon:'fa-solid fa-graduation-cap',
-    color:'#c084fc',
-    sidebar:['Students','Teachers','Classes','Grades','Attendance','Fees'],
-    stats:[{ l:'Students', v:'1,240', c:'+80' },{ l:'Teachers', v:'64', c:'+4' },{ l:'Pass Rate', v:'94%', c:'+2%' }],
-    bars:[55,75,60,80,70,50,85],
-    rows:[
-      { id:'STU-301', detail:'Grade 10 — Section A', status:'Active', sc:'#34d399' },
-      { id:'STU-302', detail:'Grade 8 — Section B', status:'Active', sc:'#34d399' },
-      { id:'STU-303', detail:'Grade 12 — Section A', status:'Graduated', sc:'#6b6358' },
-    ],
-  },
-  {
-    name:'Hotel / PMS', icon:'fa-solid fa-hotel',
+    name:'Manufacturing & Assets', icon:'fa-solid fa-industry',
     color:'#f59e0b',
-    sidebar:['Rooms','Bookings','Guests','Billing','Calendar','Reports'],
-    stats:[{ l:'Occupancy', v:'78%', c:'+5%' },{ l:'Bookings', v:'42', c:'+8' },{ l:'Revenue', v:'ETB 1.1M', c:'+15%' }],
-    bars:[70,50,85,60,75,90,65],
+    sidebar:[
+      { label:'Work Orders', icon:'fa-solid fa-industry' },
+      { label:'Bills of Materials', icon:'fa-solid fa-cubes' },
+      { label:'Fixed Assets', icon:'fa-solid fa-building-columns' },
+      { label:'Depreciation', icon:'fa-solid fa-chart-area' },
+      { label:'Stock Ledger', icon:'fa-solid fa-boxes-stacked' },
+      { label:'GL Posting', icon:'fa-solid fa-scale-balanced' },
+    ],
+    stats:[{ l:'Active WOs', v:'14', c:'On Schedule' },{ l:'BOMs', v:'28', c:'Ready' },{ l:'Fixed Assets', v:'ETB 1.8M', c:'Tracked' }],
+    bars:[60,72,58,84,76,90,82],
     rows:[
-      { id:'RM-201', detail:'Deluxe Suite — 3 nights', status:'Occupied', sc:'#34d399' },
-      { id:'RM-105', detail:'Standard Room — 1 night', status:'Checkout Today', sc:'#c8963c' },
-      { id:'RM-308', detail:'Family Suite — 5 nights', status:'Reserved', sc:'#60a5fa' },
+      { id:'MFG-1001', detail:'BOM Kit Assembly — 25 units completed', status:'Completed', sc:'#34d399' },
+      { id:'AST-1001', detail:'Monthly straight-line depreciation GL', status:'Posted', sc:'#c8963c' },
+      { id:'MFG-1002', detail:'Raw material reservation verified', status:'In Progress', sc:'#60a5fa' },
     ],
   },
   {
     name:'Hospital Management', icon:'fa-solid fa-hospital',
     color:'#ef4444',
-    sidebar:['Patients','Appointments','Doctors','Billing','Pharmacy','Reports'],
-    stats:[{ l:'Patients', v:'4,280', c:'+320' },{ l:'Today\'s Visits', v:'67', c:'+12' },{ l:'Beds Free', v:'18', c:'-2' }],
+    sidebar:[
+      { label:'Flow Board', icon:'fa-solid fa-code-branch' },
+      { label:'Reception Queue', icon:'fa-solid fa-bell-concierge' },
+      { label:'Patients & EMR', icon:'fa-solid fa-hospital-user' },
+      { label:'Labs & Rx', icon:'fa-solid fa-flask-vial' },
+      { label:'1-Click Billing', icon:'fa-solid fa-file-invoice-dollar' },
+      { label:'Doctors', icon:'fa-solid fa-user-doctor' },
+    ],
+    stats:[{ l:'Patients', v:'4,280', c:'+320' },{ l:'Today\'s Visits', v:'67', c:'+12' },{ l:'Billed EMRs', v:'98%', c:'Auto GL' }],
     bars:[60,80,50,75,65,45,85],
     rows:[
-      { id:'APT-901', detail:'Dr. Abebe — Follow-up', status:'Scheduled', sc:'#60a5fa' },
-      { id:'APT-902', detail:'Dr. Hanna — Consultation', status:'In Progress', sc:'#c8963c' },
-      { id:'APT-903', detail:'Dr. Tesfaye — Surgery', status:'Completed', sc:'#34d399' },
+      { id:'APT-901', detail:'Dr. Abebe — Consultation -> Pharmacy Flow', status:'In Progress', sc:'#c8963c' },
+      { id:'EMR-902', detail:'Clinical record converted to Invoice', status:'Billed', sc:'#34d399' },
+      { id:'LAB-903', detail:'CBC Panel — Result released to chart', status:'Completed', sc:'#60a5fa' },
+    ],
+  },
+  {
+    name:'School Management', icon:'fa-solid fa-graduation-cap',
+    color:'#c084fc',
+    sidebar:[
+      { label:'Students', icon:'fa-solid fa-user-graduate' },
+      { label:'Timetable', icon:'fa-solid fa-calendar-week' },
+      { label:'Teaching Monitor', icon:'fa-solid fa-person-chalkboard' },
+      { label:'Attendance', icon:'fa-solid fa-clipboard-check' },
+      { label:'Report Cards', icon:'fa-solid fa-award' },
+      { label:'Fees & Ledger', icon:'fa-solid fa-money-bill-wave' },
+    ],
+    stats:[{ l:'Students', v:'1,240', c:'+80' },{ l:'Teachers', v:'64', c:'+4' },{ l:'Pass Rate', v:'94%', c:'+2%' }],
+    bars:[55,75,60,80,70,50,85],
+    rows:[
+      { id:'STU-301', detail:'Grade 10A — Term 2 Report Card PDF', status:'Published', sc:'#34d399' },
+      { id:'CLS-104', detail:'Period 3 Physics — Teaching check-in', status:'Live', sc:'#c8963c' },
+      { id:'FEE-882', detail:'Guardian Telegram receipt dispatched', status:'Sent', sc:'#60a5fa' },
     ],
   },
   {
     name:'Custom Dashboard', icon:'fa-solid fa-chart-line',
     color:'#06b6d4',
-    sidebar:['Analytics','Users','Revenue','Traffic','Reports','Settings'],
-    stats:[{ l:'Active Users', v:'12.4K', c:'+18%' },{ l:'Page Views', v:'847K', c:'+22%' },{ l:'Bounce Rate', v:'32%', c:'-4%' }],
+    sidebar:[
+      { label:'Analytics', icon:'fa-solid fa-chart-line' },
+      { label:'CRM Leads', icon:'fa-solid fa-handshake' },
+      { label:'Campaigns', icon:'fa-solid fa-bullhorn' },
+      { label:'Payroll', icon:'fa-solid fa-money-check-dollar' },
+      { label:'Expenses', icon:'fa-solid fa-coins' },
+      { label:'Settings', icon:'fa-solid fa-gear' },
+    ],
+    stats:[{ l:'Active Users', v:'12.4K', c:'+18%' },{ l:'Conversion', v:'34%', c:'+6%' },{ l:'Audit Trail', v:'100%', c:'RBAC' }],
     bars:[45,75,60,90,55,80,70],
     rows:[
-      { id:'USR-101', detail:'Addis Ababa — Desktop', status:'Active', sc:'#34d399' },
-      { id:'USR-102', detail:'Dire Dawa — Mobile', status:'Active', sc:'#34d399' },
-      { id:'USR-103', detail:'Hawassa — Tablet', status:'Idle', sc:'#6b6358' },
-    ],
-  },
-  {
-    name:'Mobile App', icon:'fa-solid fa-mobile-screen',
-    color:'#8b5cf6',
-    sidebar:['Home','Orders','Profile','Notifications','Settings','Help'],
-    stats:[{ l:'Downloads', v:'8,400', c:'+340' },{ l:'DAU', v:'2,100', c:'+15%' },{ l:'Rating', v:'4.7', c:'+0.2' }],
-    bars:[50,65,80,55,70,85,60],
-    rows:[
-      { id:'ORD-501', detail:'Delivery — Bole Area', status:'En Route', sc:'#c8963c' },
-      { id:'ORD-502', detail:'Pickup — Piassa', status:'Ready', sc:'#34d399' },
-      { id:'ORD-503', detail:'Delivery — Kazanchis', status:'Delivered', sc:'#6b6358' },
+      { id:'CRM-101', detail:'Lead converted to Customer account', status:'Won', sc:'#34d399' },
+      { id:'PAY-102', detail:'Ethiopian tax & pension payroll run', status:'Approved', sc:'#c8963c' },
+      { id:'BOT-103', detail:'Tenant Telegram bot receipt verified', status:'Verified', sc:'#60a5fa' },
     ],
   },
   {
     name:'E-Commerce Store', icon:'fa-solid fa-cart-shopping',
     color:'#ec4899',
-    sidebar:['Products','Orders','Customers','Marketing','Analytics','Settings'],
+    sidebar:[
+      { label:'Products', icon:'fa-solid fa-boxes-stacked' },
+      { label:'Orders', icon:'fa-solid fa-bag-shopping' },
+      { label:'Customers', icon:'fa-solid fa-users' },
+      { label:'Marketing', icon:'fa-solid fa-bullhorn' },
+      { label:'Analytics', icon:'fa-solid fa-chart-pie' },
+      { label:'Settings', icon:'fa-solid fa-gear' },
+    ],
     stats:[{ l:'Revenue', v:'ETB 890K', c:'+32%' },{ l:'Orders', v:'612', c:'+45' },{ l:'Conv. Rate', v:'3.8%', c:'+0.6%' }],
     bars:[70,55,85,60,75,50,90],
     rows:[
@@ -144,20 +195,24 @@ const showcase = [
 
 /* ─── SHOWCASE SECTION ──────────────────────────────────────── */
 function ShowcaseSection() {
+  const { t } = useLanguage();
   const [active, setActive] = useState(0);
+  const [activeNav, setActiveNav] = useState(0);
+  const [sidebarMinimized, setSidebarMinimized] = useState(false);
   const [animKey, setAnimKey] = useState(0);
   const panel = showcase[active];
 
   const handleTab = (i: number) => {
     if (i === active) return;
     setActive(i);
+    setActiveNav(0);
     setAnimKey(k => k + 1);
   };
 
   return (
     <div className="showcase-wrap" role="region" aria-label="Project showcase">
       <div className="showcase-inner">
-        <h2 className="section-title" data-reveal="fade-up">What we've built</h2>
+        <h2 className="section-title" data-reveal="fade-up">{t('showcase.title')}</h2>
 
         <div className="showcase-tabs" role="tablist" aria-label="Project categories">
           {showcase.map((p, i) => (
@@ -186,17 +241,49 @@ function ShowcaseSection() {
             <div className="panel-dots" aria-hidden="true">
               <span /><span /><span />
             </div>
-            <div className="panel-title">{panel.name} — AFRO-TECH</div>
+            <div className="panel-title">{panel.name} — AFRO Suite</div>
           </div>
-          <div className="panel-body">
-            <div className="ui-sidebar" aria-hidden="true">
+          <div className={`panel-body ${sidebarMinimized ? 'sidebar-minimized' : ''}`}>
+            <aside
+              className={`ui-sidebar ${sidebarMinimized ? 'minimized' : ''}`}
+              aria-label={`${panel.name} sidebar`}
+            >
+              <div className="ui-sidebar-top">
+                <span className="ui-sidebar-caption">Navigation</span>
+                <button
+                  type="button"
+                  className="ui-sidebar-toggle"
+                  onClick={() => setSidebarMinimized(m => !m)}
+                  aria-label={sidebarMinimized ? 'Expand sidebar' : 'Minimize sidebar'}
+                  aria-expanded={!sidebarMinimized}
+                  title={sidebarMinimized ? 'Expand sidebar' : 'Minimize sidebar'}
+                  data-testid="showcase-sidebar-toggle"
+                >
+                  <i
+                    className={sidebarMinimized ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left'}
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
               {panel.sidebar.map((item, j) => (
-                <div key={item} className={`ui-nav-item ${j === 0 ? 'active' : ''}`}>
-                  <span className="ui-nav-dot" style={{ background: j === 0 ? panel.color : 'var(--border)' }} />
-                  {item}
-                </div>
+                <button
+                  key={item.label}
+                  type="button"
+                  className={`ui-nav-item ${j === activeNav ? 'active' : ''}`}
+                  onClick={() => setActiveNav(j)}
+                  title={item.label}
+                  aria-label={item.label}
+                  aria-current={j === activeNav ? 'page' : undefined}
+                >
+                  <i
+                    className={item.icon}
+                    style={{ color: j === activeNav ? panel.color : undefined }}
+                    aria-hidden="true"
+                  />
+                  <span className="ui-nav-label">{item.label}</span>
+                </button>
               ))}
-            </div>
+            </aside>
             <div className="ui-main">
               <div className="ui-stats-row">
                 {panel.stats.map((s, j) => (
@@ -208,7 +295,7 @@ function ShowcaseSection() {
                 ))}
               </div>
               <div className="ui-chart-area">
-                <div className="ui-chart-label">Monthly Overview</div>
+                <div className="ui-chart-label">{t('showcase.monthlyOverview')}</div>
                 <div className="ui-chart" role="img" aria-label={`${panel.name} monthly chart`}>
                   {panel.bars.map((h, j) => (
                     <div key={j} className="ui-bar-col">
@@ -218,7 +305,7 @@ function ShowcaseSection() {
                 </div>
               </div>
               <div className="ui-table-area">
-                <div className="ui-table-header">Recent Activity</div>
+                <div className="ui-table-header">{t('showcase.recentActivity')}</div>
                 {panel.rows.map((r, j) => (
                   <div key={r.id} className="ui-table-row" style={{ animationDelay: `${j * 100 + 200}ms` }}>
                     <span className="ui-row-id">{r.id}</span>
@@ -230,6 +317,15 @@ function ShowcaseSection() {
             </div>
           </div>
         </div>
+
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 14, flexWrap: 'wrap', marginTop: 28 }}>
+          <Link to="/app/login" className="btn-primary" style={{ textDecoration: 'none' }}>
+            {t('showcase.ctaLaunch')} <i className="fa-solid fa-arrow-right" aria-hidden="true" />
+          </Link>
+          <Link to="/products" className="btn-ghost" style={{ textDecoration: 'none', background: 'transparent', color: 'var(--accent)', border: '1px solid var(--border2)' }}>
+            {t('showcase.ctaCompare')}
+          </Link>
+        </div>
       </div>
     </div>
   );
@@ -237,24 +333,17 @@ function ShowcaseSection() {
 
 /* ─── APP ────────────────────────────────────────────────────── */
 export default function App() {
+  const { t } = useLanguage();
   const [scrollPct, setScrollPct] = useState(0);
   const [showTop, setShowTop]     = useState(false);
   const [formData, setFormData]     = useState({ name:'', email:'', phone:'', message:'' });
-  const [fieldErrors, setFieldErrors] = useState<Record<string,string>>({});
+  const [fieldErrors, setFieldErrors] = useState<ContactFieldErrors>({});
+  const [touched, setTouched]       = useState<Partial<Record<ContactFieldName, boolean>>>({});
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast]           = useState<{ type:'success'|'error'; msg:string }|null>(null);
 
   const showToast = (type:'success'|'error', msg:string) => {
     setToast({ type, msg }); setTimeout(() => setToast(null), 5500);
-  };
-
-  const validate = () => {
-    const errs: Record<string,string> = {};
-    if (!formData.name.trim())    errs.name    = 'Please enter your name.';
-    if (!formData.email.trim())   errs.email   = 'Please enter your email.';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) errs.email = 'Enter a valid email address.';
-    if (!formData.message.trim()) errs.message = 'Please describe your project.';
-    return errs;
   };
 
   /* Lenis */
@@ -286,17 +375,31 @@ export default function App() {
   const scrollTo = (id:string) => { document.getElementById(id)?.scrollIntoView({ behavior:'smooth' }); };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement|HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
+    const name = e.target.name as ContactFieldName;
+    const { value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-    if (fieldErrors[name]) setFieldErrors(prev => ({ ...prev, [name]: '' }));
+    setTouched(prev => (prev[name] ? prev : { ...prev, [name]: true }));
+    const err = validateContactField(name, value);
+    setFieldErrors(prev => ({ ...prev, [name]: err }));
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement|HTMLTextAreaElement>) => {
+    const name = e.target.name as ContactFieldName;
+    const { value } = e.target;
+    setTouched(prev => ({ ...prev, [name]: true }));
+    const err = validateContactField(name, value);
+    setFieldErrors(prev => ({ ...prev, [name]: err }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const errs = validate();
+    const errs = validateContactForm(formData);
+    setTouched({ name: true, email: true, phone: true, message: true });
     if (Object.keys(errs).length > 0) {
       setFieldErrors(errs);
-      showToast('error', 'Please fill in all required fields.');
+      const firstInvalid = (['name', 'email', 'phone', 'message'] as ContactFieldName[]).find(k => errs[k]);
+      if (firstInvalid) document.getElementById(firstInvalid)?.focus();
+      showToast('error', 'Please fix the highlighted fields before sending.');
       return;
     }
     setFieldErrors({});
@@ -308,6 +411,7 @@ export default function App() {
         showToast('success', 'Message sent! We\'ll reply within 24 hours.');
         setFormData({ name:'', email:'', phone:'', message:'' });
         setFieldErrors({});
+        setTouched({});
       } else {
         showToast('error', data.message || 'Send failed. Please try again.');
       }
@@ -332,17 +436,17 @@ export default function App() {
       <section id="hero">
         <div className="hero-left">
           <h1 className="fade-up">
-            We build digital systems<br />that run your business.
+            {t('hero.titleLine1')}<br />{t('hero.titleLine2')}
           </h1>
           <p className="hero-sub">
-            Based in Addis Ababa. From websites to full ERP platforms — we design and build the tools that help Ethiopian businesses grow, automate, and compete.
+            {t('hero.sub')}
           </p>
           <div className="hero-actions">
             <button type="button" className="btn-primary" onClick={() => scrollTo('contact-section')}>
-              Start a Project <i className="fa-solid fa-arrow-right" aria-hidden="true" />
+              {t('hero.ctaStart')} <i className="fa-solid fa-arrow-right" aria-hidden="true" />
             </button>
             <button type="button" className="btn-ghost" onClick={() => scrollTo('showcase-section')}>
-              See Our Work <i className="fa-solid fa-arrow-down" aria-hidden="true" />
+              {t('hero.ctaWork')} <i className="fa-solid fa-arrow-down" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -410,31 +514,31 @@ export default function App() {
 
       {/* ── WHAT WE DO — teaser ──────────────────────────────── */}
       <section id="services-section" className="section-wrap" aria-label="Our services">
-        <h2 className="section-title" data-reveal="fade-up">What We Do</h2>
+        <h2 className="section-title" data-reveal="fade-up">{t('whatWeDo.title')}</h2>
         <p className="what-we-do-intro" data-reveal="fade-up">
-          We design, build, and launch digital systems — from marketing sites to full enterprise platforms.
+          {t('whatWeDo.intro')}
         </p>
         <div className="what-we-do-grid" data-stagger>
-          {whatWeDo.map(item => (
+          {whatWeDo.map((item, idx) => (
             <div key={item.title} className="category-card" data-reveal="fade-up">
               <div className="category-card-icon" style={{ color:item.color }} aria-hidden="true">
                 <i className={item.icon} style={{ color:item.color }} aria-hidden="true" />
               </div>
-              <div className="category-card-title">{item.title}</div>
-              <div className="category-card-desc">{item.desc}</div>
+              <div className="category-card-title">{t(`whatWeDo.${idx as 0 | 1 | 2}.title`)}</div>
+              <div className="category-card-desc">{t(`whatWeDo.${idx as 0 | 1 | 2}.desc`)}</div>
             </div>
           ))}
         </div>
         <div className="what-we-do-cta">
           <Link to="/services" className="btn-primary">
-            View All Services & Pricing <i className="fa-solid fa-arrow-right" aria-hidden="true" />
+            {t('whatWeDo.ctaAll')} <i className="fa-solid fa-arrow-right" aria-hidden="true" />
           </Link>
         </div>
       </section>
 
       {/* ── HOW WE WORK — horizontal map ──────────────────────── */}
       <section id="process-section" className="process-wrap" aria-label="Our process">
-        <h2 className="section-title" data-reveal="fade-up">Our Process</h2>
+        <h2 className="section-title" data-reveal="fade-up">{t('process.title')}</h2>
         <div className="process-map">
 
           {/* SVG string connecting the boxes directly */}
@@ -452,16 +556,16 @@ export default function App() {
           <div className="pm-row pm-top">
             <div className="pm-card" data-reveal="scale-in">
               <div className="pm-icon" aria-hidden="true"><i className="fa-solid fa-comments" aria-hidden="true" /></div>
-              <div className="pm-num">01</div>
-              <div className="pm-title">{process_steps[0].title}</div>
-              <div className="pm-desc">{process_steps[0].desc}</div>
+              <div className="pm-num">{process_steps[0].num}</div>
+              <div className="pm-title">{t('process.0.title')}</div>
+              <div className="pm-desc">{t('process.0.desc')}</div>
             </div>
             <div className="pm-spacer" />
             <div className="pm-card" data-reveal="scale-in">
               <div className="pm-icon" aria-hidden="true"><i className="fa-solid fa-code" aria-hidden="true" /></div>
-              <div className="pm-num">03</div>
-              <div className="pm-title">{process_steps[2].title}</div>
-              <div className="pm-desc">{process_steps[2].desc}</div>
+              <div className="pm-num">{process_steps[2].num}</div>
+              <div className="pm-title">{t('process.2.title')}</div>
+              <div className="pm-desc">{t('process.2.desc')}</div>
             </div>
             <div className="pm-spacer" />
           </div>
@@ -471,33 +575,31 @@ export default function App() {
             <div className="pm-spacer" />
             <div className="pm-card" data-reveal="scale-in">
               <div className="pm-icon" aria-hidden="true"><i className="fa-solid fa-pen-ruler" aria-hidden="true" /></div>
-              <div className="pm-num">02</div>
-              <div className="pm-title">{process_steps[1].title}</div>
-              <div className="pm-desc">{process_steps[1].desc}</div>
+              <div className="pm-num">{process_steps[1].num}</div>
+              <div className="pm-title">{t('process.1.title')}</div>
+              <div className="pm-desc">{t('process.1.desc')}</div>
             </div>
             <div className="pm-spacer" />
             <div className="pm-card" data-reveal="scale-in">
               <div className="pm-icon" aria-hidden="true"><i className="fa-solid fa-rocket" aria-hidden="true" /></div>
-              <div className="pm-num">04</div>
-              <div className="pm-title">{process_steps[3].title}</div>
-              <div className="pm-desc">{process_steps[3].desc}</div>
+              <div className="pm-num">{process_steps[3].num}</div>
+              <div className="pm-title">{t('process.3.title')}</div>
+              <div className="pm-desc">{t('process.3.desc')}</div>
             </div>
           </div>
-
-
 
         </div>
       </section>
 
       {/* ── WHY US ──────────────────────────────────────────── */}
       <section id="whyus-section" className="section-wrap" aria-label="Why choose us">
-        <h2 className="section-title" data-reveal="fade-up">We're not a template shop.</h2>
+        <h2 className="section-title" data-reveal="fade-up">{t('whyus.title')}</h2>
         <div className="whyus-grid" data-stagger>
-          {whyUs.map(w => (
+          {whyUs.map((w, idx) => (
             <div key={w.title} className="whyus-card" data-reveal="fade-up">
               <div className="whyus-card-icon" aria-hidden="true"><i className={w.icon} aria-hidden="true" /></div>
-              <div className="whyus-card-title">{w.title}</div>
-              <div className="whyus-card-desc">{w.desc}</div>
+              <div className="whyus-card-title">{t(`whyus.${idx as 0 | 1 | 2 | 3 | 4 | 5}.title`)}</div>
+              <div className="whyus-card-desc">{t(`whyus.${idx as 0 | 1 | 2 | 3 | 4 | 5}.desc`)}</div>
             </div>
           ))}
         </div>
@@ -505,29 +607,29 @@ export default function App() {
 
       {/* ── ABOUT ────────────────────────────────────────────── */}
       <section id="about-section" aria-label="About us">
-        <h2 className="section-title" data-reveal="fade-up">About Us</h2>
+        <h2 className="section-title" data-reveal="fade-up">{t('about.title')}</h2>
         <div className="about-inner">
           <p className="about-quote">
-            We're a small studio from Addis Ababa. We've been building websites since 2020 — not because it's trending, but because we believe Ethiopian businesses deserve quality digital tools, not rushed templates.
+            {t('about.quote')}
           </p>
           <div className="about-meta">
-            With years of expertise, we build high-performance websites and apps that help businesses grow locally and globally.
+            {t('about.meta')}
           </div>
         </div>
       </section>
 
       {/* ── REVIEWS ──────────────────────────────────────────── */}
       <section id="reviews-section" className="section-wrap" aria-label="Client testimonials">
-        <h2 className="section-title" data-reveal="fade-up">What Our Clients Say</h2>
+        <h2 className="section-title" data-reveal="fade-up">{t('reviews.title')}</h2>
         <div className="testimonials-grid" data-stagger>
-          {testimonials.map(t => (
-            <div key={t.name} className="testimonial-card" data-reveal="fade-up">
-              <p className="testimonial-text">"{t.text}"</p>
+          {testimonials.map(tm => (
+            <div key={tm.name} className="testimonial-card" data-reveal="fade-up">
+              <p className="testimonial-text">"{tm.text}"</p>
               <div className="testimonial-author">
-                <div className="author-avatar" aria-hidden="true">{t.initials}</div>
+                <div className="author-avatar" aria-hidden="true">{tm.initials}</div>
                 <div>
-                  <div className="author-name">{t.name}</div>
-                  <div className="author-title">{t.title}</div>
+                  <div className="author-name">{tm.name}</div>
+                  <div className="author-title">{tm.title}</div>
                 </div>
               </div>
             </div>
@@ -539,23 +641,23 @@ export default function App() {
       <section id="contact-section" aria-label="Contact us">
         <div className="contact-inner" data-reveal="fade-up">
           <div className="contact-info">
-            <h2 className="section-title">Let's talk.</h2>
-            <p>We reply within 24 hours — usually faster.</p>
+            <h2 className="section-title">{t('contact.title')}</h2>
+            <p>{t('contact.sub')}</p>
 
             {[
-              { href:'tel:+251910011818',                cls:'phone-icon',    icon:'fa-solid fa-phone',     label:'Phone',    val:'0910 011 818',              ext:false },
-              { href:'https://wa.me/251910011818',       cls:'whatsapp-icon', icon:'fa-brands fa-whatsapp', label:'WhatsApp', val:'+251-910011818',           ext:true  },
-              { href:'https://t.me/yona64',              cls:'telegram-icon', icon:'fa-brands fa-telegram', label:'Telegram', val:'@yona64',                  ext:true  },
-              { href:'mailto:yonasmindaye04@gmail.com',  cls:'email-icon',    icon:'fa-solid fa-envelope',  label:'Email',    val:'yonasmindaye04@gmail.com', ext:false },
+              { href:'tel:+251910011818',                cls:'phone-icon',    icon:'fa-solid fa-phone',     label:t('contact.phone'),    val:'0910 011 818',              ext:false },
+              { href:'https://wa.me/251910011818',       cls:'whatsapp-icon', icon:'fa-brands fa-whatsapp', label:t('contact.whatsapp'), val:'+251-910011818',           ext:true  },
+              { href:'https://t.me/yona64',              cls:'telegram-icon', icon:'fa-brands fa-telegram', label:t('contact.telegram'), val:'@yona64',                  ext:true  },
+              { href:'mailto:yonasmindaye04@gmail.com',  cls:'email-icon',    icon:'fa-solid fa-envelope',  label:t('contact.email'),    val:'yonasmindaye04@gmail.com', ext:false },
             ].map(c => (
-              <a key={c.label} href={c.href} target={c.ext?'_blank':undefined} rel="noopener noreferrer" className="contact-detail">
+              <a key={c.href} href={c.href} target={c.ext?'_blank':undefined} rel="noopener noreferrer" className="contact-detail">
                 <div className={`contact-detail-icon ${c.cls}`} aria-hidden="true"><i className={c.icon} aria-hidden="true" /></div>
                 <div className="contact-detail-text"><strong>{c.label}</strong><span>{c.val}</span></div>
               </a>
             ))}
             <div className="contact-detail no-link">
               <div className="contact-detail-icon location-icon" aria-hidden="true"><i className="fa-solid fa-location-dot" aria-hidden="true" /></div>
-              <div className="contact-detail-text"><strong>Location</strong><span>Addis Ababa, Ethiopia</span></div>
+              <div className="contact-detail-text"><strong>{t('contact.location')}</strong><span>{t('contact.locationVal')}</span></div>
             </div>
           </div>
 
@@ -563,27 +665,100 @@ export default function App() {
             <form onSubmit={handleSubmit} noValidate>
               <div className="form-row">
                 <div className={`form-group ${fieldErrors.name ? 'has-error' : ''}`}>
-                  <label htmlFor="name">Full Name <span className="req">*</span></label>
-                  <input id="name" type="text" name="name" placeholder="Nahom Eshetu" value={formData.name} onChange={handleChange} className={fieldErrors.name ? 'input-error' : ''} />
-                  {fieldErrors.name && <span className="field-error"><i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> {fieldErrors.name}</span>}
+                  <label htmlFor="name">{t('contact.nameLabel')} <span className="req">*</span></label>
+                  <input
+                    id="name"
+                    type="text"
+                    name="name"
+                    placeholder="Nahom Eshetu"
+                    value={formData.name}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    aria-invalid={Boolean(fieldErrors.name)}
+                    aria-describedby={fieldErrors.name ? 'name-error' : undefined}
+                    className={fieldErrors.name ? 'input-error' : (touched.name && formData.name.trim() ? 'input-valid' : '')}
+                  />
+                  {fieldErrors.name ? (
+                    <span id="name-error" className="field-error" role="alert">
+                      <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> {fieldErrors.name}
+                    </span>
+                  ) : touched.name && formData.name.trim() ? (
+                    <span className="field-valid">
+                      <i className="fa-solid fa-circle-check" aria-hidden="true" /> {t('contact.looksGood')}
+                    </span>
+                  ) : null}
                 </div>
                 <div className={`form-group ${fieldErrors.email ? 'has-error' : ''}`}>
-                  <label htmlFor="email">Email <span className="req">*</span></label>
-                  <input id="email" type="email" name="email" placeholder="you@example.com" value={formData.email} onChange={handleChange} className={fieldErrors.email ? 'input-error' : ''} />
-                  {fieldErrors.email && <span className="field-error"><i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> {fieldErrors.email}</span>}
+                  <label htmlFor="email">{t('contact.emailLabel')} <span className="req">*</span></label>
+                  <input
+                    id="email"
+                    type="email"
+                    name="email"
+                    placeholder="you@example.com"
+                    value={formData.email}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    aria-invalid={Boolean(fieldErrors.email)}
+                    aria-describedby={fieldErrors.email ? 'email-error' : undefined}
+                    className={fieldErrors.email ? 'input-error' : (touched.email && formData.email.trim() ? 'input-valid' : '')}
+                  />
+                  {fieldErrors.email ? (
+                    <span id="email-error" className="field-error" role="alert">
+                      <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> {fieldErrors.email}
+                    </span>
+                  ) : touched.email && formData.email.trim() ? (
+                    <span className="field-valid">
+                      <i className="fa-solid fa-circle-check" aria-hidden="true" /> {t('contact.validEmail')}
+                    </span>
+                  ) : null}
                 </div>
               </div>
-              <div className="form-group">
-                <label htmlFor="phone">Phone Number <span style={{ color:'var(--text-dim)', fontWeight:400, textTransform:'none', letterSpacing:0, fontSize:'.78rem' }}>(optional)</span></label>
-                <input id="phone" type="tel" name="phone" placeholder="+251 910 011 818" value={formData.phone} onChange={handleChange} />
+              <div className={`form-group ${fieldErrors.phone ? 'has-error' : ''}`}>
+                <label htmlFor="phone">{t('contact.phoneLabel')} <span style={{ color:'var(--text-dim)', fontWeight:400, textTransform:'none', letterSpacing:0, fontSize:'.78rem' }}>{t('contact.optional')}</span></label>
+                <input
+                  id="phone"
+                  type="tel"
+                  name="phone"
+                  placeholder="+251 910 011 818"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  aria-invalid={Boolean(fieldErrors.phone)}
+                  aria-describedby={fieldErrors.phone ? 'phone-error' : undefined}
+                  className={fieldErrors.phone ? 'input-error' : (touched.phone && formData.phone.trim() ? 'input-valid' : '')}
+                />
+                {fieldErrors.phone && (
+                  <span id="phone-error" className="field-error" role="alert">
+                    <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> {fieldErrors.phone}
+                  </span>
+                )}
               </div>
               <div className={`form-group ${fieldErrors.message ? 'has-error' : ''}`}>
-                <label htmlFor="message">What are you building? <span className="req">*</span></label>
-                <textarea id="message" name="message" rows={5} placeholder="Tell us about your project, goals, and timeline..." value={formData.message} onChange={handleChange} className={fieldErrors.message ? 'input-error' : ''} />
-                {fieldErrors.message && <span className="field-error"><i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> {fieldErrors.message}</span>}
+                <label htmlFor="message">{t('contact.messageLabel')} <span className="req">*</span></label>
+                <textarea
+                  id="message"
+                  name="message"
+                  rows={5}
+                  placeholder={t('contact.messagePlaceholder')}
+                  value={formData.message}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  aria-invalid={Boolean(fieldErrors.message)}
+                  aria-describedby={fieldErrors.message ? 'message-error' : undefined}
+                  className={fieldErrors.message ? 'input-error' : (touched.message && formData.message.trim() ? 'input-valid' : '')}
+                />
+                {fieldErrors.message ? (
+                  <span id="message-error" className="field-error" role="alert">
+                    <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> {fieldErrors.message}
+                  </span>
+                ) : touched.message && formData.message.trim() ? (
+                  <span className="field-valid">
+                    <i className="fa-solid fa-circle-check" aria-hidden="true" /> {t('contact.readyToSend')}
+                  </span>
+                ) : null}
               </div>
               <button type="submit" className="btn-primary btn-full" disabled={submitting} style={{ opacity:submitting?0.7:1 }}>
-                {submitting ? <>Sending…</> : <>Send Message</>}
+                {submitting ? <>{t('contact.sending')}</> : <>{t('contact.submit')}</>}
               </button>
             </form>
           </div>
@@ -598,7 +773,7 @@ export default function App() {
           <img src="/logo/Untitled_design-removebg-preview.png" alt="AFRO-TECH logo" className="logo-img" width="40" height="40" loading="lazy" />
           <span className="logo-text">AFRO<span>-TECH</span></span>
         </div>
-        <div className="footer-copy">&copy; 2026 &middot; Made in Addis Ababa</div>
+        <div className="footer-copy">{t('footer.copy')}</div>
         <div className="footer-links">
           {[['mailto:yonasmindaye04@gmail.com','fa-solid fa-envelope','Email us'],['https://t.me/yona64','fa-brands fa-telegram','Telegram'],['https://wa.me/251910011818','fa-brands fa-whatsapp','WhatsApp']].map(([href,icon,label]) => (
             <a key={icon} href={href} target={href.startsWith('http')?'_blank':undefined} rel="noopener noreferrer" aria-label={label}><i className={icon} /></a>
