@@ -11,6 +11,10 @@ import {
   type ServicePaymentProvider,
 } from '../utils/serviceCheckout';
 import { PaymentGatewaySwitcher } from './PaymentGatewaySwitcher';
+import { TelebirrPayPanel } from './TelebirrPayPanel';
+import { InvoiceHistory } from './InvoiceHistory';
+import { saveRecentInvoiceContext } from '../utils/invoiceHistory';
+import { celebrateVerifiedPayment } from '../utils/paymentCelebration';
 
 interface CheckoutSession {
   provider: ServicePaymentProvider;
@@ -70,6 +74,14 @@ function resolveInitialProvider(): ServicePaymentProvider {
   return 'chapa';
 }
 
+function resolveInitialPayView(): 'checkout' | 'telebirr' | 'history' {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('provider') === 'telebirr' || (params.get('tx_ref') || '').startsWith('TB-')) {
+    return 'telebirr';
+  }
+  return 'checkout';
+}
+
 export function ServicePayNow({
   selectedServiceId,
   onSelectService,
@@ -95,11 +107,15 @@ export function ServicePayNow({
   const [verifiedReceipt, setVerifiedReceipt] = useState<VerifiedOrderReceipt | null>(null);
   const [resendingInvoice, setResendingInvoice] = useState(false);
   const [invoiceNotice, setInvoiceNotice] = useState<string | null>(null);
+  const [payView, setPayView] = useState<'checkout' | 'telebirr' | 'history'>(resolveInitialPayView);
+  const [trackedRefs, setTrackedRefs] = useState<string[]>([]);
   const [verifyingState, setVerifyingState] = useState<{ txRef: string; provider: ServicePaymentProvider } | null>(() => {
     const params = new URLSearchParams(window.location.search);
     const txRef = params.get('tx_ref') || params.get('trx_ref');
     if (!txRef) return null;
-    return { txRef, provider: resolveInitialProvider() };
+    const initProv = resolveInitialProvider();
+    if (initProv === 'telebirr') return null;
+    return { txRef, provider: initProv };
   });
 
   useEffect(() => {
@@ -119,6 +135,11 @@ export function ServicePayNow({
           SERVICE_PAYMENT_PROVIDERS.find((p) => p.id === resolvedProv)?.label ?? 'Gateway';
         const invoiceMeta: InvoiceReceiptMeta | null = data.invoice || data.order?.invoice || null;
         if (data.verified && data.order) {
+          saveRecentInvoiceContext({
+            email: data.order.customer_email,
+            txRef: data.order.tx_ref,
+          });
+          setTrackedRefs((prev) => (prev.includes(data.order.tx_ref) ? prev : [data.order.tx_ref, ...prev]));
           setVerifiedReceipt({
             provider: resolvedProv,
             tx_ref: data.order.tx_ref,
@@ -132,6 +153,11 @@ export function ServicePayNow({
             payer_reference: data.order.payer_reference,
             invoice: invoiceMeta,
           });
+          celebrateVerifiedPayment({
+            txRef: data.order.tx_ref,
+            verified: true,
+            status: data.order.status || 'settled',
+          });
           onStatusToast?.('success', `${provLabel} payment ${data.order.tx_ref} verified & PDF invoice ready.`);
         } else if (data.verified) {
           setVerifiedReceipt({
@@ -141,6 +167,11 @@ export function ServicePayNow({
             amount: Number(data.amount || 0),
             currency: data.currency || 'ETB',
             invoice: invoiceMeta,
+          });
+          celebrateVerifiedPayment({
+            txRef: verifyingState.txRef,
+            verified: true,
+            status: data.status || 'settled',
           });
         }
       })
@@ -218,6 +249,8 @@ export function ServicePayNow({
         return;
       }
 
+      saveRecentInvoiceContext({ email: email.trim(), txRef: data.tx_ref });
+      setTrackedRefs((prev) => (prev.includes(data.tx_ref) ? prev : [data.tx_ref, ...prev]));
       setSession({
         provider,
         tx_ref: data.tx_ref,
@@ -284,16 +317,82 @@ export function ServicePayNow({
     <div className="chapa-pay-panel" id="pay-now" data-testid="service-pay-now">
       <div className="chapa-pay-header">
         <div>
-          <h3 className="chapa-pay-title">Pay Securely via {activeProvider.label}</h3>
+          <h3 className="chapa-pay-title">
+            {payView === 'history'
+              ? 'Invoice History'
+              : payView === 'telebirr'
+                ? 'Pay via Telebirr H5'
+                : `Pay Securely via ${activeProvider.label}`}
+          </h3>
           <p className="chapa-pay-sub">
-            {activeProvider.subtitle} · Server-verified checkout
+            {payView === 'history'
+              ? 'Download past PDF receipts or resend invoice emails'
+              : payView === 'telebirr'
+                ? 'Ethio Telecom Fabric H5 · Existing Merchant Credentials'
+                : `${activeProvider.subtitle} · Server-verified checkout`}
           </p>
         </div>
-        <div className="chapa-amount-readout" aria-live="polite">
-          <span>Payable Total</span>
-          <strong>{formatEtb(payableAmount)}</strong>
-        </div>
+        {payView === 'checkout' ? (
+          <div className="chapa-amount-readout" aria-live="polite">
+            <span>Payable Total</span>
+            <strong>{formatEtb(payableAmount)}</strong>
+          </div>
+        ) : null}
       </div>
+
+      <div className="pay-subview-tabs" role="tablist" aria-label="Payment modes and invoice history">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={payView === 'checkout'}
+          className={`pay-subview-tab ${payView === 'checkout' ? 'active' : ''}`}
+          onClick={() => setPayView('checkout')}
+          data-testid="pay-tab-checkout"
+        >
+          <i className="fa-solid fa-credit-card" aria-hidden="true" /> All Gateways
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={payView === 'telebirr'}
+          className={`pay-subview-tab ${payView === 'telebirr' ? 'active' : ''}`}
+          onClick={() => setPayView('telebirr')}
+          data-testid="pay-tab-telebirr"
+        >
+          <i className="fa-solid fa-mobile-screen-button" aria-hidden="true" /> Telebirr H5
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={payView === 'history'}
+          className={`pay-subview-tab ${payView === 'history' ? 'active' : ''}`}
+          onClick={() => setPayView('history')}
+          data-testid="pay-tab-history"
+        >
+          <i className="fa-solid fa-file-invoice" aria-hidden="true" /> Invoice History
+        </button>
+      </div>
+
+      {payView === 'history' ? (
+        <InvoiceHistory
+          scope="public"
+          defaultEmail={email || verifiedReceipt?.customer_email || ''}
+          extraTxRefs={trackedRefs}
+          onStatusToast={onStatusToast}
+        />
+      ) : payView === 'telebirr' ? (
+        <TelebirrPayPanel
+          selectedServiceId={selectedServiceId}
+          onSelectService={onSelectService}
+          returnPath={returnPath}
+          onStatusToast={onStatusToast}
+          onTransactionTracked={(txRef, trackedEmail) => {
+            setTrackedRefs((prev) => (prev.includes(txRef) ? prev : [txRef, ...prev]));
+            if (trackedEmail && !email) setEmail(trackedEmail);
+          }}
+        />
+      ) : (
+        <>
 
       {verifyingState && (
         <div className="chapa-alert chapa-alert-info" role="status">
@@ -598,6 +697,8 @@ export function ServicePayNow({
                 : `Pay ${formatEtb(payableAmount)} via ${activeProvider.label}`}
           </button>
         </form>
+      )}
+        </>
       )}
     </div>
   );

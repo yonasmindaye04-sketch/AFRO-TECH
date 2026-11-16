@@ -64,7 +64,7 @@ export function buildTelebirrSignString(requestObject) {
 }
 
 /**
- * Signs a Telebirr request payload using SHA256WithRSA (RSA-SHA256).
+ * Signs a Telebirr request payload using SHA256withRSAandMGF1 (RSA-PSS, 32-byte salt).
  */
 export function signTelebirrRequest(requestObject, privateKeyInput) {
   const pem = normalizeTelebirrPemKey(privateKeyInput, 'PRIVATE KEY');
@@ -75,21 +75,50 @@ export function signTelebirrRequest(requestObject, privateKeyInput) {
   const signer = crypto.createSign('RSA-SHA256');
   signer.update(signString, 'utf8');
   signer.end();
-  return signer.sign(pem, 'base64');
+  return signer.sign(
+    {
+      key: pem,
+      padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+      saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+    },
+    'base64',
+  );
 }
 
 /**
  * Verifies a Telebirr async webhook notification signature with Ethio Telecom's public key.
+ * Uses RSA-PSS (SHA256withRSAandMGF1) per Telebirr spec, with PKCS#1 v1.5 fallback for compatibility.
  */
 export function verifyTelebirrSignature(payload, signature, publicKeyInput) {
   const pem = normalizeTelebirrPemKey(publicKeyInput, 'PUBLIC KEY');
   if (!pem || !signature) return false;
+  const sig = String(signature).trim();
+  const signString = buildTelebirrSignString(payload);
   try {
-    const signString = buildTelebirrSignString(payload);
-    const verifier = crypto.createVerify('RSA-SHA256');
-    verifier.update(signString, 'utf8');
-    verifier.end();
-    return verifier.verify(pem, String(signature).trim(), 'base64');
+    const pssVerifier = crypto.createVerify('RSA-SHA256');
+    pssVerifier.update(signString, 'utf8');
+    pssVerifier.end();
+    if (
+      pssVerifier.verify(
+        {
+          key: pem,
+          padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+        },
+        sig,
+        'base64',
+      )
+    ) {
+      return true;
+    }
+  } catch {
+    // Fall through to compatibility check
+  }
+  try {
+    const pkcsVerifier = crypto.createVerify('RSA-SHA256');
+    pkcsVerifier.update(signString, 'utf8');
+    pkcsVerifier.end();
+    return pkcsVerifier.verify(pem, sig, 'base64');
   } catch {
     return false;
   }
@@ -295,6 +324,7 @@ export async function initializeTelebirrOrder({
     return { ok: false, configured: true, error: sanitizeTelebirrError(err instanceof Error ? err.message : 'Telebirr signing failed', [appSecret, privateKey]) };
   }
 
+  const authHeader = tokenRes.token.startsWith('Bearer ') ? tokenRes.token : `Bearer ${tokenRes.token}`;
   const endpoint = `${String(baseUrl || TELEBIRR_DEFAULT_BASE_URL).replace(/\/+$/, '')}/payment/v1/merchant/preOrder`;
   try {
     const res = await fetchFn(endpoint, {
@@ -302,7 +332,7 @@ export async function initializeTelebirrOrder({
       headers: {
         'Content-Type': 'application/json',
         'X-APP-Key': String(fabricAppId).trim(),
-        Authorization: tokenRes.token,
+        Authorization: authHeader,
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(8000),
@@ -375,7 +405,7 @@ export async function queryTelebirrOrder({ config, merchOrderId, fetchFn = fetch
   const basePayload = {
     timestamp: createTelebirrTimestamp(),
     nonce_str: createTelebirrNonceStr(),
-    method: 'payment.queryorder',
+    method: 'payment.query.order',
     sign_type: 'SHA256WithRSA',
     version: '1.0',
     biz_content: {
@@ -389,6 +419,7 @@ export async function queryTelebirrOrder({ config, merchOrderId, fetchFn = fetch
     sign: signTelebirrRequest(basePayload, privateKey),
   };
 
+  const authHeader = tokenRes.token.startsWith('Bearer ') ? tokenRes.token : `Bearer ${tokenRes.token}`;
   const endpoint = `${String(baseUrl || TELEBIRR_DEFAULT_BASE_URL).replace(/\/+$/, '')}/payment/v1/merchant/queryOrder`;
   try {
     const res = await fetchFn(endpoint, {
@@ -396,14 +427,20 @@ export async function queryTelebirrOrder({ config, merchOrderId, fetchFn = fetch
       headers: {
         'Content-Type': 'application/json',
         'X-APP-Key': String(fabricAppId).trim(),
-        Authorization: tokenRes.token,
+        Authorization: authHeader,
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(8000),
     });
     const data = await res.json().catch(() => null);
     const statusRaw = String(
-      data?.biz_content?.order_status || data?.data?.order_status || data?.order_status || '',
+      data?.biz_content?.trade_status
+      || data?.biz_content?.order_status
+      || data?.data?.trade_status
+      || data?.data?.order_status
+      || data?.trade_status
+      || data?.order_status
+      || '',
     ).toUpperCase();
     const verified = res.ok && ['PAY_SUCCESS', 'TRADE_SUCCESS', 'COMPLETED', 'SUCCESS'].includes(statusRaw);
     return {
@@ -411,7 +448,12 @@ export async function queryTelebirrOrder({ config, merchOrderId, fetchFn = fetch
       configured: true,
       verified,
       status: statusRaw || (res.ok ? 'PENDING' : 'FAILED'),
-      reference: data?.biz_content?.payment_order_id || data?.data?.payment_order_id || null,
+      reference:
+        data?.biz_content?.payment_order_id
+        || data?.biz_content?.trade_voucher
+        || data?.data?.payment_order_id
+        || data?.data?.trade_voucher
+        || null,
       amount: Number(data?.biz_content?.total_amount || data?.data?.total_amount || 0),
     };
   } catch (err) {

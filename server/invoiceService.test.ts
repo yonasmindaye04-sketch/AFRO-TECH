@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildInvoiceData,
+  buildInvoiceListItem,
   buildInvoiceNumber,
   ensureAndDispatchInvoice,
+  filterInvoiceHistoryItems,
   generateInvoicePdfBuffer,
   resolveEmailTransportConfig,
   sendInvoiceEmail,
@@ -246,3 +248,50 @@ test('ensureAndDispatchInvoice is idempotent for repeat webhook/verify calls and
   assert.equal(resent.invoice.send_count, 2);
   assert.equal(resent.invoice.recipient_email, 'finance@company.et');
 });
+
+test('buildInvoiceListItem and filterInvoiceHistoryItems summarize, filter, and sort invoices newest first', () => {
+  const older = buildInvoiceListItem(
+    {
+      tx_ref: 'CHAPA-SVC-OLD01',
+      provider: 'chapa',
+      amount: 4000,
+      currency: 'ETB',
+      customer_name: 'Abebe Bikila',
+      customer_email: 'abebe@asella.et',
+      description: 'Landing Page',
+      status: 'settled',
+      settled_at: '2026-11-10T10:00:00.000Z',
+    },
+    { name: 'AFRO-TECH Digital Services' },
+  );
+  const newer = buildInvoiceListItem(
+    {
+      tx_ref: 'MPESA-SVC-NEW02',
+      provider: 'mpesa',
+      amount: 6500,
+      currency: 'ETB',
+      customer_name: 'Sara Tadesse',
+      customer_email: 'sara@asella.et',
+      description: 'POS Terminal Setup',
+      status: 'settled',
+      settled_at: '2026-11-15T14:00:00.000Z',
+    },
+    { name: 'AFRO-TECH Digital Services' },
+  );
+
+  assert.equal(older.pdf_url, '/api/invoices/CHAPA-SVC-OLD01/pdf');
+  assert.equal(newer.provider_label, 'Safaricom M-Pesa Ethiopia');
+
+  const all = filterInvoiceHistoryItems([older, newer]);
+  assert.equal(all.length, 2);
+  assert.equal(all[0].tx_ref, 'MPESA-SVC-NEW02');
+
+  const mpesaOnly = filterInvoiceHistoryItems([older, newer], { provider: 'mpesa' });
+  assert.equal(mpesaOnly.length, 1);
+  assert.equal(mpesaOnly[0].invoice_number, newer.invoice_number);
+
+  const queryMatch = filterInvoiceHistoryItems([older, newer], { query: 'abebe@asella.et' });
+  assert.equal(queryMatch.length, 1);
+  assert.equal(queryMatch[0].tx_ref, 'CHAPA-SVC-OLD01');
+});
+

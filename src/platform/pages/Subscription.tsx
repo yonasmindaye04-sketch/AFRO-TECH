@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api, fmtDate, fmtMoney } from '../api'
+import { celebrateVerifiedPayment } from '../../utils/paymentCelebration'
 
 interface Plan {
   id: string
@@ -125,11 +126,16 @@ export default function Subscription(): JSX.Element {
     if (!tx) return
     const t = setTimeout(async () => {
       try {
-        const res = await api.post<{ ok: boolean; access_until: string | null }>('/billing/verify', { tx_ref: tx })
+        const res = await api.post<{ ok: boolean; pending?: boolean; message?: string; access_until: string | null }>('/billing/verify', { tx_ref: tx })
         setAccessUntil(res.access_until)
-        setOk('Payment confirmed — your subscription is active.')
-        window.history.replaceState({}, '', '/app/subscription')
-        void load()
+        if (res.ok) {
+          celebrateVerifiedPayment({ txRef: tx, verified: true, status: 'settled' })
+          setOk('Payment confirmed — your subscription is active.')
+          window.history.replaceState({}, '', '/app/subscription')
+          void load()
+        } else {
+          setError(res.message || 'Payment verification is pending confirmation from the gateway.')
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Verification failed')
       }

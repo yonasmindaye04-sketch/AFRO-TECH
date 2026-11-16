@@ -52,6 +52,8 @@ export const PAYMENT_PROVIDERS: Record<PaymentProviderId, ProviderDefinition> = 
       { key: 'merchant_app_id', label: 'Merchant App ID', placeholder: 'Telebirr Merchant App ID…' },
       { key: 'secret_key', label: 'Fabric App Secret', placeholder: 'Enter Telebirr app secret…', secret: true, required: true },
       { key: 'private_key', label: 'Merchant RSA Private Key (PEM)', placeholder: '-----BEGIN PRIVATE KEY-----…', secret: true },
+      { key: 'public_key', label: 'Ethio Telecom Public Key (optional)', placeholder: '-----BEGIN PUBLIC KEY-----…', secret: true },
+      { key: 'base_url', label: 'Fabric Base URL (optional)', placeholder: 'https://196.188.120.3:38443/apiaccess/payment/gateway' },
       { key: 'settlement_account', label: 'Merchant Wallet Phone', placeholder: '+251911…', required: true },
     ],
   },
@@ -68,6 +70,7 @@ export const PAYMENT_PROVIDERS: Record<PaymentProviderId, ProviderDefinition> = 
       { key: 'public_key', label: 'Consumer Key', placeholder: 'Safaricom Consumer Key…', required: true },
       { key: 'secret_key', label: 'Consumer Secret', placeholder: 'Safaricom Consumer Secret…', secret: true, required: true },
       { key: 'passkey', label: 'Online STK Passkey', placeholder: 'Safaricom STK Passkey…', secret: true },
+      { key: 'base_url', label: 'M-Pesa API Base URL (optional)', placeholder: 'https://apisandbox.safaricom.et' },
       { key: 'settlement_account', label: 'Settlement Phone / Account', placeholder: '+2517…' },
     ],
   },
@@ -101,22 +104,45 @@ export const PAYMENT_PROVIDERS: Record<PaymentProviderId, ProviderDefinition> = 
   },
 }
 
+const POS_RAIL_TO_GATEWAY: Record<string, PaymentProviderId> = {
+  telebirr: 'telebirr',
+  mpesa: 'mpesa',
+  cbe: 'cbe_bank',
+  cbe_bank: 'cbe_bank',
+  card: 'chapa',
+  chapa: 'chapa',
+  stripe: 'stripe',
+}
+
+export function mapPosRailToGateway(rail: string): PaymentProviderId | null {
+  const key = String(rail || '').trim().toLowerCase()
+  return POS_RAIL_TO_GATEWAY[key] ?? null
+}
+
 export function validateGatewayConfig(
   provider: PaymentProviderId,
   values: Record<string, string>,
   hasExistingSecret = false,
+  mode: GatewayMode = 'sandbox',
 ): { valid: boolean; errors: Record<string, string> } {
   const def = PAYMENT_PROVIDERS[provider]
   const errors: Record<string, string> = {}
   if (!def) {
     return { valid: false, errors: { provider: 'Unsupported payment provider.' } }
   }
+  const liveExtraRequired: Record<string, string[]> = {
+    telebirr: ['fabric_app_id', 'merchant_app_id', 'private_key'],
+    mpesa: ['passkey'],
+  }
+  const extraSet = mode === 'live' ? new Set(liveExtraRequired[provider] ?? []) : new Set<string>()
+
   for (const field of def.fields) {
-    if (!field.required) continue
+    const isRequired = Boolean(field.required) || extraSet.has(field.key)
+    if (!isRequired) continue
     const val = String(values[field.key] ?? '').trim()
     const alreadyStored = field.secret && hasExistingSecret
     if (!val && !alreadyStored) {
-      errors[field.key] = `${field.label} is required.`
+      errors[field.key] = `${field.label} is required${extraSet.has(field.key) ? ' for Live mode' : ''}.`
     }
   }
   return { valid: Object.keys(errors).length === 0, errors }

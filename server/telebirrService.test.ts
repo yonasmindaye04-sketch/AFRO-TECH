@@ -119,6 +119,24 @@ test('initializeTelebirrOrder & queryTelebirrOrder call /payment/v1/token, preOr
   assert.equal(calls[1].headers.Authorization, 'Bearer fabric-tok-1');
 
   const queryRes = await queryTelebirrOrder({ config, merchOrderId: 'TB-SVC-1234', fetchFn: mockFetch });
+  assert.equal(calls[3].headers.Authorization, 'Bearer fabric-tok-1');
+  assert.equal(calls[3].body.method, 'payment.query.order');
   assert.equal(queryRes.verified, true);
   assert.equal(queryRes.reference, 'TB-999111');
+
+  const tradeStatusFetch = async (url: string | URL | Request) => {
+    if (String(url).endsWith('/payment/v1/token')) {
+      return new Response(JSON.stringify({ token: 'raw-fabric-tok-2' }), { status: 200 });
+    }
+    return new Response(
+      JSON.stringify({
+        code: 200,
+        biz_content: { trade_status: 'PAY_SUCCESS', trade_voucher: 'TV-888222', total_amount: '4000' },
+      }),
+      { status: 200 },
+    );
+  };
+  const queryTradeRes = await queryTelebirrOrder({ config, merchOrderId: 'TB-SVC-5678', fetchFn: tradeStatusFetch });
+  assert.equal(queryTradeRes.verified, true);
+  assert.equal(queryTradeRes.reference, 'TV-888222');
 });

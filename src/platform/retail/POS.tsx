@@ -5,6 +5,11 @@ import { useApiData } from '../hooks/useApiData'
 import { Badge, EmptyState, Field, Modal, PageHeader, SearchInput, Spinner } from '../ui'
 import BarcodeScanner from '../ui/BarcodeScanner'
 import ThermalReceipt from '../ui/ThermalReceipt'
+import {
+  PAYMENT_PROVIDERS,
+  mapPosRailToGateway,
+  type PaymentProviderId,
+} from '../utils/paymentEngine'
 import type { ReceiptData } from '../utils/receipt'
 import {
   DEFAULT_POS_CUSTOMER,
@@ -155,7 +160,13 @@ export default function POS(): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [receipt, setReceipt] = useState<SaleResult | null>(null)
-  const [payLinkUrl, setPayLinkUrl] = useState<string | null>(null)
+  const [payLinkInfo, setPayLinkInfo] = useState<{
+    url: string
+    externalUrl?: string | null
+    provider: PaymentProviderId
+    mode: string
+    locked: boolean
+  } | null>(null)
   const [payLinkBusy, setPayLinkBusy] = useState(false)
 
   const allProducts = useMemo(() => data?.products ?? [], [data?.products])
@@ -304,7 +315,7 @@ export default function POS(): JSX.Element {
     setDiscountMode('fixed')
     setDiscountValue(0)
     setAmountPaid('')
-    setPayLinkUrl(null)
+    setPayLinkInfo(null)
     setError(null)
     setMobileTab('catalog')
   }
@@ -433,14 +444,29 @@ export default function POS(): JSX.Element {
     if (totals.totalPayable <= 0) return
     setPayLinkBusy(true)
     setError(null)
+    const mappedProvider = mapPosRailToGateway(paymentMethod)
     try {
-      const res = await api.post<{ pay_path: string }>('/payments/links', {
-        amount: totals.totalPayable,
+      const res = await api.post<{
+        pay_path: string
+        external_checkout_url?: string | null
+        provider: PaymentProviderId
+        provider_locked?: boolean
+        mode?: string
+      }>('/payments/links', {
+        ...(mappedProvider ? { provider: mappedProvider, lock_provider: true } : { lock_provider: false }),
         party_name: customer.name.trim() || 'POS Walk-in Customer',
+        customer_phone: customer.phone.trim() || undefined,
+        amount: totals.totalPayable,
         description: `POS Order (${totals.itemCount} item${totals.itemCount === 1 ? '' : 's'} · ${orderType})`,
         reference_type: 'pos_checkout',
       })
-      setPayLinkUrl(`${window.location.origin}${res.pay_path}`)
+      setPayLinkInfo({
+        url: `${window.location.origin}${res.pay_path}`,
+        externalUrl: res.external_checkout_url || null,
+        provider: res.provider || mappedProvider || 'cbe_bank',
+        mode: res.mode || 'sandbox',
+        locked: Boolean(res.provider_locked ?? mappedProvider),
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not generate payment link')
     } finally {
@@ -978,7 +1004,11 @@ export default function POS(): JSX.Element {
                       role="radio"
                       aria-checked={paymentMethod === rail.id}
                       className={`pl-pos-rail-btn ${paymentMethod === rail.id ? 'active' : ''}`}
-                      onClick={() => setPaymentMethod(rail.id)}
+                      onClick={() => {
+                        setPaymentMethod(rail.id)
+                        setPayLinkInfo(null)
+                        setError(null)
+                      }}
                       data-testid={`pos-rail-${rail.id}`}
                     >
                       <i className={rail.icon} aria-hidden="true" />
@@ -1027,20 +1057,48 @@ export default function POS(): JSX.Element {
                 </p>
               )}
 
-              {payLinkUrl && (
-                <div style={{ padding: 10, borderRadius: 10, border: '1px solid var(--accent)', fontSize: '.82rem' }}>
-                  <div style={{ color: 'var(--text-dim)', marginBottom: 4 }}>Customer Checkout Link Ready (Chapa / Telebirr / M-Pesa)</div>
+              {payLinkInfo && (
+                <div
+                  data-testid="pos-pay-link-card"
+                  style={{ padding: 10, borderRadius: 10, border: '1px solid var(--accent)', fontSize: '.82rem' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <span style={{ color: 'var(--text)', fontWeight: 600 }}>
+                      {payLinkInfo.locked
+                        ? `${PAYMENT_PROVIDERS[payLinkInfo.provider]?.name ?? payLinkInfo.provider} Checkout Ready`
+                        : 'Multi-Gateway Checkout Ready'}
+                    </span>
+                    <Badge tone={payLinkInfo.mode === 'live' ? 'good' : payLinkInfo.mode === 'direct' ? 'info' : 'warn'}>
+                      {payLinkInfo.mode === 'live' ? 'LIVE' : payLinkInfo.mode === 'direct' ? 'BANK' : 'SANDBOX'}
+                    </Badge>
+                  </div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <input
                       className="pl-input"
                       readOnly
-                      value={payLinkUrl}
+                      value={payLinkInfo.url}
                       aria-label="POS payment link"
                       style={{ fontSize: '.78rem', padding: '6px 8px' }}
                     />
-                    <a className="pl-btn pl-btn-primary pl-btn-sm" href={payLinkUrl} target="_blank" rel="noreferrer">
+                    <a
+                      className="pl-btn pl-btn-primary pl-btn-sm"
+                      href={payLinkInfo.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      data-testid="pos-pay-link-open"
+                    >
                       Open
                     </a>
+                    {payLinkInfo.externalUrl && (
+                      <a
+                        className="pl-btn pl-btn-ghost pl-btn-sm"
+                        href={payLinkInfo.externalUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Direct
+                      </a>
+                    )}
                   </div>
                 </div>
               )}

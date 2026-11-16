@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   buildPaymentLinkUrl,
   computeGatewayFee,
+  mapPosRailToGateway,
   validateGatewayConfig,
   validateOutboundPayout,
 } from './paymentEngine'
@@ -19,6 +20,26 @@ test('validateGatewayConfig requires mandatory merchant fields unless secret alr
     true,
   )
   assert.equal(okWithExistingSecret.valid, true)
+
+  const telebirrLiveMissing = validateGatewayConfig(
+    'telebirr',
+    { merchant_id: '554120', secret_key: 'sec', settlement_account: '+251911000111' },
+    false,
+    'live',
+  )
+  assert.equal(telebirrLiveMissing.valid, false)
+  assert.ok(telebirrLiveMissing.errors.fabric_app_id)
+  assert.ok(telebirrLiveMissing.errors.merchant_app_id)
+  assert.ok(telebirrLiveMissing.errors.private_key)
+})
+
+test('mapPosRailToGateway maps POS payment rails accurately', () => {
+  assert.equal(mapPosRailToGateway('telebirr'), 'telebirr')
+  assert.equal(mapPosRailToGateway('mpesa'), 'mpesa')
+  assert.equal(mapPosRailToGateway('cbe'), 'cbe_bank')
+  assert.equal(mapPosRailToGateway('card'), 'chapa')
+  assert.equal(mapPosRailToGateway('cash'), null)
+  assert.equal(mapPosRailToGateway('credit'), null)
 })
 
 test('computeGatewayFee calculates accurate fee and net settlement per provider', () => {

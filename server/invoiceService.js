@@ -656,3 +656,75 @@ export async function ensureAndDispatchInvoice({
     skippedDuplicate: false,
   };
 }
+
+export function buildInvoiceListItem(orderOrIntent, merchantInfo = {}, cachedEntry = null) {
+  if (!orderOrIntent?.tx_ref) return null;
+  const existingMeta = cachedEntry?.meta || orderOrIntent.invoice || null;
+  const data = buildInvoiceData(orderOrIntent, merchantInfo, {
+    invoiceNumber: existingMeta?.invoice_number,
+    issuedAt: existingMeta?.issued_at,
+    overrideEmail: existingMeta?.recipient_email || orderOrIntent.customer_email || orderOrIntent.payer_email || '',
+  });
+  const filename = existingMeta?.filename || `${data.invoiceNumber}.pdf`;
+  return {
+    invoice_number: existingMeta?.invoice_number || data.invoiceNumber,
+    tx_ref: data.txRef,
+    provider: data.provider,
+    provider_label: existingMeta?.provider_label || data.providerLabel,
+    customer_name: data.customer.name,
+    customer_email: existingMeta?.recipient_email || data.customer.email || null,
+    description: data.lineItems[0]?.description || 'Payment',
+    amount: data.totalPaid,
+    fee_amount: data.feeAmount,
+    net_amount: data.netAmount,
+    currency: data.currency,
+    status: data.status,
+    mode: data.mode,
+    payer_reference: data.payerReference,
+    gl_voucher_no: data.glVoucherNo,
+    delivery_status: existingMeta?.delivery_status || (data.customer.email ? 'sandbox_outbox' : 'skipped_no_email'),
+    delivery_transport: existingMeta?.delivery_transport || (data.customer.email ? 'sandbox_outbox' : 'none'),
+    recipient_email: existingMeta?.recipient_email || data.customer.email || null,
+    send_count: existingMeta?.send_count ?? 0,
+    last_sent_at: existingMeta?.last_sent_at || null,
+    issued_at: existingMeta?.issued_at || data.issuedAt,
+    settled_at: data.settledAt,
+    filename,
+    pdf_url: existingMeta?.pdf_url || `/api/invoices/${encodeURIComponent(data.txRef)}/pdf`,
+  };
+}
+
+export function filterInvoiceHistoryItems(items, { query = '', provider = 'all' } = {}) {
+  const cleanQuery = String(query || '').trim().toLowerCase();
+  const cleanProvider = String(provider || 'all').trim().toLowerCase();
+
+  return [...(items || [])]
+    .filter((item) => {
+      if (!item) return false;
+      if (cleanProvider && cleanProvider !== 'all' && String(item.provider || '').toLowerCase() !== cleanProvider) {
+        return false;
+      }
+      if (!cleanQuery) return true;
+      const hay = [
+        item.invoice_number,
+        item.tx_ref,
+        item.customer_name,
+        item.customer_email,
+        item.recipient_email,
+        item.description,
+        item.provider,
+        item.provider_label,
+        item.payer_reference,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(cleanQuery);
+    })
+    .sort((a, b) => {
+      const ta = new Date(a.settled_at || a.issued_at || 0).getTime();
+      const tb = new Date(b.settled_at || b.issued_at || 0).getTime();
+      return tb - ta;
+    });
+}
+

@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom'
 import { api, fmtDateTime, fmtMoney } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, Card, DataTable, EmptyState, ErrorBox, Field, Modal, OkBox, PageHeader, Spinner, StatCard } from '../ui'
+import { InvoiceHistory } from '../../components/InvoiceHistory'
+import { celebrateVerifiedPayment } from '../../utils/paymentCelebration'
 import {
   buildPaymentLinkUrl,
   computeGatewayFee,
@@ -76,7 +78,7 @@ interface PartnerOpt {
   balance: string
 }
 
-type Tab = 'transactions' | 'gateways' | 'security'
+type Tab = 'transactions' | 'invoices' | 'gateways' | 'security'
 
 const STATUS_TONE: Record<PaymentIntentRow['status'], 'good' | 'warn' | 'bad' | 'info' | 'neutral'> = {
   settled: 'good',
@@ -89,7 +91,7 @@ const STATUS_TONE: Record<PaymentIntentRow['status'], 'good' | 'warn' | 'bad' | 
 export default function Payments(): JSX.Element {
   const [searchParams] = useSearchParams()
   const initialTab = (searchParams.get('tab') as Tab | null) || 'transactions'
-  const [tab, setTab] = useState<Tab>(['transactions', 'gateways', 'security'].includes(initialTab) ? initialTab : 'transactions')
+  const [tab, setTab] = useState<Tab>(['transactions', 'invoices', 'gateways', 'security'].includes(initialTab) ? initialTab : 'transactions')
   const [dirFilter, setDirFilter] = useState<'all' | 'receive' | 'pay'>('all')
   const [notice, setNotice] = useState<string | null>(null)
   const [errMsg, setErrMsg] = useState<string | null>(null)
@@ -120,6 +122,7 @@ export default function Payments(): JSX.Element {
     description: '',
   })
   const [createdUrl, setCreatedUrl] = useState<string | null>(null)
+  const [createdMeta, setCreatedMeta] = useState<{ provider: string; mode: string; externalUrl?: string | null } | null>(null)
   const [linkBusy, setLinkBusy] = useState(false)
 
   // Outbound Payout modal
@@ -169,7 +172,7 @@ export default function Payments(): JSX.Element {
     e.preventDefault()
     if (!editProvider) return
     const existing = gateways.find((g) => g.provider === editProvider)
-    const check = validateGatewayConfig(editProvider, gwValues, Boolean(existing?.has_secret))
+    const check = validateGatewayConfig(editProvider, gwValues, Boolean(existing?.has_secret), gwMode)
     if (!check.valid) {
       setGwFieldErrors(check.errors)
       return
@@ -226,10 +229,17 @@ export default function Payments(): JSX.Element {
     setLinkBusy(true)
     setErrMsg(null)
     setCreatedUrl(null)
+    setCreatedMeta(null)
     try {
       const cust = (custQ.data?.customers ?? []).find((c) => c.id === linkForm.party_id)
-      const res = await api.post<{ intent: PaymentIntentRow; pay_path: string }>('/payments/links', {
-        provider: effectiveLinkProvider || undefined,
+      const res = await api.post<{
+        intent: PaymentIntentRow
+        pay_path: string
+        external_checkout_url?: string | null
+        provider: PaymentProviderId
+        mode?: string
+      }>('/payments/links', {
+        ...(linkForm.provider ? { provider: linkForm.provider, lock_provider: true } : { lock_provider: false }),
         party_id: linkForm.party_id || null,
         party_name: linkForm.party_name.trim() || cust?.name || 'Customer',
         customer_email: linkForm.customer_email.trim() || undefined,
@@ -240,7 +250,12 @@ export default function Payments(): JSX.Element {
       })
       const fullUrl = buildPaymentLinkUrl(window.location.origin, res.intent.token || '')
       setCreatedUrl(fullUrl)
-      setNotice(`Payment link ${res.intent.tx_ref} generated securely.`)
+      setCreatedMeta({
+        provider: PAYMENT_PROVIDERS[res.provider]?.name ?? res.provider,
+        mode: res.mode || 'sandbox',
+        externalUrl: res.external_checkout_url || null,
+      })
+      setNotice(`Payment link ${res.intent.tx_ref} generated securely (${PAYMENT_PROVIDERS[res.provider]?.name ?? res.provider}).`)
       setLinkForm((f) => ({ ...f, party_id: '', party_name: '', customer_email: '', amount: '', description: '' }))
       reloadAll()
     } catch (err) {
@@ -290,7 +305,14 @@ export default function Payments(): JSX.Element {
   const settleIntent = async (intent: PaymentIntentRow): Promise<void> => {
     setErrMsg(null)
     try {
-      await api.post(`/payments/intents/${intent.id}/settle`, {})
+      const res = await api.post<{ intent: PaymentIntentRow }>(`/payments/intents/${intent.id}/settle`, {})
+      if (res.intent?.status === 'settled') {
+        celebrateVerifiedPayment({
+          txRef: res.intent.tx_ref,
+          verified: true,
+          status: res.intent.status,
+        })
+      }
       setNotice(`Payment ${intent.tx_ref} verified & settled cleanly to GL.`)
       reloadAll()
     } catch (err) {
@@ -349,6 +371,16 @@ export default function Payments(): JSX.Element {
               <button
                 type="button"
                 role="tab"
+                aria-selected={tab === 'invoices'}
+                className={`sub-tab ${tab === 'invoices' ? 'sub-tab-active' : ''}`}
+                onClick={() => setTab('invoices')}
+                data-testid="erp-tab-invoice-history"
+              >
+                Invoice History
+              </button>
+              <button
+                type="button"
+                role="tab"
                 aria-selected={tab === 'gateways'}
                 className={`sub-tab ${tab === 'gateways' ? 'sub-tab-active' : ''}`}
                 onClick={() => setTab('gateways')}
@@ -384,6 +416,7 @@ export default function Payments(): JSX.Element {
               onClick={() => {
                 setErrMsg(null)
                 setCreatedUrl(null)
+                setCreatedMeta(null)
                 setOpenLink(true)
               }}
             >
@@ -535,6 +568,23 @@ export default function Payments(): JSX.Element {
             />
           )}
         </>
+      )}
+
+      {tab === 'invoices' && (
+        <Card>
+          <InvoiceHistory
+            scope="tenant"
+            onStatusToast={(type, message) => {
+              if (type === 'error') {
+                setErrMsg(message)
+                setNotice(null)
+              } else {
+                setNotice(message)
+                setErrMsg(null)
+              }
+            }}
+          />
+        </Card>
       )}
 
       {tab === 'gateways' && (
@@ -740,14 +790,13 @@ export default function Payments(): JSX.Element {
           <Field label="Receiving Gateway">
             <select
               className="pl-select"
-              required
-              value={effectiveLinkProvider}
-              onChange={(e) => setLinkForm((f) => ({ ...f, provider: e.target.value as PaymentProviderId }))}
+              value={linkForm.provider}
+              onChange={(e) => setLinkForm((f) => ({ ...f, provider: e.target.value as PaymentProviderId | '' }))}
             >
-              {enabledGateways.length === 0 && <option value="">No active gateways configured</option>}
+              <option value="">All Active Gateways (Customer Chooses)</option>
               {enabledGateways.map((g) => (
                 <option key={g.provider} value={g.provider}>
-                  {PAYMENT_PROVIDERS[g.provider]?.name} ({g.mode})
+                  Lock to {PAYMENT_PROVIDERS[g.provider]?.name} ({g.mode})
                 </option>
               ))}
             </select>
@@ -830,12 +879,24 @@ export default function Payments(): JSX.Element {
 
           {createdUrl && (
             <div style={{ padding: 12, borderRadius: 10, border: '1px solid var(--accent)', marginBottom: 14 }}>
-              <div style={{ fontSize: '.8rem', color: 'var(--text-dim)', marginBottom: 6 }}>Shareable Checkout Link Ready</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: '.8rem', color: 'var(--text-dim)' }}>
+                  Shareable Checkout Link Ready{createdMeta ? ` · ${createdMeta.provider}` : ''}
+                </span>
+                {createdMeta && (
+                  <Badge tone={createdMeta.mode === 'live' ? 'good' : 'warn'}>{createdMeta.mode.toUpperCase()}</Badge>
+                )}
+              </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input className="pl-input" readOnly value={createdUrl} aria-label="Generated checkout link" />
                 <a className="pl-btn pl-btn-primary pl-btn-sm" href={createdUrl} target="_blank" rel="noreferrer">
                   Open
                 </a>
+                {createdMeta?.externalUrl && (
+                  <a className="pl-btn pl-btn-ghost pl-btn-sm" href={createdMeta.externalUrl} target="_blank" rel="noreferrer">
+                    Gateway
+                  </a>
+                )}
               </div>
             </div>
           )}
