@@ -151,7 +151,7 @@ export function DataTable<T>({
             value={searchQuery}
             onChange={setSearchQuery}
             placeholder={searchPlaceholder ?? 'Search…'}
-            style={{ width: '100%', maxWidth: '260px' }}
+            style={{ width: '100%', maxWidth: '320px' }}
           />
         </div>
       )}

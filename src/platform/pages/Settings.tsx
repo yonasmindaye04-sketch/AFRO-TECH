@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../AuthContext'
 import { useTheme } from '../../context/useTheme'
-import { Card, Field, OkBox, Spinner } from '../ui'
+import { Badge, Card, Field, OkBox, Spinner } from '../ui'
+import type { CustomFieldDef } from '../components/CustomFieldsInputs'
 
 import ThermalReceipt from '../ui/ThermalReceipt'
 import type { ReceiptData } from '../utils/receipt'
@@ -57,6 +58,10 @@ export default function Settings(): JSX.Element {
 
   const firmType = me?.tenant?.business_type || 'store'
   const [liveTransaction, setLiveTransaction] = useState<ReceiptData | null>(null)
+  const [customFields, setCustomFields] = useState<CustomFieldDef[]>([])
+  const [cfForm, setCfForm] = useState({ entity: 'product' as 'product' | 'customer' | 'supplier', label: '', type: 'text' as 'text' | 'number' | 'date' | 'select', options: '' })
+  const [cfBusy, setCfBusy] = useState(false)
+  const [cfMsg, setCfMsg] = useState<string | null>(null)
 
   useEffect(() => {
     api
@@ -68,6 +73,10 @@ export default function Settings(): JSX.Element {
       .get<TelegramConfig>('/telegram/config')
       .then(setTgCfg)
       .catch(() => setTgCfg({ enabled: false, bot_username: null, linked: false, app_url: '' }))
+    api
+      .get<{ fields: CustomFieldDef[] }>('/tenant/custom-fields')
+      .then((r) => setCustomFields(r.fields ?? []))
+      .catch(() => undefined)
 
     // Load latest real transaction from the platform to populate receipt with actual company data
     if (firmType === 'school') {
@@ -414,6 +423,32 @@ export default function Settings(): JSX.Element {
     }
   }
 
+  const addCustomField = async (e: FormEvent): Promise<void> => {
+    e.preventDefault()
+    if (!cfForm.label.trim()) return
+    setCfBusy(true)
+    setCfMsg(null)
+    try {
+      const res = await api.post<{ fields: CustomFieldDef[] }>('/tenant/custom-fields', cfForm)
+      setCustomFields(res.fields ?? [])
+      setCfMsg(`Added custom field "${cfForm.label.trim()}" to ${cfForm.entity} forms.`)
+      setCfForm({ entity: cfForm.entity, label: '', type: 'text', options: '' })
+    } catch {
+      // handled silently
+    } finally {
+      setCfBusy(false)
+    }
+  }
+
+  const removeCustomField = async (id: string): Promise<void> => {
+    try {
+      const res = await api.del<{ fields: CustomFieldDef[] }>(`/tenant/custom-fields/${id}`)
+      setCustomFields(res.fields ?? [])
+    } catch {
+      // ignore
+    }
+  }
+
   return (
     <div>
       <h1 className="pl-page-title" style={{ marginBottom: 4 }}>
@@ -711,6 +746,94 @@ export default function Settings(): JSX.Element {
             )}
           </>
         )}
+      </Card>
+
+      <Card>
+        <h2>
+          <i className="fa-solid fa-sliders" aria-hidden="true" style={{ color: 'var(--accent)', marginRight: 8 }} />
+          No-Code Custom Fields (Upgrade-Safe Extensions)
+        </h2>
+        <p style={{ color: 'var(--text-dim)', fontSize: '.86rem', marginBottom: 14 }}>
+          Extend Products, Customers, or Suppliers with custom metadata fields — persisted safely across updates without developer code.
+        </p>
+        <form onSubmit={addCustomField} style={{ marginBottom: 14 }}>
+          <div className="pl-grid-3">
+            <Field label="Target Form">
+              <select className="pl-select" value={cfForm.entity} onChange={(e) => setCfForm((f) => ({ ...f, entity: e.target.value as 'product' | 'customer' | 'supplier' }))}>
+                <option value="product">Products &amp; Inventory</option>
+                <option value="customer">Customers</option>
+                <option value="supplier">Suppliers</option>
+              </select>
+            </Field>
+            <Field label="Field Label">
+              <input className="pl-input" required placeholder="e.g. Storage Temp / Tax Zone" value={cfForm.label} onChange={(e) => setCfForm((f) => ({ ...f, label: e.target.value }))} />
+            </Field>
+            <Field label="Field Type">
+              <select className="pl-select" value={cfForm.type} onChange={(e) => setCfForm((f) => ({ ...f, type: e.target.value as 'text' | 'number' | 'date' | 'select' }))}>
+                <option value="text">Text</option>
+                <option value="number">Number</option>
+                <option value="date">Date</option>
+                <option value="select">Dropdown List</option>
+              </select>
+            </Field>
+          </div>
+          {cfForm.type === 'select' && (
+            <Field label="Dropdown Options (comma-separated)">
+              <input className="pl-input" required placeholder="e.g. Cold Chain, Ambient, Locked" value={cfForm.options} onChange={(e) => setCfForm((f) => ({ ...f, options: e.target.value }))} />
+            </Field>
+          )}
+          {cfMsg && <OkBox message={cfMsg} />}
+          <div className="pl-form-actions" style={{ justifyContent: 'flex-start' }}>
+            <button type="submit" className="pl-btn pl-btn-primary pl-btn-sm" disabled={cfBusy}>
+              <i className="fa-solid fa-plus" aria-hidden="true" /> {cfBusy ? 'Adding…' : 'Add Custom Field'}
+            </button>
+          </div>
+        </form>
+        {customFields.length > 0 && (
+          <div className="pl-table-wrap">
+            <table className="pl-table" style={{ minWidth: 0 }}>
+              <thead>
+                <tr>
+                  <th>Form</th>
+                  <th>Field Label</th>
+                  <th>Type</th>
+                  <th style={{ width: 60 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {customFields.map((f) => (
+                  <tr key={f.id}>
+                    <td style={{ textTransform: 'capitalize' }}><Badge tone="info">{f.entity}</Badge></td>
+                    <td><strong>{f.label}</strong></td>
+                    <td>{f.type}{f.options ? ` (${f.options})` : ''}</td>
+                    <td>
+                      <button type="button" className="pl-icon-btn danger" aria-label={`Delete custom field ${f.label}`} onClick={() => removeCustomField(f.id)}>
+                        <i className="fa-solid fa-trash-can" aria-hidden="true" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <h2 style={{ marginBottom: 4 }}>
+              <i className="fa-solid fa-credit-card" aria-hidden="true" style={{ color: 'var(--accent)', marginRight: 8 }} />
+              Merchant Payment Gateways &amp; Payouts
+            </h2>
+            <p style={{ color: 'var(--text-dim)', fontSize: '.88rem', margin: 0 }}>
+              Connect your own Chapa, Telebirr, M-Pesa, CBE Bank, or Stripe credentials (AES-256-GCM encrypted) to receive customer payments and send vendor payouts securely.
+            </p>
+          </div>
+          <Link to="/app/payments?tab=gateways" className="pl-btn pl-btn-primary pl-btn-sm" style={{ textDecoration: 'none' }}>
+            <i className="fa-solid fa-sliders" aria-hidden="true" /> Configure Payment Gateways →
+          </Link>
+        </div>
       </Card>
 
       <Card>

@@ -1371,3 +1371,290 @@ footer .logo-text { font-size:1.15rem; }
   .comparison-col { font-size:.78rem; }
   .comparison-header .comp-tier { font-size:.72rem; }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   CONTACT & SERVICES — CHAPA PAY NOW COMPONENT
+══════════════════════════════════════════════════════════════ */
+.contact-mode-tabs {
+  display:grid; grid-template-columns:1fr 1fr; gap:6px;
+  padding:5px; margin-bottom:22px;
+  border-radius:10px; background:var(--input); border:1px solid var(--border);
+}
+.contact-mode-tab {
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  padding:10px 14px; border:none; border-radius:7px; cursor:pointer;
+  background:transparent; color:var(--text-dim);
+  font-family:'DM Sans',sans-serif; font-size:.88rem; font-weight:600;
+  text-align:center; line-height:1.25; transition:background .18s, color .18s;
+}
+.contact-mode-tab:hover { color:var(--text); }
+.contact-mode-tab.active {
+  background:var(--accent); color:#100e0a;
+}
+[data-theme="light"] .contact-mode-tab.active {
+  color:#faf7f2;
+}
+
+.chapa-pay-header {
+  display:flex; justify-content:space-between; align-items:flex-start; gap:16px;
+  padding-bottom:16px; margin-bottom:18px;
+  border-bottom:1px solid var(--border);
+}
+.chapa-pay-title {
+  font-family:'Space Grotesk',sans-serif; font-size:1.15rem; font-weight:700;
+  color:var(--text); margin-bottom:2px;
+}
+.chapa-pay-sub {
+  font-size:.8rem; color:var(--text-dim); line-height:1.45;
+}
+.chapa-amount-readout {
+  text-align:right; flex-shrink:0;
+}
+.chapa-amount-readout span {
+  display:block; font-size:.72rem; color:var(--text-dim);
+}
+.chapa-amount-readout strong {
+  font-family:'Space Grotesk',sans-serif; font-size:1.2rem; font-weight:700;
+  color:var(--accent); font-variant-numeric:tabular-nums; white-space:nowrap;
+}
+
+.chapa-select {
+  width:100%; background:var(--input); border:1px solid var(--border);
+  border-radius:8px; padding:14px 16px; color:var(--text);
+  font-family:'DM Sans',sans-serif; font-size:.93rem; outline:none;
+  cursor:pointer; transition:border-color .2s;
+}
+[data-theme="light"] .chapa-select { background:var(--input); }
+.chapa-select option { background:var(--surface); color:var(--text); }
+.chapa-select:focus { border-color:var(--accent); }
+
+.chapa-field-caption {
+  display:block; font-size:.82rem; font-weight:500; color:var(--text-dim); margin-bottom:2px;
+}
+.chapa-optional {
+  color:var(--text-dim); font-weight:400; font-size:.78rem;
+}
+
+.chapa-rail-grid {
+  display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
+}
+.chapa-rail-btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  padding:11px 12px; border-radius:8px; cursor:pointer;
+  background:var(--input); border:1px solid var(--border);
+  color:var(--text-mid); font-family:'DM Sans',sans-serif; font-size:.86rem; font-weight:600;
+  transition:border-color .18s, background .18s, color .18s;
+}
+.chapa-rail-btn:hover { border-color:var(--border2); color:var(--text); }
+.chapa-rail-btn.active {
+  border-color:var(--accent);
+  background:rgba(var(--accent-rgb), .14);
+  color:var(--accent);
+}
+[data-theme="light"] .chapa-rail-btn.active {
+  color:var(--accent-h);
+}
+
+.chapa-plan-grid {
+  display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
+}
+.chapa-plan-btn {
+  display:flex; flex-direction:column; align-items:flex-start; gap:3px;
+  padding:11px 12px; border-radius:8px; cursor:pointer;
+  background:var(--input); border:1px solid var(--border);
+  color:var(--text); text-align:left; font-family:'DM Sans',sans-serif;
+  transition:border-color .18s, background .18s;
+}
+.chapa-plan-btn:hover { border-color:var(--border2); }
+.chapa-plan-btn.active {
+  border-color:var(--accent);
+  background:rgba(var(--accent-rgb), .12);
+}
+.chapa-plan-name { font-size:.76rem; color:var(--text-dim); font-weight:500; }
+.chapa-plan-btn.active .chapa-plan-name { color:var(--accent); font-weight:600; }
+.chapa-plan-price {
+  font-size:.9rem; font-weight:700; color:var(--text); font-variant-numeric:tabular-nums;
+}
+
+.chapa-alert {
+  display:flex; align-items:center; gap:10px;
+  padding:11px 14px; border-radius:8px; margin-bottom:14px; font-size:.85rem;
+}
+.chapa-alert-info {
+  background:rgba(var(--accent-rgb), .1); border:1px solid rgba(var(--accent-rgb), .3); color:var(--text);
+}
+.chapa-alert-error {
+  background:rgba(248,113,113,.1); border:1px solid rgba(248,113,113,.35); color:#f87171;
+}
+[data-theme="light"] .chapa-alert-error { color:#b91c1c; }
+
+.chapa-receipt-box {
+  padding:14px 16px; border-radius:10px; margin-bottom:16px;
+  background:rgba(52,211,153,.09); border:1px solid rgba(52,211,153,.35);
+}
+[data-theme="light"] .chapa-receipt-box {
+  background:rgba(5,150,105,.08); border-color:rgba(5,150,105,.35);
+}
+.chapa-receipt-top {
+  display:flex; align-items:center; gap:10px; color:var(--text);
+}
+.chapa-receipt-top i { color:#34d399; font-size:1.25rem; }
+[data-theme="light"] .chapa-receipt-top i { color:#059669; }
+.chapa-receipt-top strong { display:block; font-size:.95rem; }
+.chapa-receipt-top span { font-size:.82rem; color:var(--text-dim); font-variant-numeric:tabular-nums; }
+.chapa-receipt-meta { font-size:.82rem; color:var(--text-dim); margin-top:8px; }
+
+.chapa-session-card {
+  padding:18px; border-radius:10px; background:var(--input); border:1px solid var(--border2);
+}
+.chapa-session-kicker {
+  font-size:.76rem; font-weight:600; color:var(--accent); margin-bottom:4px;
+}
+.chapa-session-card h4 {
+  font-family:'Space Grotesk',sans-serif; font-size:1.1rem; color:var(--text); margin-bottom:4px;
+}
+.chapa-session-meta { font-size:.85rem; color:var(--text-dim); margin-bottom:12px; font-variant-numeric:tabular-nums; }
+.chapa-session-hint { font-size:.86rem; color:var(--text-mid); line-height:1.6; margin-bottom:16px; }
+.chapa-session-actions { display:flex; flex-direction:column; gap:10px; }
+.chapa-proceed-btn { width:100%; justify-content:center; text-decoration:none; }
+.chapa-secondary-btn {
+  padding:11px 16px; border-radius:6px; border:1px solid var(--border2);
+  background:transparent; color:var(--text-dim); font-family:'DM Sans',sans-serif;
+  font-size:.86rem; font-weight:600; cursor:pointer; transition:color .18s, border-color .18s;
+}
+.chapa-secondary-btn:hover { color:var(--text); border-color:var(--text-dim); }
+
+.services-pay-layout {
+  display:grid; grid-template-columns:1fr 1.15fr; gap:56px; align-items:start;
+}
+.services-pay-guarantees {
+  display:flex; flex-direction:column; gap:10px; font-size:.9rem; color:var(--text-mid);
+}
+.services-pay-guarantees i { color:var(--accent); margin-right:8px; width:16px; text-align:center; }
+
+@media(max-width:1024px) {
+  .services-pay-layout { grid-template-columns:1fr; gap:32px; }
+}
+@media(max-width:600px) {
+  .contact-mode-tab { padding:9px 10px; font-size:.82rem; }
+  .chapa-plan-grid { grid-template-columns:1fr; }
+  .chapa-pay-header { flex-direction:column; }
+  .chapa-amount-readout { text-align:left; }
+}
+
+/* ── Payment Gateway Switcher ──────────────────────────── */
+.pgs-root { display:flex; flex-direction:column; gap:14px; margin-bottom:14px; }
+.pgs-rail-card {
+  flex-direction:column; align-items:flex-start; gap:4px; padding:11px 12px; text-align:left;
+}
+.pgs-rail-top {
+  display:flex; align-items:center; gap:7px; font-weight:700; font-size:.88rem;
+}
+.pgs-rail-sub {
+  font-size:.72rem; font-weight:500; color:var(--text-dim); line-height:1.25;
+}
+.chapa-rail-btn.active .pgs-rail-sub { color:var(--accent); opacity:.9; }
+
+.pgs-req-panel {
+  border:1px solid var(--border2); border-radius:10px; padding:14px 16px;
+  background:var(--input); display:flex; flex-direction:column; gap:12px;
+}
+.pgs-req-head {
+  display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+  padding-bottom:10px; border-bottom:1px solid var(--border);
+}
+.pgs-req-title {
+  font-family:'Space Grotesk',sans-serif; font-size:.96rem; font-weight:700; color:var(--text);
+}
+.pgs-req-summary {
+  font-size:.77rem; color:var(--text-dim); margin-top:2px;
+}
+.pgs-mode-tag {
+  font-size:.72rem; font-weight:700; padding:3px 9px; border-radius:6px; white-space:nowrap;
+  border:1px solid var(--border2); color:var(--text-dim); background:var(--surface);
+}
+.pgs-mode-tag.live {
+  border-color:rgba(52,211,153,.45); color:#34d399; background:rgba(52,211,153,.09);
+}
+[data-theme="light"] .pgs-mode-tag.live { color:#059669; }
+.pgs-mode-tag.sandbox {
+  border-color:rgba(var(--accent-rgb),.45); color:var(--accent); background:rgba(var(--accent-rgb),.09);
+}
+
+.pgs-spec-grid {
+  display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px;
+}
+.pgs-spec-item {
+  padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface);
+  display:flex; flex-direction:column; gap:2px; min-width:0;
+}
+.pgs-spec-k { font-size:.69rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:.04em; }
+.pgs-spec-v { font-size:.77rem; color:var(--text); font-weight:600; line-height:1.35; }
+
+.pgs-req-columns {
+  display:grid; grid-template-columns:1.25fr 1fr; gap:12px;
+}
+.pgs-block-label {
+  font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+  color:var(--text-dim); margin-bottom:6px;
+}
+.pgs-req-list, .pgs-check-list {
+  list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:5px;
+}
+.pgs-req-list li, .pgs-check-list li {
+  display:flex; align-items:flex-start; gap:7px; font-size:.78rem; line-height:1.4; color:var(--text-mid);
+}
+.pgs-req-list li i { color:var(--accent); margin-top:2px; flex-shrink:0; font-size:.72rem; }
+.pgs-check-list li i { margin-top:2px; flex-shrink:0; font-size:.76rem; }
+.pgs-check-list li.met { color:#34d399; }
+[data-theme="light"] .pgs-check-list li.met { color:#059669; }
+.pgs-check-list li.pending-req { color:var(--accent); font-weight:500; }
+.pgs-check-list li.pending-opt { color:var(--text-dim); }
+.pgs-field-hint {
+  display:block; margin-top:5px; font-size:.74rem; color:var(--text-dim); line-height:1.35;
+}
+
+@media(max-width:640px) {
+  .chapa-rail-grid { grid-template-columns:1fr; }
+  .pgs-spec-grid, .pgs-req-columns { grid-template-columns:1fr; }
+  .pgs-req-head { flex-direction:column; }
+}
+
+/* ── Automated PDF Invoice Receipt Card ────────────────── */
+.invoice-status-card {
+  margin-top:12px; padding:12px 14px; border-radius:8px;
+  background:var(--surface); border:1px solid var(--border2);
+  display:flex; flex-direction:column; gap:10px;
+}
+.invoice-status-head {
+  display:flex; justify-content:space-between; align-items:flex-start; gap:10px;
+}
+.invoice-status-head strong {
+  display:block; font-size:.86rem; color:var(--text); margin-bottom:2px;
+}
+.invoice-status-head strong i { color:var(--accent); margin-right:4px; }
+.invoice-status-head span { display:block; font-size:.77rem; color:var(--text-dim); line-height:1.35; }
+.invoice-count-tag {
+  font-size:.7rem; font-weight:700; padding:2px 8px; border-radius:6px;
+  background:rgba(var(--accent-rgb), .12); color:var(--accent); white-space:nowrap;
+}
+.invoice-status-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.invoice-pdf-btn, .invoice-resend-btn {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:8px 12px; border-radius:6px; font-size:.8rem; font-weight:600;
+  font-family:'DM Sans',sans-serif; cursor:pointer; text-decoration:none;
+  transition:border-color .18s, background .18s, color .18s;
+}
+.invoice-pdf-btn {
+  background:var(--accent); color:#0b0c10; border:1px solid var(--accent);
+}
+.invoice-pdf-btn:hover { opacity:.92; }
+.invoice-resend-btn {
+  background:transparent; color:var(--text); border:1px solid var(--border2);
+}
+.invoice-resend-btn:hover { border-color:var(--accent); color:var(--accent); }
+.invoice-resend-btn:disabled { opacity:.6; cursor:not-allowed; }
+.invoice-feedback {
+  margin:0; font-size:.77rem; color:var(--accent); line-height:1.35;
+}
+

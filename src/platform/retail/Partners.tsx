@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { api, fmtDate, fmtMoney } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
+import { CustomFieldsInputs } from '../components/CustomFieldsInputs'
 
 interface Partner {
   id: string
@@ -22,6 +23,7 @@ export default function Partners({ kind }: { kind: 'suppliers' | 'customers' }):
 
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ name: '', phone: '', email: '', address: '', payment_terms: '30' })
+  const [customValues, setCustomValues] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -63,10 +65,12 @@ export default function Partners({ kind }: { kind: 'suppliers' | 'customers' }):
         name: form.name.trim(),
         phone: form.phone.trim() || null,
         email: form.email.trim() || null,
+        custom_values: customValues,
         ...(isSupplier ? { address: form.address.trim() || null, payment_terms: Number(form.payment_terms) || 30 } : {}),
       })
       setOpen(false)
       setForm({ name: '', phone: '', email: '', address: '', payment_terms: '30' })
+      setCustomValues({})
       reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
@@ -173,6 +177,7 @@ export default function Partners({ kind }: { kind: 'suppliers' | 'customers' }):
               </Field>
             </>
           )}
+          <CustomFieldsInputs entity={isSupplier ? 'supplier' : 'customer'} values={customValues} onChange={setCustomValues} />
           {error && <p role="alert" style={{ color: '#e07a7a', fontSize: '.87rem' }}>{error}</p>}
           <div className="pl-form-actions">
             <button type="submit" className="pl-btn pl-btn-primary" disabled={busy}>

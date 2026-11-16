@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Lenis from 'lenis';
 import Navbar from '../components/Navbar';
+import { ServicePayNow } from '../components/ServicePayNow';
 import { useReveal } from '../hooks/useReveal';
 import { services, tierLabels, tierColors } from '../data';
 import { useLanguage } from '../context/languageCtx';
@@ -10,6 +11,7 @@ import '../index.css';
 export default function ServicesPage() {
   const { t } = useLanguage();
   const [activeFilter, setActiveFilter] = useState('all');
+  const [selectedServiceId, setSelectedServiceId] = useState<number>(services[0].id);
   const [scrollPct, setScrollPct] = useState(0);
   const [showTop, setShowTop] = useState(false);
 
@@ -114,9 +116,18 @@ export default function ServicesPage() {
                 <div>
                   <div className="price-range">{s.price} <span>ETB</span></div>
                 </div>
-                <button className="btn-plan-card" onClick={() => scrollTo('services-cta')}>
-                  {t('servicesPage.getQuote')} <i className="fa-solid fa-arrow-right" />
-                </button>
+                <div className="plan-footer-actions">
+                  <button
+                    type="button"
+                    className="btn-plan-card"
+                    onClick={() => {
+                      setSelectedServiceId(s.id);
+                      scrollTo('services-pay');
+                    }}
+                  >
+                    {t('servicesPage.payNow')} <i className="fa-solid fa-lock" aria-hidden="true" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -160,6 +171,32 @@ export default function ServicesPage() {
           </div>
         </div>
       </div>
+
+      {/* ── DIRECT GATEWAY PAYMENT FOR SERVICES ────────────── */}
+      <section className="section-wrap" id="services-pay" aria-label="Pay for digital service">
+        <div className="services-pay-layout">
+          <div className="services-pay-copy">
+            <h2 className="section-title" style={{ marginBottom: 14 }}>
+              Start or pay for a service directly.
+            </h2>
+            <p style={{ color: 'var(--text-dim)', lineHeight: 1.75, marginBottom: 20 }}>
+              Reserve your build slot with a 40% kickoff deposit, pay a starting package rate, or settle a custom invoice through Chapa, direct Telebirr Fabric H5, or Safaricom M-Pesa STK Push.
+            </p>
+            <div className="services-pay-guarantees">
+              <div><i className="fa-solid fa-shield-halved" aria-hidden="true" /> Server-verified Chapa, Telebirr &amp; M-Pesa APIs</div>
+              <div><i className="fa-solid fa-building-columns" aria-hidden="true" /> Direct Telebirr H5 checkout &amp; M-Pesa mobile prompt</div>
+              <div><i className="fa-solid fa-file-invoice" aria-hidden="true" /> Instant callback verification &amp; receipt</div>
+            </div>
+          </div>
+          <div className="contact-form-wrap">
+            <ServicePayNow
+              selectedServiceId={selectedServiceId}
+              onSelectService={setSelectedServiceId}
+              returnPath="/services"
+            />
+          </div>
+        </div>
+      </section>
 
       {/* ── CTA ────────────────────────────────────────────── */}
       <div className="services-cta-wrap" id="services-cta">

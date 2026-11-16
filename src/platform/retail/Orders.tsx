@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { api, fmtDate, fmtMoney } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, DataTable, EmptyState, ErrorBox, Field, Modal, OkBox, PageHeader, Spinner, StatCard } from '../ui'
+import { evaluateThreeWayMatch } from '../utils/erpEngine'
 
 interface OrderItem {
   product_id: string
@@ -107,6 +108,9 @@ export default function Orders(): JSX.Element {
 
   const [payMethod, setPayMethod] = useState('cash')
   const [convertTarget, setConvertTarget] = useState<{ kind: 'quotation' | 'so'; id: string; number: string; total: string } | null>(null)
+  const [poReceiveTarget, setPoReceiveTarget] = useState<PurchaseOrder | null>(null)
+  const [poRecRows, setPoRecRows] = useState<Array<{ product_id: string; product_name: string; ordered_qty: number; received_qty: string; ordered_cost: number; billed_unit_cost: string }>>([])
+  const [matchNote, setMatchNote] = useState('')
 
   const products = productsQ.data?.products ?? []
   const quotations = quotesQ.data?.quotations ?? []
@@ -243,14 +247,63 @@ export default function Orders(): JSX.Element {
     }
   }
 
-  const receivePo = async (po: PurchaseOrder): Promise<void> => {
+  const openThreeWayModal = (po: PurchaseOrder): void => {
+    setActionErr(null)
+    setMatchNote('')
+    setPoRecRows(
+      po.items.map((it) => ({
+        product_id: it.product_id,
+        product_name: it.product_name,
+        ordered_qty: it.quantity,
+        received_qty: String(it.quantity),
+        ordered_cost: Number(it.unit_cost ?? 0),
+        billed_unit_cost: String(Number(it.unit_cost ?? 0)),
+      }))
+    )
+    setPoReceiveTarget(po)
+  }
+
+  const threeWayMatch = useMemo(() => {
+    if (!poReceiveTarget) return null
+    return evaluateThreeWayMatch(
+      poReceiveTarget.items.map((it) => ({
+        product_id: it.product_id,
+        product_name: it.product_name,
+        quantity: it.quantity,
+        unit_cost: Number(it.unit_cost ?? 0),
+      })),
+      poRecRows.map((r) => ({
+        product_id: r.product_id,
+        received_qty: Number(r.received_qty || 0),
+        billed_unit_cost: Number(r.billed_unit_cost || 0),
+      }))
+    )
+  }, [poReceiveTarget, poRecRows])
+
+  const submitThreeWayReceive = async (e: FormEvent): Promise<void> => {
+    e.preventDefault()
+    if (!poReceiveTarget || !threeWayMatch) return
+    setBusy(true)
     setActionErr(null)
     try {
-      await api.post(`/erp/purchase-orders/${po.id}/receive`, { paid_amount: Number(po.total) })
-      setNotice(`${po.number} received — stock batches, Stock Ledger & General Ledger updated.`)
+      await api.post(`/erp/purchase-orders/${poReceiveTarget.id}/receive`, {
+        received_items: poRecRows.map((r) => ({
+          product_id: r.product_id,
+          received_qty: Number(r.received_qty || 0),
+          billed_unit_cost: Number(r.billed_unit_cost || 0),
+        })),
+        paid_amount: threeWayMatch.receivedTotal,
+        match_note: matchNote.trim() || threeWayMatch.status.toUpperCase(),
+      })
+      setNotice(
+        `${poReceiveTarget.number} verified (${threeWayMatch.status.toUpperCase()}) & received — stock batches, Stock Ledger & GL updated.`
+      )
+      setPoReceiveTarget(null)
       reloadAll()
     } catch (err) {
       setActionErr(err instanceof Error ? err.message : 'Could not receive PO')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -425,8 +478,8 @@ export default function Orders(): JSX.Element {
                 render: (p) =>
                   p.status !== 'received' ? (
                     <div className="pl-row-actions">
-                      <button type="button" className="pl-btn pl-btn-primary pl-btn-sm" onClick={() => receivePo(p)}>
-                        Receive Stock
+                      <button type="button" className="pl-btn pl-btn-primary pl-btn-sm" onClick={() => openThreeWayModal(p)}>
+                        3-Way Receive
                       </button>
                     </div>
                   ) : null,
@@ -535,6 +588,108 @@ export default function Orders(): JSX.Element {
               <button type="button" className="pl-btn pl-btn-ghost" onClick={() => setConvertTarget(null)}>Cancel</button>
               <button type="submit" className="pl-btn pl-btn-primary" disabled={busy}>
                 {busy ? 'Processing…' : 'Confirm & Post'}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+      <Modal
+        open={poReceiveTarget !== null}
+        wide
+        title={poReceiveTarget ? `3-Way Match & Receive (${poReceiveTarget.number})` : 'Receive PO'}
+        onClose={() => setPoReceiveTarget(null)}
+      >
+        {poReceiveTarget && threeWayMatch && (
+          <form onSubmit={submitThreeWayReceive}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
+              <span style={{ color: 'var(--text-dim)', fontSize: '.88rem' }}>
+                Verify physical stock count and supplier invoice unit cost against the original PO before posting.
+              </span>
+              <Badge tone={threeWayMatch.status === 'matched' ? 'good' : threeWayMatch.status === 'partial' ? 'warn' : 'bad'}>
+                {threeWayMatch.status === 'matched'
+                  ? '3-WAY EXACT MATCH'
+                  : threeWayMatch.status === 'partial'
+                    ? 'PARTIAL DELIVERY'
+                    : 'PRICE / QTY VARIANCE'}
+              </Badge>
+            </div>
+
+            <div className="pl-table-wrap" style={{ marginBottom: 14 }}>
+              <table className="pl-table" style={{ minWidth: 0 }}>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th className="num">Ordered</th>
+                    <th>Received Qty</th>
+                    <th className="num">PO Cost</th>
+                    <th>Billed Cost (ETB)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {poRecRows.map((row, idx) => (
+                    <tr key={row.product_id}>
+                      <td><strong>{row.product_name}</strong></td>
+                      <td className="num">{row.ordered_qty}</td>
+                      <td style={{ width: 110 }}>
+                        <input
+                          className="pl-input"
+                          type="number"
+                          min="0"
+                          aria-label={`Received quantity for ${row.product_name}`}
+                          value={row.received_qty}
+                          onChange={(e) =>
+                            setPoRecRows((prev) =>
+                              prev.map((x, i) => (i === idx ? { ...x, received_qty: e.target.value } : x))
+                            )
+                          }
+                        />
+                      </td>
+                      <td className="num">{fmtMoney(row.ordered_cost)}</td>
+                      <td style={{ width: 130 }}>
+                        <input
+                          className="pl-input"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          aria-label={`Billed cost for ${row.product_name}`}
+                          value={row.billed_unit_cost}
+                          onChange={(e) =>
+                            setPoRecRows((prev) =>
+                              prev.map((x, i) => (i === idx ? { ...x, billed_unit_cost: e.target.value } : x))
+                            )
+                          }
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <Field label="Variance / Receiving Note (optional)">
+              <input
+                className="pl-input"
+                placeholder="e.g. Short-shipped 2 boxes, backordered or price updated per invoice…"
+                value={matchNote}
+                onChange={(e) => setMatchNote(e.target.value)}
+              />
+            </Field>
+
+            <div className="pl-cart-total grand" style={{ marginBottom: 12 }}>
+              <span>
+                PO Total: <strong>{fmtMoney(threeWayMatch.orderedTotal)} ETB</strong> · Variance:{' '}
+                <strong style={{ color: Math.abs(threeWayMatch.amountVariance) < 0.01 ? '#34d399' : '#f59e0b' }}>
+                  {threeWayMatch.amountVariance >= 0 ? '+' : ''}
+                  {fmtMoney(threeWayMatch.amountVariance)} ETB
+                </strong>
+              </span>
+              <span style={{ color: 'var(--accent)' }}>Verified Bill: {fmtMoney(threeWayMatch.receivedTotal)} ETB</span>
+            </div>
+
+            <div className="pl-form-actions">
+              <button type="button" className="pl-btn pl-btn-ghost" onClick={() => setPoReceiveTarget(null)}>Cancel</button>
+              <button type="submit" className="pl-btn pl-btn-primary" disabled={busy}>
+                {busy ? 'Posting Receipt…' : 'Confirm 3-Way Receipt'}
               </button>
             </div>
           </form>

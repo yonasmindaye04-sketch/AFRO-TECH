@@ -1,9 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  buildReversalLines,
   computeFinancialStatements,
   computeMonthlyDepreciation,
+  computeSmartReorderQty,
+  detectAccountingExceptions,
   evaluateBom,
+  evaluateThreeWayMatch,
   validateJournalEntry,
   type CoaAccount,
 } from './erpEngine'
@@ -76,3 +80,78 @@ test('computeMonthlyDepreciation caps at remaining depreciable value', () => {
   assert.equal(finalStep.netBookValue, 2000)
   assert.equal(finalStep.isFullyDepreciated, true)
 })
+
+test('buildReversalLines swaps debits and credits cleanly while keeping balance', () => {
+  const rev = buildReversalLines([
+    { account_code: '5200', debit: 1500, credit: 0 },
+    { account_code: '1110', debit: 0, credit: 1500 },
+  ])
+  assert.deepEqual(rev, [
+    { account_code: '5200', debit: 0, credit: 1500 },
+    { account_code: '1110', debit: 1500, credit: 0 },
+  ])
+  assert.equal(validateJournalEntry(rev).valid, true)
+})
+
+test('detectAccountingExceptions flags voucher imbalance and warehouse vs catalog drift', () => {
+  const accounts: CoaAccount[] = [
+    { code: '1210', name: 'AR', root_type: 'Asset', account_type: 'Receivable', balance: 500 },
+    { code: '1410', name: 'Stock', root_type: 'Asset', account_type: 'Stock', balance: 1000 },
+    { code: '2110', name: 'AP', root_type: 'Liability', account_type: 'Payable', balance: 200 },
+  ]
+  const findings = detectAccountingExceptions({
+    accounts,
+    glEntries: [
+      { voucher_no: 'JV-1', account_code: '1210', debit: 500, credit: 0 },
+      { voucher_no: 'JV-1', account_code: '4100', debit: 0, credit: 400 },
+    ],
+    products: [{ id: 'p1', name: 'Amox', stock: 10, cost_price: 100 }],
+    warehouses: [{ id: 'w1', name: 'Main', stock_map: { p1: 7 } }],
+    customers: [{ balance: 500 }],
+    suppliers: [{ balance: 200 }],
+  })
+  const voucherCheck = findings.find((f) => f.id === 'exc-voucher-parity')
+  const whCheck = findings.find((f) => f.id === 'exc-warehouse-sync')
+  const arCheck = findings.find((f) => f.id === 'exc-ar-subledger')
+  assert.equal(voucherCheck?.severity, 'error')
+  assert.equal(whCheck?.severity, 'warn')
+  assert.equal(arCheck?.severity, 'ok')
+})
+
+test('computeSmartReorderQty incorporates sales velocity, lead time, and safety stock', () => {
+  const res = computeSmartReorderQty({
+    stock: 20,
+    threshold: 10,
+    avgDailySales: 3,
+    leadTimeDays: 7,
+    safetyDays: 3,
+  })
+  assert.equal(res.dynamicReorderPoint, 30)
+  assert.equal(res.needsReorder, true)
+  assert.equal(res.daysOfCover, 6.7)
+  assert.equal(res.suggestedOrderQty, 52)
+})
+
+test('evaluateThreeWayMatch detects exact match, partial receipt, and price/qty variance', () => {
+  const exact = evaluateThreeWayMatch(
+    [{ product_id: 'p1', product_name: 'Item A', quantity: 10, unit_cost: 50 }],
+    [{ product_id: 'p1', received_qty: 10, billed_unit_cost: 50 }]
+  )
+  assert.equal(exact.status, 'matched')
+  assert.equal(exact.amountVariance, 0)
+
+  const partial = evaluateThreeWayMatch(
+    [{ product_id: 'p1', product_name: 'Item A', quantity: 10, unit_cost: 50 }],
+    [{ product_id: 'p1', received_qty: 6, billed_unit_cost: 50 }]
+  )
+  assert.equal(partial.status, 'partial')
+  assert.equal(partial.qtyVarianceTotal, 4)
+
+  const priceVar = evaluateThreeWayMatch(
+    [{ product_id: 'p1', product_name: 'Item A', quantity: 10, unit_cost: 50 }],
+    [{ product_id: 'p1', received_qty: 10, billed_unit_cost: 55 }]
+  )
+  assert.equal(priceVar.status, 'variance')
+  assert.equal(priceVar.amountVariance, 50)
+})
+

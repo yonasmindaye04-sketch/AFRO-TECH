@@ -4,6 +4,7 @@ import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, DataTable, Field, Modal, PageHeader, Spinner } from '../ui'
 import BarcodeScanner from '../ui/BarcodeScanner'
+import { CustomFieldsInputs } from '../components/CustomFieldsInputs'
 
 interface Product {
   id: string
@@ -22,6 +23,7 @@ interface Product {
   expired_qty: number
   display_stock: number
   expiring_soon: number
+  custom_values?: Record<string, string>
 }
 interface FormState {
   name: string
@@ -61,9 +63,11 @@ export default function Products(): JSX.Element {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scannerOpen, setScannerOpen] = useState(false)
+  const [customValues, setCustomValues] = useState<Record<string, string>>({})
 
   const openNew = (): void => {
     setForm(EMPTY)
+    setCustomValues({})
     setError(null)
     setModal({ open: true, editing: null })
   }
@@ -81,6 +85,7 @@ export default function Products(): JSX.Element {
       default_margin: String(Number(p.default_margin)),
       initial_stock: String(p.stock ?? 0),
     })
+    setCustomValues(p.custom_values ?? {})
     setError(null)
     setModal({ open: true, editing: p })
   }
@@ -101,6 +106,7 @@ export default function Products(): JSX.Element {
       pills_per_unit: isPharmacy && form.sell_by_pill ? Math.max(1, Number(form.pills_per_unit) || 1) : 1,
       default_margin: Number(form.default_margin) || 25,
       initial_stock: Math.max(0, Number(form.initial_stock) || 0),
+      custom_values: customValues,
     }
     try {
       if (modal.editing) await api.patch(`/retail/products/${modal.editing.id}`, body)
@@ -286,6 +292,7 @@ export default function Products(): JSX.Element {
               <input className="pl-input" type="number" min="0" value={form.low_stock_threshold} onChange={(e) => setForm((f) => ({ ...f, low_stock_threshold: e.target.value }))} />
             </Field>
           </div>
+          <CustomFieldsInputs entity="product" values={customValues} onChange={setCustomValues} />
           {error && <p role="alert" style={{ color: '#e07a7a', fontSize: '.87rem' }}>{error}</p>}
           <div className="pl-form-actions">
             <button type="submit" className="pl-btn pl-btn-primary" disabled={busy}>

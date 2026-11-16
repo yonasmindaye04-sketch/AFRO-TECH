@@ -6,12 +6,47 @@ import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import { sendContactTelegramNotification } from './server/contactTelegram.js';
+import {
+  decryptSecret,
+  encryptSecret,
+  maskSecret,
+  signWebhookPayload,
+  verifyWebhookSignature,
+} from './server/paymentVault.js';
+import {
+  buildChapaInitPayload,
+  generateServiceTxRef,
+  initializeChapaPayment,
+  verifyChapaPayment,
+} from './server/chapaService.js';
+import {
+  applyTelebirrFabricToken,
+  generateTelebirrOrderId,
+  initializeTelebirrOrder,
+  queryTelebirrOrder,
+  verifyTelebirrSignature,
+} from './server/telebirrService.js';
+import {
+  generateMpesaTxRef,
+  getMpesaAccessToken,
+  initiateMpesaStkPush,
+  normalizeMpesaPhone,
+  parseMpesaCallback,
+  queryMpesaStkStatus,
+} from './server/mpesaService.js';
+import {
+  buildInvoiceData,
+  ensureAndDispatchInvoice,
+  generateInvoicePdfBuffer,
+  isValidEmail,
+} from './server/invoiceService.js';
 
 dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
+app.use('/api/telebirr/notify', express.text({ type: 'text/plain', limit: '512kb' }));
 
 /* ── In-Memory Multi-Tenant Store (for AI Studio container runtime) ── */
 const TRIAL_DAYS = Number(process.env.TRIAL_DAYS || 45);
@@ -19,7 +54,67 @@ const tenants = new Map();
 const users = new Map();
 const sessions = new Map();
 const tenantData = new Map();
+const serviceChapaOrders = new Map();
+const invoiceRegistry = new Map();
 const auditLogs = [];
+
+const DEFAULT_SERVICE_MERCHANT = {
+  name: 'AFRO-TECH Digital Services',
+  tin_number: null,
+  phone: '+251 910 011 818',
+  address: 'Bole Sub-City, Addis Ababa, Ethiopia',
+  email: process.env.CONTACT_EMAIL || process.env.EMAIL || 'billing@afrotech.et',
+};
+
+function buildTenantMerchantInfo(tenant, store) {
+  return {
+    name: store?.settings?.business_name || tenant?.name || 'AFRO Suite Merchant',
+    tin_number: store?.settings?.tin_number || null,
+    phone: store?.settings?.business_phone || '+251 910 011 818',
+    address: store?.settings?.business_address || 'Addis Ababa, Ethiopia',
+    email: tenant?.owner_email || process.env.CONTACT_EMAIL || process.env.EMAIL || 'billing@afrotech.et',
+  };
+}
+
+function findTransactionForInvoice(txRef) {
+  const cleanRef = String(txRef || '').trim();
+  if (!cleanRef) return null;
+  const svcOrder = serviceChapaOrders.get(cleanRef);
+  if (svcOrder) {
+    return { orderOrIntent: svcOrder, merchant: DEFAULT_SERVICE_MERCHANT, isServiceOrder: true };
+  }
+  for (const [tenantId, store] of tenantData.entries()) {
+    const intent = (store.paymentIntents || []).find((i) => i.tx_ref === cleanRef);
+    if (intent) {
+      const tenant = tenants.get(tenantId);
+      return {
+        orderOrIntent: intent,
+        merchant: buildTenantMerchantInfo(tenant, store),
+        isServiceOrder: false,
+        tenant,
+        store,
+      };
+    }
+  }
+  return null;
+}
+
+async function dispatchTransactionInvoice(orderOrIntent, { merchant = DEFAULT_SERVICE_MERCHANT, forceResend = false, overrideEmail } = {}) {
+  if (!orderOrIntent?.tx_ref) return null;
+  try {
+    return await ensureAndDispatchInvoice({
+      txRef: orderOrIntent.tx_ref,
+      orderOrIntent,
+      merchantInfo: merchant,
+      invoiceStore: invoiceRegistry,
+      forceResend,
+      overrideEmail,
+    });
+  } catch (err) {
+    console.warn('[invoice] Auto-dispatch failed cleanly:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
 
 function recordAudit(tenantName, userName, action, entity, details = null) {
   auditLogs.unshift({
@@ -337,8 +432,53 @@ function ensureTenantStore(tenantId, businessType = 'pharmacy', tenantName = 'Wo
           remarks: 'POS Sale INV-1001',
           created_at: new Date(Date.now() - 3600_000).toISOString(),
         },
+        {
+          id: 'gl-seed-3',
+          posting_date: today,
+          voucher_type: 'Journal Entry',
+          voucher_no: 'JV-1001',
+          account_code: '5200',
+          account_name: 'Operating & Admin Expenses',
+          root_type: 'Expense',
+          party: null,
+          debit: 2400,
+          credit: 0,
+          remarks: 'Monthly fiber internet accrual',
+          created_at: new Date(Date.now() - 1800_000).toISOString(),
+        },
+        {
+          id: 'gl-seed-4',
+          posting_date: today,
+          voucher_type: 'Journal Entry',
+          voucher_no: 'JV-1001',
+          account_code: '1110',
+          account_name: 'Cash on Hand',
+          root_type: 'Asset',
+          party: null,
+          debit: 0,
+          credit: 2400,
+          remarks: 'Monthly fiber internet accrual',
+          created_at: new Date(Date.now() - 1800_000).toISOString(),
+        },
       ],
-      journalEntries: [],
+      journalEntries: [
+        {
+          id: 'je-seed-1',
+          number: 'JV-1001',
+          posting_date: today,
+          remarks: 'Monthly fiber internet accrual',
+          total_debit: '2400.00',
+          total_credit: '2400.00',
+          status: 'submitted',
+          reversed_by: null,
+          created_by: 'Yonas Mindaye',
+          lines: [
+            { account_code: '5200', debit: 2400, credit: 0 },
+            { account_code: '1110', debit: 0, credit: 2400 },
+          ],
+          created_at: new Date(Date.now() - 1800_000).toISOString(),
+        },
+      ],
       leads: [
         {
           id: 'lead-1',
@@ -472,6 +612,154 @@ function ensureTenantStore(tenantId, businessType = 'pharmacy', tenantName = 'Wo
       botSubscribers: [],
       botBroadcasts: [],
       botReceipts: [],
+      customFields: [
+        { id: 'cf-1', entity: 'product', key: 'shelf_bin', label: 'Shelf / Bin Code', type: 'text', options: '', required: false },
+      ],
+      paymentGateways: {
+        cbe_bank: {
+          provider: 'cbe_bank',
+          enabled: true,
+          configured: true,
+          is_default: true,
+          mode: 'sandbox',
+          public_config: {
+            account_holder: tenantName,
+            settlement_account: '1000248910332',
+            bank_name: 'Commercial Bank of Ethiopia · Bole',
+          },
+          encrypted_secrets: {},
+          masked_secrets: {},
+          health_status: 'verified',
+          last_tested_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        chapa: {
+          provider: 'chapa',
+          enabled: false,
+          configured: false,
+          is_default: false,
+          mode: 'sandbox',
+          public_config: {},
+          encrypted_secrets: {},
+          masked_secrets: {},
+          health_status: 'unconfigured',
+          last_tested_at: null,
+          updated_at: null,
+        },
+        telebirr: {
+          provider: 'telebirr',
+          enabled: false,
+          configured: false,
+          is_default: false,
+          mode: 'sandbox',
+          public_config: {},
+          encrypted_secrets: {},
+          masked_secrets: {},
+          health_status: 'unconfigured',
+          last_tested_at: null,
+          updated_at: null,
+        },
+        mpesa: {
+          provider: 'mpesa',
+          enabled: false,
+          configured: false,
+          is_default: false,
+          mode: 'sandbox',
+          public_config: {},
+          encrypted_secrets: {},
+          masked_secrets: {},
+          health_status: 'unconfigured',
+          last_tested_at: null,
+          updated_at: null,
+        },
+        stripe: {
+          provider: 'stripe',
+          enabled: false,
+          configured: false,
+          is_default: false,
+          mode: 'sandbox',
+          public_config: {},
+          encrypted_secrets: {},
+          masked_secrets: {},
+          health_status: 'unconfigured',
+          last_tested_at: null,
+          updated_at: null,
+        },
+      },
+      paymentIntents: [
+        {
+          id: 'pi-seed-1',
+          tx_ref: 'AFRO-PAY-1001',
+          token: 'seed-inv-1001',
+          direction: 'receive',
+          provider: 'cbe_bank',
+          party_id: null,
+          party_name: 'Walk-in Customer',
+          reference_type: 'sale',
+          reference_id: 'sale-1',
+          description: 'POS Checkout · INV-1001',
+          amount: 1260,
+          fee_amount: 0,
+          net_amount: 1260,
+          currency: 'ETB',
+          status: 'settled',
+          payer_reference: 'FT26115CBE901',
+          verified_signature: true,
+          gl_voucher_no: 'INV-1001',
+          created_at: new Date(Date.now() - 3600_000).toISOString(),
+          settled_at: new Date(Date.now() - 3600_000).toISOString(),
+        },
+        {
+          id: 'pi-seed-2',
+          tx_ref: 'AFRO-PAY-1002',
+          token: 'demo-credit-450',
+          direction: 'receive',
+          provider: 'cbe_bank',
+          party_id: 'cust-1',
+          party_name: 'Dawit Bekele',
+          reference_type: 'customer_credit',
+          reference_id: 'cust-1',
+          description: 'Customer Khata Balance Settlement',
+          amount: 450,
+          fee_amount: 0,
+          net_amount: 450,
+          currency: 'ETB',
+          status: 'pending',
+          payer_reference: null,
+          verified_signature: false,
+          gl_voucher_no: null,
+          created_at: new Date(Date.now() - 1800_000).toISOString(),
+          settled_at: null,
+        },
+      ],
+      reportPresets: [
+        {
+          id: 'preset-low-stock',
+          name: 'Low Stock & Reorder Watch',
+          config: {
+            dataset: 'products',
+            columns: ['name', 'category', 'stock', 'low_stock_threshold', 'stock_value'],
+            filters: [{ field: 'stock', op: 'lte', value: '15' }],
+            sortBy: 'stock',
+            sortDir: 'asc',
+            groupBy: '',
+          },
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: 'preset-sales-by-method',
+          name: 'Sales Grouped by Payment Method',
+          config: {
+            dataset: 'sales',
+            columns: ['payment_method', 'total'],
+            filters: [],
+            sortBy: 'total',
+            sortDir: 'desc',
+            groupBy: 'payment_method',
+          },
+          created_at: new Date().toISOString(),
+        },
+      ],
       trend,
     };
     tenantData.set(tenantId, storeObj);
@@ -586,6 +874,794 @@ app.post('/api/contact', async (req, res) => {
       ...(telegram.reason ? { reason: telegram.reason } : {}),
     },
   });
+});
+
+/* ── Chapa Digital Services Checkout (/api/chapa/*) ────────── */
+app.get('/api/chapa/config', (_req, res) => {
+  const hasSecret = Boolean((process.env.CHAPA_SECRET_KEY || '').trim());
+  res.json({
+    ok: true,
+    provider: 'chapa',
+    currency: 'ETB',
+    mode: hasSecret ? 'live' : 'sandbox',
+  });
+});
+
+app.post('/api/chapa/initialize', async (req, res) => {
+  const {
+    serviceId,
+    serviceName = 'Digital Service Package',
+    paymentPlan = 'deposit',
+    amount,
+    fullName,
+    email,
+    phone = '',
+    notes = '',
+    returnPath = '/services',
+  } = req.body ?? {};
+
+  const numAmount = Math.round(Number(amount) * 100) / 100;
+  if (!Number.isFinite(numAmount) || numAmount < 50 || numAmount > 5_000_000) {
+    return res.status(400).json({ ok: false, message: 'Amount must be between 50 and 5,000,000 ETB.' });
+  }
+  const cleanName = String(fullName || '').trim();
+  const cleanEmail = String(email || '').trim();
+  if (cleanName.length < 2) {
+    return res.status(400).json({ ok: false, message: 'Please enter your full name.' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return res.status(400).json({ ok: false, message: 'A valid email address is required.' });
+  }
+
+  const secretKey = (process.env.CHAPA_SECRET_KEY || '').trim();
+  const txRef = generateServiceTxRef('CHAPA-SVC');
+  const token = `chapa-${crypto.randomUUID().slice(0, 10)}`;
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
+  const origin = (process.env.PUBLIC_URL || `${proto}://${host}`).replace(/\/$/, '');
+  const safePath = String(returnPath || '/services').startsWith('/') ? returnPath : '/services';
+  const separator = safePath.includes('?') ? '&' : '?';
+  const returnUrl = `${origin}${safePath}${separator}tx_ref=${encodeURIComponent(txRef)}#pay-now`;
+  const callbackUrl = `${origin}/api/chapa/webhook`;
+
+  const description = `${String(serviceName).trim()} (${paymentPlan === 'full' ? 'Full Payment' : paymentPlan === 'custom' ? 'Custom Quote' : '40% Deposit'})`;
+  let payload;
+  try {
+    payload = buildChapaInitPayload({
+      amount: numAmount,
+      currency: 'ETB',
+      email: cleanEmail,
+      fullName: cleanName,
+      phone,
+      txRef,
+      callbackUrl,
+      returnUrl,
+      serviceTitle: 'AFRO-TECH Pay',
+      description: notes ? `${description} - ${String(notes).slice(0, 40)}` : description,
+    });
+  } catch (err) {
+    return res.status(400).json({ ok: false, message: err instanceof Error ? err.message : 'Invalid payment payload.' });
+  }
+
+  let mode = 'sandbox';
+  let checkoutUrl = `/pay/${token}`;
+  if (secretKey) {
+    const chapaInit = await initializeChapaPayment({ secretKey, payload });
+    if (!chapaInit.ok) {
+      return res.status(chapaInit.statusCode || 502).json({
+        ok: false,
+        message: chapaInit.error || 'Chapa gateway declined payment initialization.',
+      });
+    }
+    mode = 'live';
+    checkoutUrl = chapaInit.checkoutUrl;
+  }
+
+  const order = {
+    id: `svc-${crypto.randomUUID().slice(0, 8)}`,
+    provider: 'chapa',
+    tx_ref: txRef,
+    token,
+    service_id: serviceId ?? null,
+    service_name: String(serviceName).trim(),
+    payment_plan: paymentPlan,
+    amount: numAmount,
+    currency: 'ETB',
+    customer_name: cleanName,
+    customer_email: cleanEmail,
+    customer_phone: String(phone || '').trim() || null,
+    description,
+    mode,
+    checkout_url: checkoutUrl,
+    return_url: returnUrl,
+    status: 'pending',
+    payer_reference: null,
+    chapa_reference: null,
+    created_at: new Date().toISOString(),
+    settled_at: null,
+  };
+  serviceChapaOrders.set(txRef, order);
+
+  return res.status(201).json({
+    ok: true,
+    provider: 'chapa',
+    mode,
+    tx_ref: txRef,
+    token,
+    amount: numAmount,
+    currency: 'ETB',
+    checkout_url: checkoutUrl,
+    return_url: returnUrl,
+  });
+});
+
+app.get('/api/chapa/verify/:txRef', async (req, res) => {
+  const txRef = String(req.params.txRef || '').trim();
+  const order = serviceChapaOrders.get(txRef);
+  const secretKey = (process.env.CHAPA_SECRET_KEY || '').trim();
+
+  if (secretKey && txRef) {
+    const verifyRes = await verifyChapaPayment({ secretKey, txRef });
+    if (verifyRes.verified && order) {
+      order.status = 'settled';
+      order.chapa_reference = verifyRes.reference || order.chapa_reference;
+      order.settled_at = order.settled_at || new Date().toISOString();
+      await dispatchTransactionInvoice(order, { merchant: DEFAULT_SERVICE_MERCHANT });
+    }
+    if (order) {
+      if (order.status === 'settled' && !order.invoice) {
+        await dispatchTransactionInvoice(order, { merchant: DEFAULT_SERVICE_MERCHANT });
+      }
+      return res.json({
+        ok: true,
+        verified: order.status === 'settled' || verifyRes.verified,
+        status: order.status,
+        mode: order.mode,
+        order,
+        invoice: order.invoice || null,
+      });
+    }
+    return res.status(verifyRes.ok ? 200 : 404).json({
+      ok: verifyRes.ok,
+      verified: verifyRes.verified,
+      status: verifyRes.status,
+      amount: verifyRes.amount,
+      currency: verifyRes.currency,
+      tx_ref: txRef,
+    });
+  }
+
+  if (!order) {
+    return res.status(404).json({ ok: false, verified: false, message: 'Transaction reference not found.' });
+  }
+  if (order.status === 'settled' && !order.invoice) {
+    await dispatchTransactionInvoice(order, { merchant: DEFAULT_SERVICE_MERCHANT });
+  }
+  return res.json({
+    ok: true,
+    verified: order.status === 'settled',
+    status: order.status,
+    mode: order.mode,
+    order,
+    invoice: order.invoice || null,
+  });
+});
+
+app.post('/api/chapa/webhook', async (req, res) => {
+  const sig = req.headers['chapa-signature'] || req.headers['x-chapa-signature'] || '';
+  const webhookSecret = (process.env.CHAPA_WEBHOOK_SECRET || process.env.CHAPA_SECRET_KEY || '').trim();
+  if (webhookSecret && sig) {
+    if (!verifyWebhookSignature(req.body, String(sig), webhookSecret)) {
+      return res.status(401).json({ ok: false, message: 'Invalid Chapa webhook signature.' });
+    }
+  }
+  const txRef = String(req.body?.tx_ref || req.body?.trx_ref || '').trim();
+  const order = serviceChapaOrders.get(txRef);
+  const isSuccess = String(req.body?.status || 'success').toLowerCase() === 'success';
+  if (order && isSuccess) {
+    order.status = 'settled';
+    order.chapa_reference = req.body?.reference || req.body?.ref_id || txRef;
+    order.settled_at = order.settled_at || new Date().toISOString();
+    await dispatchTransactionInvoice(order, { merchant: DEFAULT_SERVICE_MERCHANT });
+    await sendContactTelegramNotification({
+      name: `${order.customer_name} (Chapa Payment)`,
+      email: order.customer_email,
+      phone: order.customer_phone || '',
+      message: `Chapa Payment Verified: ${order.amount} ${order.currency} for ${order.description} (Ref: ${txRef})`,
+    }).catch(() => null);
+  } else if (isSuccess && txRef) {
+    for (const [tenantId, store] of tenantData.entries()) {
+      const intent = (store.paymentIntents || []).find((i) => i.tx_ref === txRef);
+      if (intent) {
+        settleInboundIntent(store, intent, {
+          providerOverride: 'chapa',
+          payerReference: req.body?.reference || req.body?.ref_id || txRef,
+          verifiedSig: true,
+        });
+        await dispatchTransactionInvoice(intent, { merchant: buildTenantMerchantInfo(tenants.get(tenantId), store) });
+        break;
+      }
+    }
+  }
+  return res.json({ ok: true, received: true });
+});
+
+/* ── Telebirr Official Fabric API Routes (/api/telebirr/*) ───── */
+function getServerTelebirrConfig() {
+  const fabricAppId = (process.env.TELEBIRR_FABRIC_APP_ID || '').trim();
+  const appSecret = (process.env.TELEBIRR_APP_SECRET || '').trim();
+  const merchantAppId = (process.env.TELEBIRR_MERCHANT_APP_ID || '').trim();
+  const merchantCode = (process.env.TELEBIRR_MERCHANT_CODE || '').trim();
+  const privateKey = (process.env.TELEBIRR_PRIVATE_KEY || '').trim();
+  const publicKey = (process.env.TELEBIRR_PUBLIC_KEY || '').trim();
+  const baseUrl = (process.env.TELEBIRR_BASE_URL || '').trim();
+  const webBaseUrl = (process.env.TELEBIRR_WEB_BASE_URL || '').trim();
+  const configured = Boolean(fabricAppId && appSecret && merchantAppId && merchantCode && privateKey);
+  return {
+    configured,
+    fabricAppId,
+    appSecret,
+    merchantAppId,
+    merchantCode,
+    privateKey,
+    publicKey,
+    ...(baseUrl ? { baseUrl } : {}),
+    ...(webBaseUrl ? { webBaseUrl } : {}),
+  };
+}
+
+app.get('/api/telebirr/config', (_req, res) => {
+  const cfg = getServerTelebirrConfig();
+  res.json({
+    ok: true,
+    provider: 'telebirr',
+    currency: 'ETB',
+    mode: cfg.configured ? 'live' : 'sandbox',
+  });
+});
+
+app.post('/api/telebirr/initialize', async (req, res) => {
+  const {
+    serviceId,
+    serviceName = 'Digital Service Package',
+    paymentPlan = 'deposit',
+    amount,
+    fullName,
+    email,
+    phone = '',
+    notes = '',
+    returnPath = '/services',
+  } = req.body ?? {};
+
+  const numAmount = Math.round(Number(amount) * 100) / 100;
+  if (!Number.isFinite(numAmount) || numAmount < 50 || numAmount > 5_000_000) {
+    return res.status(400).json({ ok: false, message: 'Amount must be between 50 and 5,000,000 ETB.' });
+  }
+  const cleanName = String(fullName || '').trim();
+  const cleanEmail = String(email || '').trim();
+  if (cleanName.length < 2) {
+    return res.status(400).json({ ok: false, message: 'Please enter your full name.' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return res.status(400).json({ ok: false, message: 'A valid email address is required.' });
+  }
+
+  const merchOrderId = generateTelebirrOrderId('TB-SVC');
+  const token = `tb-${crypto.randomUUID().slice(0, 10)}`;
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
+  const origin = (process.env.PUBLIC_URL || `${proto}://${host}`).replace(/\/$/, '');
+  const safePath = String(returnPath || '/services').startsWith('/') ? returnPath : '/services';
+  const separator = safePath.includes('?') ? '&' : '?';
+  const returnUrl = `${origin}${safePath}${separator}tx_ref=${encodeURIComponent(merchOrderId)}&provider=telebirr#pay-now`;
+  const notifyUrl = `${origin}/api/telebirr/notify`;
+
+  const description = `${String(serviceName).trim()} (${paymentPlan === 'full' ? 'Full Payment' : paymentPlan === 'custom' ? 'Custom Quote' : '40% Deposit'})`;
+  const title = notes ? `${description} - ${String(notes).slice(0, 24)}` : description;
+
+  const cfg = getServerTelebirrConfig();
+  let mode = 'sandbox';
+  let checkoutUrl = `/pay/${token}`;
+  let prepayId = null;
+  let receiveCode = null;
+
+  if (cfg.configured) {
+    const tbInit = await initializeTelebirrOrder({
+      config: cfg,
+      orderParams: {
+        merchOrderId,
+        title,
+        amount: numAmount,
+        notifyUrl,
+        redirectUrl: returnUrl,
+      },
+    });
+    if (!tbInit.ok) {
+      return res.status(tbInit.statusCode || 502).json({
+        ok: false,
+        message: tbInit.error || 'Telebirr gateway declined pre-order initialization.',
+      });
+    }
+    mode = 'live';
+    checkoutUrl = tbInit.checkoutUrl;
+    prepayId = tbInit.prepayId;
+    receiveCode = tbInit.receiveCode;
+  }
+
+  const order = {
+    id: `svc-${crypto.randomUUID().slice(0, 8)}`,
+    provider: 'telebirr',
+    tx_ref: merchOrderId,
+    token,
+    service_id: serviceId ?? null,
+    service_name: String(serviceName).trim(),
+    payment_plan: paymentPlan,
+    amount: numAmount,
+    currency: 'ETB',
+    customer_name: cleanName,
+    customer_email: cleanEmail,
+    customer_phone: String(phone || '').trim() || null,
+    description,
+    mode,
+    checkout_url: checkoutUrl,
+    return_url: returnUrl,
+    prepay_id: prepayId,
+    receive_code: receiveCode,
+    status: 'pending',
+    payer_reference: null,
+    chapa_reference: null,
+    created_at: new Date().toISOString(),
+    settled_at: null,
+  };
+  serviceChapaOrders.set(merchOrderId, order);
+
+  return res.status(201).json({
+    ok: true,
+    provider: 'telebirr',
+    mode,
+    tx_ref: merchOrderId,
+    token,
+    prepay_id: prepayId,
+    receive_code: receiveCode,
+    amount: numAmount,
+    currency: 'ETB',
+    checkout_url: checkoutUrl,
+    return_url: returnUrl,
+  });
+});
+
+app.get('/api/telebirr/verify/:txRef', async (req, res) => {
+  const txRef = String(req.params.txRef || '').trim();
+  const order = serviceChapaOrders.get(txRef);
+  const cfg = getServerTelebirrConfig();
+
+  if (cfg.configured && txRef) {
+    const queryRes = await queryTelebirrOrder({ config: cfg, merchOrderId: txRef });
+    if (queryRes.verified && order) {
+      order.status = 'settled';
+      order.payer_reference = queryRes.reference || order.payer_reference;
+      order.settled_at = order.settled_at || new Date().toISOString();
+      await dispatchTransactionInvoice(order, { merchant: DEFAULT_SERVICE_MERCHANT });
+    }
+    if (order) {
+      if (order.status === 'settled' && !order.invoice) {
+        await dispatchTransactionInvoice(order, { merchant: DEFAULT_SERVICE_MERCHANT });
+      }
+      return res.json({
+        ok: true,
+        verified: order.status === 'settled' || queryRes.verified,
+        status: order.status,
+        mode: order.mode,
+        order,
+        invoice: order.invoice || null,
+      });
+    }
+    return res.status(queryRes.ok ? 200 : 404).json({
+      ok: queryRes.ok,
+      verified: queryRes.verified,
+      status: queryRes.status,
+      amount: queryRes.amount,
+      currency: 'ETB',
+      tx_ref: txRef,
+    });
+  }
+
+  if (!order) {
+    return res.status(404).json({ ok: false, verified: false, message: 'Telebirr transaction reference not found.' });
+  }
+  if (order.status === 'settled' && !order.invoice) {
+    await dispatchTransactionInvoice(order, { merchant: DEFAULT_SERVICE_MERCHANT });
+  }
+  return res.json({
+    ok: true,
+    verified: order.status === 'settled',
+    status: order.status,
+    mode: order.mode,
+    order,
+    invoice: order.invoice || null,
+  });
+});
+
+app.post('/api/telebirr/notify', async (req, res) => {
+  let payload = req.body;
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload);
+    } catch {
+      payload = {};
+    }
+  }
+  const cfg = getServerTelebirrConfig();
+  const sig = payload?.sign || req.headers['x-telebirr-signature'] || '';
+  if (cfg.publicKey && sig) {
+    if (!verifyTelebirrSignature(payload, String(sig), cfg.publicKey)) {
+      return res.status(401).json({ ok: false, message: 'Invalid Telebirr RSA signature.' });
+    }
+  }
+
+  const txRef = String(
+    payload?.merch_order_id || payload?.biz_content?.merch_order_id || payload?.outTradeNo || '',
+  ).trim();
+  const statusUpper = String(
+    payload?.trade_status || payload?.order_status || payload?.biz_content?.order_status || 'PAY_SUCCESS',
+  ).toUpperCase();
+  const paymentRef = String(
+    payload?.payment_order_id || payload?.biz_content?.payment_order_id || txRef,
+  ).trim();
+
+  const isSuccess = ['PAY_SUCCESS', 'TRADE_SUCCESS', 'COMPLETED', 'SUCCESS'].includes(statusUpper);
+  const svcOrder = serviceChapaOrders.get(txRef);
+  if (svcOrder && isSuccess) {
+    svcOrder.status = 'settled';
+    svcOrder.payer_reference = paymentRef;
+    svcOrder.settled_at = svcOrder.settled_at || new Date().toISOString();
+    await dispatchTransactionInvoice(svcOrder, { merchant: DEFAULT_SERVICE_MERCHANT });
+    await sendContactTelegramNotification({
+      name: `${svcOrder.customer_name} (Telebirr Payment)`,
+      email: svcOrder.customer_email,
+      phone: svcOrder.customer_phone || '',
+      message: `Telebirr Payment Verified: ${svcOrder.amount} ${svcOrder.currency} for ${svcOrder.description} (Ref: ${txRef})`,
+    }).catch(() => null);
+  } else if (isSuccess && txRef) {
+    for (const [tenantId, store] of tenantData.entries()) {
+      const intent = (store.paymentIntents || []).find((i) => i.tx_ref === txRef);
+      if (intent) {
+        settleInboundIntent(store, intent, { providerOverride: 'telebirr', payerReference: paymentRef, verifiedSig: true });
+        await dispatchTransactionInvoice(intent, { merchant: buildTenantMerchantInfo(tenants.get(tenantId), store) });
+        break;
+      }
+    }
+  }
+
+  return res.json({ code: '0', msg: 'success' });
+});
+
+/* ── Safaricom Ethiopia M-Pesa API Routes (/api/mpesa/*) ────── */
+function getServerMpesaConfig() {
+  const consumerKey = (process.env.MPESA_CONSUMER_KEY || '').trim();
+  const consumerSecret = (process.env.MPESA_CONSUMER_SECRET || '').trim();
+  const shortCode = (process.env.MPESA_SHORTCODE || '').trim();
+  const passkey = (process.env.MPESA_PASSKEY || '').trim();
+  const baseUrl = (process.env.MPESA_BASE_URL || '').trim();
+  const configured = Boolean(consumerKey && consumerSecret && shortCode && passkey);
+  return {
+    configured,
+    consumerKey,
+    consumerSecret,
+    shortCode,
+    passkey,
+    ...(baseUrl ? { baseUrl } : {}),
+  };
+}
+
+app.get('/api/mpesa/config', (_req, res) => {
+  const cfg = getServerMpesaConfig();
+  res.json({
+    ok: true,
+    provider: 'mpesa',
+    currency: 'ETB',
+    mode: cfg.configured ? 'live' : 'sandbox',
+  });
+});
+
+app.post('/api/mpesa/stkpush', async (req, res) => {
+  const {
+    serviceId,
+    serviceName = 'Digital Service Package',
+    paymentPlan = 'deposit',
+    amount,
+    fullName,
+    email,
+    phone = '',
+    notes = '',
+    returnPath = '/services',
+  } = req.body ?? {};
+
+  const numAmount = Math.round(Number(amount));
+  if (!Number.isFinite(numAmount) || numAmount < 50 || numAmount > 5_000_000) {
+    return res.status(400).json({ ok: false, message: 'Amount must be between 50 and 5,000,000 ETB.' });
+  }
+  const cleanName = String(fullName || '').trim();
+  const cleanEmail = String(email || '').trim();
+  if (cleanName.length < 2) {
+    return res.status(400).json({ ok: false, message: 'Please enter your full name.' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return res.status(400).json({ ok: false, message: 'A valid email address is required.' });
+  }
+  const msisdn = normalizeMpesaPhone(phone);
+  if (!msisdn) {
+    return res.status(400).json({
+      ok: false,
+      message: 'A valid Ethiopian Safaricom/Telecom phone number (e.g. +251 711 223344 or 0711223344) is required for M-Pesa STK Push.',
+    });
+  }
+
+  const txRef = generateMpesaTxRef('MPESA-SVC');
+  const token = `mpesa-${crypto.randomUUID().slice(0, 10)}`;
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
+  const origin = (process.env.PUBLIC_URL || `${proto}://${host}`).replace(/\/$/, '');
+  const safePath = String(returnPath || '/services').startsWith('/') ? returnPath : '/services';
+  const separator = safePath.includes('?') ? '&' : '?';
+  const returnUrl = `${origin}${safePath}${separator}tx_ref=${encodeURIComponent(txRef)}&provider=mpesa#pay-now`;
+  const callbackUrl = `${origin}/api/mpesa/callback`;
+
+  const description = `${String(serviceName).trim()} (${paymentPlan === 'full' ? 'Full Payment' : paymentPlan === 'custom' ? 'Custom Quote' : '40% Deposit'})`;
+  const cfg = getServerMpesaConfig();
+
+  let mode = 'sandbox';
+  let checkoutUrl = `/pay/${token}`;
+  let checkoutRequestId = `ws_CO_${crypto.randomUUID().slice(0, 12).replace(/-/g, '')}`;
+  let customerMessage = `Authorize the M-Pesa STK prompt for +${msisdn} to receive an instant verified receipt.`;
+
+  if (cfg.configured) {
+    const pushRes = await initiateMpesaStkPush({
+      config: cfg,
+      orderParams: {
+        amount: numAmount,
+        phoneNumber: msisdn,
+        callbackUrl,
+        accountReference: txRef.slice(0, 12),
+        transactionDesc: notes ? `${String(serviceName).slice(0, 20)} - ${String(notes).slice(0, 15)}` : description,
+      },
+    });
+    if (!pushRes.ok) {
+      return res.status(pushRes.statusCode || 502).json({
+        ok: false,
+        message: pushRes.error || 'M-Pesa STK Push could not be dispatched.',
+      });
+    }
+    mode = 'live';
+    checkoutRequestId = pushRes.checkoutRequestId;
+    customerMessage = pushRes.customerMessage;
+    checkoutUrl = returnUrl;
+  }
+
+  const order = {
+    id: `svc-${crypto.randomUUID().slice(0, 8)}`,
+    provider: 'mpesa',
+    tx_ref: txRef,
+    token,
+    checkout_request_id: checkoutRequestId,
+    service_id: serviceId ?? null,
+    service_name: String(serviceName).trim(),
+    payment_plan: paymentPlan,
+    amount: numAmount,
+    currency: 'ETB',
+    customer_name: cleanName,
+    customer_email: cleanEmail,
+    customer_phone: `+${msisdn}`,
+    description,
+    mode,
+    checkout_url: checkoutUrl,
+    return_url: returnUrl,
+    customer_message: customerMessage,
+    status: 'pending',
+    payer_reference: null,
+    chapa_reference: null,
+    created_at: new Date().toISOString(),
+    settled_at: null,
+  };
+  serviceChapaOrders.set(txRef, order);
+
+  return res.status(201).json({
+    ok: true,
+    provider: 'mpesa',
+    mode,
+    tx_ref: txRef,
+    token,
+    checkout_request_id: checkoutRequestId,
+    customer_message: customerMessage,
+    amount: numAmount,
+    currency: 'ETB',
+    checkout_url: checkoutUrl,
+    return_url: returnUrl,
+  });
+});
+
+app.get('/api/mpesa/query/:txRef', async (req, res) => {
+  const txRef = String(req.params.txRef || '').trim();
+  const order = serviceChapaOrders.get(txRef);
+  const cfg = getServerMpesaConfig();
+
+  if (cfg.configured && order?.checkout_request_id) {
+    const queryRes = await queryMpesaStkStatus({
+      config: cfg,
+      checkoutRequestId: order.checkout_request_id,
+    });
+    if (queryRes.verified) {
+      order.status = 'settled';
+      order.settled_at = order.settled_at || new Date().toISOString();
+      await dispatchTransactionInvoice(order, { merchant: DEFAULT_SERVICE_MERCHANT });
+    }
+    if (order.status === 'settled' && !order.invoice) {
+      await dispatchTransactionInvoice(order, { merchant: DEFAULT_SERVICE_MERCHANT });
+    }
+    return res.json({
+      ok: true,
+      verified: order.status === 'settled' || queryRes.verified,
+      status: order.status,
+      mode: order.mode,
+      order,
+      invoice: order.invoice || null,
+    });
+  }
+
+  if (!order) {
+    return res.status(404).json({ ok: false, verified: false, message: 'M-Pesa transaction reference not found.' });
+  }
+  if (order.status === 'settled' && !order.invoice) {
+    await dispatchTransactionInvoice(order, { merchant: DEFAULT_SERVICE_MERCHANT });
+  }
+  return res.json({
+    ok: true,
+    verified: order.status === 'settled',
+    status: order.status,
+    mode: order.mode,
+    order,
+    invoice: order.invoice || null,
+  });
+});
+
+app.post('/api/mpesa/callback', async (req, res) => {
+  const parsed = parseMpesaCallback(req.body);
+  if (!parsed.valid) {
+    return res.status(400).json({ ResultCode: 1, ResultDesc: 'Malformed M-Pesa callback payload' });
+  }
+
+  if (parsed.success && parsed.checkoutRequestId) {
+    let matchedServiceOrder = null;
+    for (const ord of serviceChapaOrders.values()) {
+      if (ord.checkout_request_id === parsed.checkoutRequestId) {
+        matchedServiceOrder = ord;
+        break;
+      }
+    }
+
+    if (matchedServiceOrder) {
+      matchedServiceOrder.status = 'settled';
+      matchedServiceOrder.payer_reference = parsed.mpesaReceiptNumber || parsed.checkoutRequestId;
+      matchedServiceOrder.settled_at = matchedServiceOrder.settled_at || new Date().toISOString();
+      await dispatchTransactionInvoice(matchedServiceOrder, { merchant: DEFAULT_SERVICE_MERCHANT });
+      await sendContactTelegramNotification({
+        name: `${matchedServiceOrder.customer_name} (M-Pesa STK)`,
+        email: matchedServiceOrder.customer_email,
+        phone: matchedServiceOrder.customer_phone || parsed.phoneNumber || '',
+        message: `M-Pesa STK Confirmed: ${matchedServiceOrder.amount} ETB (${matchedServiceOrder.description}, Receipt: ${matchedServiceOrder.payer_reference})`,
+      }).catch(() => null);
+    } else {
+      for (const [tenantId, store] of tenantData.entries()) {
+        const intent = (store.paymentIntents || []).find(
+          (i) => i.checkout_request_id === parsed.checkoutRequestId || i.tx_ref === parsed.checkoutRequestId,
+        );
+        if (intent) {
+          settleInboundIntent(store, intent, {
+            providerOverride: 'mpesa',
+            payerReference: parsed.mpesaReceiptNumber || parsed.checkoutRequestId,
+            verifiedSig: true,
+          });
+          await dispatchTransactionInvoice(intent, { merchant: buildTenantMerchantInfo(tenants.get(tenantId), store) });
+          break;
+        }
+      }
+    }
+  }
+
+  return res.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+});
+
+/* ── Automated PDF Invoice & Email Receipt Endpoints (/api/invoices/*) ── */
+app.get('/api/invoices/:txRef', async (req, res) => {
+  const txRef = String(req.params.txRef || '').trim();
+  const found = findTransactionForInvoice(txRef);
+  const existing = invoiceRegistry.get(txRef);
+
+  if (!found && !existing) {
+    return res.status(404).json({ ok: false, message: 'Transaction or invoice not found.' });
+  }
+
+  if (found && found.orderOrIntent.status === 'settled' && !existing) {
+    await dispatchTransactionInvoice(found.orderOrIntent, { merchant: found.merchant });
+  }
+
+  const invoice = found?.orderOrIntent?.invoice || invoiceRegistry.get(txRef)?.meta || null;
+  if (!invoice) {
+    return res.status(409).json({
+      ok: false,
+      message: 'Invoice is generated automatically once payment settlement completes.',
+    });
+  }
+  return res.json({ ok: true, invoice });
+});
+
+app.get('/api/invoices/:txRef/pdf', async (req, res) => {
+  const txRef = String(req.params.txRef || '').trim();
+  const found = findTransactionForInvoice(txRef);
+  let entry = invoiceRegistry.get(txRef);
+
+  if (!entry) {
+    if (!found) {
+      return res.status(404).json({ ok: false, message: 'Transaction reference not found.' });
+    }
+    if (found.orderOrIntent.status !== 'settled') {
+      return res.status(409).json({
+        ok: false,
+        message: 'PDF invoice becomes available once the payment settles.',
+      });
+    }
+    const data = buildInvoiceData(found.orderOrIntent, found.merchant);
+    const pdfBuffer = await generateInvoicePdfBuffer(data);
+    entry = {
+      meta: found.orderOrIntent.invoice || {
+        invoice_number: data.invoiceNumber,
+        filename: `${data.invoiceNumber}.pdf`,
+      },
+      pdfBuffer,
+    };
+    invoiceRegistry.set(txRef, entry);
+  }
+
+  const inline = req.query.inline === '1' || req.query.inline === 'true';
+  const filename = entry.meta?.filename || `${txRef}.pdf`;
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${filename}"`);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.send(entry.pdfBuffer);
+});
+
+app.post('/api/invoices/:txRef/resend', async (req, res) => {
+  const txRef = String(req.params.txRef || '').trim();
+  const overrideEmail = String(req.body?.email || '').trim();
+  if (overrideEmail && !isValidEmail(overrideEmail)) {
+    return res.status(400).json({ ok: false, message: 'Enter a valid email address for the invoice recipient.' });
+  }
+
+  const found = findTransactionForInvoice(txRef);
+  if (!found) {
+    return res.status(404).json({ ok: false, message: 'Transaction reference not found.' });
+  }
+  if (found.orderOrIntent.status !== 'settled') {
+    return res.status(409).json({ ok: false, message: 'Only settled transactions can send a paid PDF invoice.' });
+  }
+
+  const effectiveEmail =
+    overrideEmail || found.orderOrIntent.customer_email || found.orderOrIntent.invoice?.recipient_email || '';
+  if (!isValidEmail(effectiveEmail)) {
+    return res.status(400).json({ ok: false, message: 'Please provide a recipient email address to send the invoice.' });
+  }
+
+  const result = await dispatchTransactionInvoice(found.orderOrIntent, {
+    merchant: found.merchant,
+    forceResend: true,
+    overrideEmail: effectiveEmail,
+  });
+
+  if (!result?.invoice) {
+    return res.status(500).json({ ok: false, message: 'Unable to dispatch PDF invoice right now.' });
+  }
+
+  return res.json({ ok: true, invoice: result.invoice });
 });
 
 /* ── Auth (/api/v1/auth/*) ─────────────────────────────────── */
@@ -742,6 +1818,41 @@ app.put('/api/v1/tenant/settings', (req, res) => {
   res.json({ settings: store.settings });
 });
 
+// No-code Custom Fields Builder (upgrade-safe entity extensions)
+app.get('/api/v1/tenant/custom-fields', (req, res) => {
+  const { store } = activeCtx(req);
+  const entity = req.query.entity ? String(req.query.entity) : null;
+  const list = store.customFields ?? [];
+  res.json({ fields: entity ? list.filter((f) => f.entity === entity) : list });
+});
+
+app.post('/api/v1/tenant/custom-fields', (req, res) => {
+  const { store } = activeCtx(req);
+  const b = req.body ?? {};
+  const label = String(b.label || '').trim();
+  if (!label) return res.status(400).json({ error: 'Field label is required' });
+  const entity = ['product', 'customer', 'supplier'].includes(b.entity) ? b.entity : 'product';
+  const type = ['text', 'number', 'date', 'select'].includes(b.type) ? b.type : 'text';
+  const key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || `field_${Date.now()}`;
+  const field = {
+    id: `cf-${crypto.randomUUID().slice(0, 8)}`,
+    entity,
+    key,
+    label,
+    type,
+    options: String(b.options || '').trim(),
+    required: Boolean(b.required),
+  };
+  store.customFields = [...(store.customFields ?? []), field];
+  res.status(201).json({ field, fields: store.customFields });
+});
+
+app.delete('/api/v1/tenant/custom-fields/:id', (req, res) => {
+  const { store } = activeCtx(req);
+  store.customFields = (store.customFields ?? []).filter((f) => f.id !== req.params.id);
+  res.json({ ok: true, fields: store.customFields });
+});
+
 /* ── Retail / Pharmacy (/api/v1/retail/*) ──────────────────── */
 function enrichBatch(b) {
   const now = Date.now();
@@ -845,6 +1956,100 @@ app.get('/api/v1/retail/reports', (req, res) => {
   });
 });
 
+// Self-Service Custom Report Builder datasets & presets
+app.get('/api/v1/reports/datasets', (req, res) => {
+  const { store } = activeCtx(req);
+  res.json({
+    datasets: {
+      products: store.products.map((p) => ({
+        id: p.id,
+        name: p.name,
+        category: p.category,
+        stock: Number(p.stock || 0),
+        low_stock_threshold: Number(p.low_stock_threshold || 0),
+        cost_price: Number(p.cost_price || 0),
+        sell_price: Number(p.sell_price || 0),
+        stock_value: Math.round(Number(p.stock || 0) * Number(p.cost_price || 0) * 100) / 100,
+        expiring_soon: Number(p.expiring_soon || 0),
+      })),
+      sales: store.sales.map((s) => ({
+        id: s.id,
+        invoice_no: s.invoice_no,
+        created_at: String(s.created_at || '').slice(0, 10),
+        customer_name: s.customer_name || 'Walk-in',
+        payment_method: s.payment_method || 'cash',
+        status: s.status || 'completed',
+        discount: Number(s.discount || 0),
+        total: Number(s.total || 0),
+        cashier: s.cashier || 'Staff',
+      })),
+      purchases: store.purchases.map((p) => ({
+        id: p.id,
+        purchase_no: p.purchase_no || p.id.toUpperCase(),
+        created_at: String(p.created_at || '').slice(0, 10),
+        supplier_name: p.supplier_name || 'Walk-in',
+        item_count: Number(p.item_count || (p.items?.length ?? 0)),
+        total: Number(p.total || 0),
+        paid_amount: Number(p.paid_amount || 0),
+        balance_due: Math.max(0, Math.round((Number(p.total || 0) - Number(p.paid_amount || 0)) * 100) / 100),
+      })),
+      expenses: store.expenses.map((e) => ({
+        id: e.id,
+        created_at: String(e.expense_date || e.created_at || '').slice(0, 10),
+        category: e.category || 'General',
+        description: e.description || '',
+        amount: Number(e.amount || 0),
+        recorded_by: e.recorded_by_name || 'Staff',
+      })),
+      gl: store.glEntries.map((g) => ({
+        id: g.id,
+        posting_date: String(g.posting_date || '').slice(0, 10),
+        voucher_no: g.voucher_no,
+        voucher_type: g.voucher_type,
+        account_code: g.account_code,
+        account_name: g.account_name,
+        debit: Number(g.debit || 0),
+        credit: Number(g.credit || 0),
+      })),
+      leads: store.leads.map((l) => ({
+        id: l.id,
+        name: l.name,
+        organization: l.organization || '—',
+        stage: l.stage || 'lead',
+        source: l.source || 'Direct',
+        expected_value: Number(l.expected_value || 0),
+        follow_up_date: String(l.follow_up_date || '').slice(0, 10),
+      })),
+    },
+  });
+});
+
+app.get('/api/v1/reports/presets', (req, res) => {
+  const { store } = activeCtx(req);
+  res.json({ presets: store.reportPresets ?? [] });
+});
+
+app.post('/api/v1/reports/presets', (req, res) => {
+  const { store } = activeCtx(req);
+  const name = String(req.body?.name || '').trim();
+  const config = req.body?.config;
+  if (!name || !config) return res.status(400).json({ error: 'Preset name and config required' });
+  const preset = {
+    id: `preset-${crypto.randomUUID().slice(0, 8)}`,
+    name,
+    config,
+    created_at: new Date().toISOString(),
+  };
+  store.reportPresets = [preset, ...(store.reportPresets ?? [])];
+  res.status(201).json({ preset, presets: store.reportPresets });
+});
+
+app.delete('/api/v1/reports/presets/:id', (req, res) => {
+  const { store } = activeCtx(req);
+  store.reportPresets = (store.reportPresets ?? []).filter((p) => p.id !== req.params.id);
+  res.json({ ok: true, presets: store.reportPresets });
+});
+
 app.get('/api/v1/retail/products', (req, res) => {
   const { store } = activeCtx(req);
   res.json({ products: store.products });
@@ -886,6 +2091,7 @@ app.post('/api/v1/retail/products', (req, res) => {
     expired_qty: 0,
     display_stock: sellByPill ? stock * pillsPerUnit : stock,
     expiring_soon: 0,
+    custom_values: b.custom_values && typeof b.custom_values === 'object' ? b.custom_values : {},
   };
   store.products.unshift(product);
   if (stock > 0) {
@@ -917,6 +2123,7 @@ app.patch('/api/v1/retail/products/:id', (req, res) => {
     cost_price: b.cost_price !== undefined ? String(b.cost_price) : store.products[idx].cost_price,
     low_stock_threshold: b.low_stock_threshold !== undefined ? Number(b.low_stock_threshold) : store.products[idx].low_stock_threshold,
     barcode: b.barcode !== undefined ? b.barcode : store.products[idx].barcode,
+    custom_values: b.custom_values !== undefined ? b.custom_values : (store.products[idx].custom_values ?? {}),
   };
   res.json({ product: store.products[idx] });
 });
@@ -989,10 +2196,14 @@ function createSaleInternal(store, user, b) {
   const subtotal = lineItems.length ? lineItems.reduce((a, x) => a + x.line_total, 0) : Number(b.total ?? 0);
   const discount = Number(b.discount ?? 0);
   const total = Math.max(0, subtotal - discount);
-  const paymentMethod = b.payment_method || 'cash';
+  const paymentMethod = String(b.payment_method || 'cash').toLowerCase();
   const amountPaid = b.amount_paid !== undefined ? Number(b.amount_paid) : paymentMethod === 'credit' ? 0 : total;
   const changeDue = Math.max(0, amountPaid - total);
-  const customer = b.customer_id ? store.customers.find((c) => c.id === b.customer_id) : null;
+  const customer = b.customer_id
+    ? store.customers.find((c) => c.id === b.customer_id)
+    : b.customer_phone
+      ? store.customers.find((c) => c.phone && String(c.phone).replace(/\s+/g, '') === String(b.customer_phone).replace(/\s+/g, ''))
+      : null;
   const due = Math.max(0, total - amountPaid);
 
   if (customer && due > 0) {
@@ -1004,21 +2215,39 @@ function createSaleInternal(store, user, b) {
     invoice_no: invoiceNo,
     subtotal: subtotal.toFixed(2),
     discount: discount.toFixed(2),
+    tax_amount: Number(b.tax_amount ?? 0).toFixed(2),
     total: total.toFixed(2),
     amount_paid: amountPaid.toFixed(2),
     change_due: changeDue.toFixed(2),
     status: 'completed',
+    order_type: b.order_type === 'delivery' ? 'delivery' : 'pickup',
     created_at: new Date().toISOString(),
     payment_method: paymentMethod,
     customer_id: customer?.id || b.customer_id || null,
     customer_name: customer?.name || b.customer_name || 'Walk-in',
+    customer_phone: b.customer_phone || customer?.phone || null,
+    customer_city: b.customer_city || customer?.city || null,
+    customer_location: b.customer_location || customer?.location || null,
+    referral_code: b.referral_code || null,
+    notes: b.notes || null,
     cashier: user.full_name,
     items: lineItems,
   };
   store.sales.unshift(sale);
 
+  if (store.shift && store.shift.status === 'open') {
+    if (paymentMethod === 'cash') {
+      store.shift.cash_sales = (Number(store.shift.cash_sales || 0) + total).toFixed(2);
+    } else if (paymentMethod === 'card') {
+      store.shift.card_sales = (Number(store.shift.card_sales || 0) + total).toFixed(2);
+    } else if (['mobile', 'telebirr', 'cbe', 'mpesa'].includes(paymentMethod)) {
+      store.shift.mobile_sales = (Number(store.shift.mobile_sales || 0) + total).toFixed(2);
+    }
+  }
+
   if (total > 0) {
-    const assetAcct = paymentMethod === 'credit' && due > 0 ? '1210' : paymentMethod === 'bank' || paymentMethod === 'card' || paymentMethod === 'mobile' ? '1120' : '1110';
+    const isDigitalOrBank = ['bank', 'card', 'mobile', 'telebirr', 'cbe', 'mpesa'].includes(paymentMethod);
+    const assetAcct = paymentMethod === 'credit' && due > 0 ? '1210' : isDigitalOrBank ? '1120' : '1110';
     appendGlEntry(store, {
       voucher_type: 'POS Sale',
       voucher_no: invoiceNo,
@@ -1026,7 +2255,7 @@ function createSaleInternal(store, user, b) {
       debit: total,
       credit: 0,
       party: sale.customer_name,
-      remarks: `Sale ${invoiceNo} (${paymentMethod})`,
+      remarks: `Sale ${invoiceNo} (${paymentMethod}, ${sale.order_type})`,
     });
     appendGlEntry(store, {
       voucher_type: 'POS Sale',
@@ -1343,14 +2572,55 @@ app.post('/api/v1/retail/supplier-payments', (req, res) => {
 
 app.get('/api/v1/retail/customers', (req, res) => {
   const { store } = activeCtx(req);
-  res.json({ customers: store.customers });
+  const q = req.query.search ? String(req.query.search).trim().toLowerCase() : '';
+  const limit = req.query.limit ? Math.max(1, Number(req.query.limit)) : 0;
+  let customers = store.customers;
+  if (q) {
+    customers = customers.filter((c) =>
+      String(c.name || '').toLowerCase().includes(q) ||
+      String(c.phone || '').toLowerCase().includes(q) ||
+      String(c.city || '').toLowerCase().includes(q) ||
+      String(c.location || '').toLowerCase().includes(q)
+    );
+  }
+  if (limit > 0) customers = customers.slice(0, limit);
+  res.json({ customers });
 });
 
 app.post('/api/v1/retail/customers', (req, res) => {
   const { store } = activeCtx(req);
-  const cust = { id: `cust-${crypto.randomUUID().slice(0, 8)}`, ...req.body, balance: '0', created_at: new Date().toISOString() };
+  const b = req.body ?? {};
+  const cust = {
+    id: `cust-${crypto.randomUUID().slice(0, 8)}`,
+    name: String(b.name || 'Customer').trim(),
+    phone: b.phone ? String(b.phone).trim() : null,
+    email: b.email ? String(b.email).trim() : null,
+    address: b.address ? String(b.address).trim() : b.location ? String(b.location).trim() : null,
+    city: b.city ? String(b.city).trim() : 'Addis Ababa',
+    location: b.location ? String(b.location).trim() : '',
+    gender: b.gender || '',
+    age_group: b.age_group || '',
+    source: b.source || 'walk-in',
+    referral_code: b.referral_code || '',
+    notes: b.notes || '',
+    balance: '0',
+    created_at: new Date().toISOString(),
+  };
   store.customers.unshift(cust);
   res.status(201).json({ customer: cust });
+});
+
+app.patch('/api/v1/retail/customers/:id', (req, res) => {
+  const { store } = activeCtx(req);
+  const idx = store.customers.findIndex((c) => c.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Customer not found' });
+  const b = req.body ?? {};
+  store.customers[idx] = {
+    ...store.customers[idx],
+    ...b,
+    id: store.customers[idx].id,
+  };
+  res.json({ customer: store.customers[idx] });
 });
 
 app.delete('/api/v1/retail/customers/:id', (req, res) => {
@@ -1529,13 +2799,42 @@ app.get('/api/v1/retail/shift', (req, res) => res.json({ shift: activeCtx(req).s
 app.get('/api/v1/retail/shift/history', (req, res) => res.json({ shifts: activeCtx(req).store.shifts }));
 app.post('/api/v1/retail/shift/start', (req, res) => {
   const { user, store } = activeCtx(req);
-  store.shift = { id: `sh-${crypto.randomUUID().slice(0, 8)}`, cashier_name: user.full_name, opening_balance: String(req.body?.opening_balance ?? 0), started_at: new Date().toISOString(), status: 'open' };
+  const now = new Date().toISOString();
+  store.shift = {
+    id: `sh-${crypto.randomUUID().slice(0, 8)}`,
+    cashier: user.full_name,
+    cashier_name: user.full_name,
+    opening_balance: Number(req.body?.opening_balance ?? 0).toFixed(2),
+    cash_sales: '0.00',
+    card_sales: '0.00',
+    mobile_sales: '0.00',
+    expenses: '0.00',
+    counted_cash: null,
+    expected_cash: null,
+    difference: null,
+    opened_at: now,
+    started_at: now,
+    closed_at: null,
+    status: 'open',
+  };
   res.status(201).json({ shift: store.shift });
 });
 app.post('/api/v1/retail/shift/end', (req, res) => {
   const { store } = activeCtx(req);
   if (store.shift) {
-    const closed = { ...store.shift, counted_cash: String(req.body?.counted_cash ?? 0), ended_at: new Date().toISOString(), status: 'closed' };
+    const counted = Number(req.body?.counted_cash ?? 0);
+    const expected = Number(store.shift.opening_balance || 0) + Number(store.shift.cash_sales || 0) - Number(store.shift.expenses || 0);
+    const diff = counted - expected;
+    const now = new Date().toISOString();
+    const closed = {
+      ...store.shift,
+      counted_cash: counted.toFixed(2),
+      expected_cash: expected.toFixed(2),
+      difference: diff.toFixed(2),
+      closed_at: now,
+      ended_at: now,
+      status: 'closed',
+    };
     store.shifts.unshift(closed);
     store.shift = null;
     return res.json({ shift: closed });
@@ -1687,11 +2986,22 @@ app.post('/api/v1/erp/purchase-orders/:id/receive', (req, res) => {
   const { user, store } = activeCtx(req);
   const po = store.purchaseOrders.find((x) => x.id === req.params.id);
   if (!po) return res.status(404).json({ error: 'Purchase Order not found' });
+  const recItems = Array.isArray(req.body?.received_items) ? req.body.received_items : null;
+  const recMap = recItems ? new Map(recItems.map((r) => [r.product_id, r])) : null;
+  const itemsToReceive = po.items
+    .map((it) => {
+      const ov = recMap?.get(it.product_id);
+      const qty = ov ? Math.max(0, Number(ov.received_qty ?? it.quantity)) : it.quantity;
+      const unitCost = ov ? Math.max(0, Number(ov.billed_unit_cost ?? it.unit_cost)) : it.unit_cost;
+      return { product_id: it.product_id, quantity: qty, unit_cost: unitCost };
+    })
+    .filter((it) => it.quantity > 0);
+  if (!itemsToReceive.length) return res.status(400).json({ error: 'Enter at least 1 received unit to post receipt' });
   const purchase = createPurchaseInternal(store, user, {
     supplier_id: po.supplier_id,
-    notes: `Received from ${po.number}`,
-    paid_amount: req.body?.paid_amount !== undefined ? Number(req.body.paid_amount) : Number(po.total),
-    items: po.items.map((it) => ({ product_id: it.product_id, quantity: it.quantity, unit_cost: it.unit_cost })),
+    notes: req.body?.match_note ? `3-Way Verified (${po.number}): ${req.body.match_note}` : `Received from ${po.number}`,
+    paid_amount: req.body?.paid_amount !== undefined ? Number(req.body.paid_amount) : itemsToReceive.reduce((s, it) => s + it.quantity * it.unit_cost, 0),
+    items: itemsToReceive,
   });
   po.status = 'received';
   res.json({ purchase_order: po, purchase });
@@ -1740,11 +3050,26 @@ app.post('/api/v1/erp/stock-transfers', (req, res) => {
   appendStockLedger(store, { voucher_type: 'Warehouse Transfer (In)', voucher_no: voucherNo, product: prod, warehouse_id: toWh.id, warehouse_name: toWh.name, qty_change: qty, rate: Number(prod.cost_price || 0) });
   res.json({ ok: true });
 });
+app.post('/api/v1/erp/warehouses/reconcile', (req, res) => {
+  const { store } = activeCtx(req);
+  const defWh = store.warehouses[0];
+  if (!defWh) return res.status(400).json({ error: 'No default warehouse' });
+  let fixedCount = 0;
+  for (const prod of store.products) {
+    const binTotal = store.warehouses.reduce((s, w) => s + Number(w.stock_map?.[prod.id] ?? 0), 0);
+    const diff = Number(prod.stock || 0) - binTotal;
+    if (Math.abs(diff) > 0.001) {
+      defWh.stock_map[prod.id] = Math.max(0, Number(defWh.stock_map[prod.id] || 0) + diff);
+      fixedCount += 1;
+    }
+  }
+  res.json({ ok: true, reconciled_skus: fixedCount });
+});
 app.get('/api/v1/erp/stock-ledger', (req, res) => {
   res.json({ entries: activeCtx(req).store.stockLedger });
 });
 
-// Accounting: Chart of Accounts, GL Entries, Journal Entries
+// Accounting: Chart of Accounts, GL Entries, Journal Entries, Exceptions & 1-Click Reversal
 app.get('/api/v1/erp/accounts', (req, res) => {
   const { store } = activeCtx(req);
   res.json({ accounts: store.accounts });
@@ -1756,6 +3081,17 @@ app.get('/api/v1/erp/gl-entries', (req, res) => {
 app.get('/api/v1/erp/journal-entries', (req, res) => {
   const { store } = activeCtx(req);
   res.json({ journal_entries: store.journalEntries });
+});
+app.get('/api/v1/erp/reconciliation-snapshot', (req, res) => {
+  const { store } = activeCtx(req);
+  res.json({
+    accounts: store.accounts,
+    gl_entries: store.glEntries,
+    products: store.products,
+    warehouses: store.warehouses,
+    customers: store.customers,
+    suppliers: store.suppliers,
+  });
 });
 app.post('/api/v1/erp/journal-entries', (req, res) => {
   const { user, store } = activeCtx(req);
@@ -1775,6 +3111,7 @@ app.post('/api/v1/erp/journal-entries', (req, res) => {
     total_debit: totalDebit.toFixed(2),
     total_credit: totalCredit.toFixed(2),
     status: 'submitted',
+    reversed_by: null,
     created_by: user.full_name,
     lines: cleanLines,
     created_at: new Date().toISOString(),
@@ -1791,6 +3128,54 @@ app.post('/api/v1/erp/journal-entries', (req, res) => {
     });
   }
   res.status(201).json({ journal_entry: je });
+});
+app.post('/api/v1/erp/journal-entries/:id/reverse', (req, res) => {
+  const { user, store } = activeCtx(req);
+  const orig = store.journalEntries.find((j) => j.id === req.params.id);
+  if (!orig) return res.status(404).json({ error: 'Journal Entry not found' });
+  if (orig.status === 'reversed') return res.status(400).json({ error: `${orig.number} has already been reversed` });
+  const revLines = (orig.lines || []).map((l) => ({
+    account_code: l.account_code,
+    debit: Number(l.credit || 0),
+    credit: Number(l.debit || 0),
+  }));
+  const voucherNo = `JV-${1001 + store.journalEntries.length}`;
+  const totalAmt = revLines.reduce((s, l) => s + Number(l.debit || 0), 0);
+  const contra = {
+    id: `je-${crypto.randomUUID().slice(0, 8)}`,
+    number: voucherNo,
+    posting_date: new Date().toISOString().slice(0, 10),
+    remarks: `Reversal of ${orig.number}: ${orig.remarks}`,
+    total_debit: totalAmt.toFixed(2),
+    total_credit: totalAmt.toFixed(2),
+    status: 'submitted',
+    reversed_by: null,
+    reversal_of: orig.number,
+    created_by: user.full_name,
+    lines: revLines,
+    created_at: new Date().toISOString(),
+  };
+  orig.status = 'reversed';
+  orig.reversed_by = voucherNo;
+  store.journalEntries.unshift(contra);
+  for (const l of revLines) {
+    appendGlEntry(store, {
+      voucher_type: 'Journal Reversal',
+      voucher_no: voucherNo,
+      account_code: l.account_code,
+      debit: Number(l.debit || 0),
+      credit: Number(l.credit || 0),
+      remarks: contra.remarks,
+    });
+  }
+  auditLogs.unshift({
+    id: `aud-${crypto.randomUUID().slice(0, 8)}`,
+    actor: user.email,
+    action: 'REVERSE_JOURNAL_ENTRY',
+    target: `${orig.number} -> ${voucherNo}`,
+    created_at: new Date().toISOString(),
+  });
+  res.status(201).json({ original: orig, reversal: contra });
 });
 
 // CRM Leads & Opportunities
@@ -3042,6 +4427,745 @@ app.get('/api/v1/billing/providers', (_req, res) => res.json({ providers: [{ id:
 app.post('/api/v1/billing/checkout', (req, res) => res.json({ checkout_url: null, tx_ref: `TX-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, mock: false, provider: req.body?.provider || 'cbe' }));
 app.post('/api/v1/billing/verify', (_req, res) => res.json({ ok: true, access_until: demoTrialEnds }));
 
+/* ── Tenant Payment Gateways, Links, Payouts & Public Checkout ── */
+const PROVIDER_FEE_RATES = {
+  chapa: 2.5,
+  telebirr: 1.0,
+  mpesa: 1.5,
+  cbe_bank: 0,
+  stripe: 2.9,
+};
+const OUTBOUND_CAPABLE = new Set(['chapa', 'telebirr', 'mpesa', 'cbe_bank']);
+
+function sanitizeGateways(store) {
+  const map = store.paymentGateways || {};
+  return Object.values(map).map((gw) => ({
+    provider: gw.provider,
+    enabled: Boolean(gw.enabled),
+    configured: Boolean(gw.configured),
+    is_default: Boolean(gw.is_default),
+    mode: gw.mode || 'sandbox',
+    public_config: gw.public_config || {},
+    masked_secrets: gw.masked_secrets || {},
+    has_secret: Object.keys(gw.encrypted_secrets || {}).length > 0,
+    health_status: gw.health_status || 'unconfigured',
+    last_tested_at: gw.last_tested_at || null,
+    updated_at: gw.updated_at || null,
+  }));
+}
+
+function settleInboundIntent(store, intent, { providerOverride, payerReference, verifiedSig = true } = {}) {
+  if (!intent || intent.status === 'settled') return intent;
+  const prov = providerOverride || intent.provider || 'cbe_bank';
+  const feePct = PROVIDER_FEE_RATES[prov] ?? 0;
+  const gross = Number(intent.amount || 0);
+  const fee = Math.round(gross * (feePct / 100) * 100) / 100;
+  const net = Math.round(Math.max(0, gross - fee) * 100) / 100;
+
+  intent.provider = prov;
+  intent.fee_amount = fee;
+  intent.net_amount = net;
+  intent.status = 'settled';
+  intent.payer_reference = payerReference || intent.payer_reference || `SIG-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+  intent.verified_signature = Boolean(verifiedSig);
+  intent.settled_at = new Date().toISOString();
+
+  const voucherNo = intent.gl_voucher_no || `GW-${1001 + store.glEntries.length}`;
+  intent.gl_voucher_no = voucherNo;
+
+  const creditAcct = intent.party_id ? '1210' : '4100';
+  appendGlEntry(store, {
+    voucher_type: 'Gateway Receipt',
+    voucher_no: voucherNo,
+    account_code: '1120',
+    debit: net,
+    credit: 0,
+    party: intent.party_name || 'Customer',
+    remarks: `${intent.description} (${prov})`,
+  });
+  if (fee > 0) {
+    appendGlEntry(store, {
+      voucher_type: 'Gateway Receipt',
+      voucher_no: voucherNo,
+      account_code: '5200',
+      debit: fee,
+      credit: 0,
+      party: prov,
+      remarks: `Gateway processing fee (${feePct}%)`,
+    });
+  }
+  appendGlEntry(store, {
+    voucher_type: 'Gateway Receipt',
+    voucher_no: voucherNo,
+    account_code: creditAcct,
+    debit: 0,
+    credit: gross,
+    party: intent.party_name || 'Customer',
+    remarks: `${intent.description} (${intent.tx_ref})`,
+  });
+
+  if (intent.reference_type === 'customer_credit' && intent.party_id) {
+    const cust = store.customers.find((c) => c.id === intent.party_id);
+    if (cust) {
+      cust.balance = Math.max(0, Number(cust.balance || 0) - gross).toFixed(2);
+    }
+    store.customerPayments.unshift({
+      id: `cp-${crypto.randomUUID().slice(0, 8)}`,
+      customer_id: intent.party_id,
+      amount: gross.toFixed(2),
+      note: `Online payment via ${prov} (${intent.tx_ref})`,
+      recorded_by: 'Payment Gateway',
+      created_at: new Date().toISOString(),
+    });
+  } else if (intent.reference_type === 'hospital_invoice' && intent.reference_id) {
+    const inv = store.invoices.find((i) => i.id === intent.reference_id);
+    if (inv) {
+      const nextPaid = Math.min(Number(inv.amount), Number(inv.paid_amount || 0) + gross);
+      inv.paid_amount = nextPaid.toFixed(2);
+      inv.status = nextPaid >= Number(inv.amount) ? 'paid' : 'partial';
+    }
+  } else if (intent.reference_type === 'school_fee' && intent.reference_id) {
+    const feeRow = store.fees.find((f) => f.id === intent.reference_id);
+    if (feeRow) {
+      const nextPaid = Math.min(Number(feeRow.amount), Number(feeRow.paid_amount || 0) + gross);
+      feeRow.paid_amount = nextPaid.toFixed(2);
+      feeRow.status = nextPaid >= Number(feeRow.amount) ? 'paid' : 'partial';
+      if (feeRow.status === 'paid') feeRow.paid_at = new Date().toISOString();
+    }
+  }
+
+  return intent;
+}
+
+app.get('/api/v1/payments/gateways', (req, res) => {
+  const { tenant, store } = activeCtx(req);
+  res.json({
+    gateways: sanitizeGateways(store),
+    webhook_url: `/api/v1/webhooks/payments/${tenant?.id || 'tenant-demo-1'}`,
+  });
+});
+
+app.put('/api/v1/payments/gateways/:provider', (req, res) => {
+  const { tenant, user, store } = activeCtx(req);
+  const prov = req.params.provider;
+  if (!store.paymentGateways?.[prov]) {
+    return res.status(404).json({ error: 'Unsupported payment provider' });
+  }
+  const { enabled = true, mode = 'sandbox', public_config = {}, secrets = {}, is_default = false } = req.body ?? {};
+  const existing = store.paymentGateways[prov];
+  const nextEncrypted = { ...(existing.encrypted_secrets || {}) };
+  const nextMasked = { ...(existing.masked_secrets || {}) };
+
+  for (const [k, val] of Object.entries(secrets || {})) {
+    const clean = String(val ?? '').trim();
+    if (clean) {
+      nextEncrypted[k] = encryptSecret(clean);
+      nextMasked[k] = maskSecret(clean);
+    }
+  }
+
+  const nextPublic = { ...(existing.public_config || {}) };
+  for (const [k, val] of Object.entries(public_config || {})) {
+    nextPublic[k] = String(val ?? '').trim();
+  }
+
+  const needsSecret = prov !== 'cbe_bank';
+  if (needsSecret && !nextEncrypted.secret_key) {
+    return res.status(400).json({ error: 'Merchant secret key is required and stored encrypted on the server.' });
+  }
+  if (!String(nextPublic.settlement_account || nextPublic.public_key || nextPublic.merchant_id || '').trim()) {
+    return res.status(400).json({ error: 'Merchant identifier or settlement account is required.' });
+  }
+
+  if (is_default) {
+    for (const gw of Object.values(store.paymentGateways)) {
+      gw.is_default = false;
+    }
+  }
+
+  store.paymentGateways[prov] = {
+    provider: prov,
+    enabled: Boolean(enabled),
+    configured: true,
+    is_default: Boolean(is_default || existing.is_default),
+    mode: mode === 'live' ? 'live' : 'sandbox',
+    public_config: nextPublic,
+    encrypted_secrets: nextEncrypted,
+    masked_secrets: nextMasked,
+    health_status: 'configured',
+    last_tested_at: existing.last_tested_at,
+    updated_at: new Date().toISOString(),
+  };
+
+  recordAudit(tenant?.name, user?.full_name, 'gateway.configured', prov, { mode: store.paymentGateways[prov].mode, enabled: Boolean(enabled) });
+  res.json({ gateways: sanitizeGateways(store), gateway: sanitizeGateways(store).find((g) => g.provider === prov) });
+});
+
+app.post('/api/v1/payments/gateways/:provider/test', async (req, res) => {
+  const { tenant, user, store } = activeCtx(req);
+  const prov = req.params.provider;
+  const gw = store.paymentGateways?.[prov];
+  if (!gw || !gw.configured) {
+    return res.status(400).json({ error: 'Configure and save this gateway before running verification.' });
+  }
+  try {
+    if (gw.encrypted_secrets?.secret_key) {
+      const plain = decryptSecret(gw.encrypted_secrets.secret_key);
+      if (!plain) throw new Error('Stored secret key could not be decrypted');
+      if (gw.mode === 'live' && prov === 'chapa') {
+        const probe = await fetch('https://api.chapa.co/v1/banks', {
+          headers: { Authorization: `Bearer ${plain}` },
+          signal: AbortSignal.timeout(4000),
+        }).catch(() => null);
+        if (probe && probe.status === 401) {
+          gw.health_status = 'error';
+          return res.status(400).json({ error: 'Live Chapa secret key was rejected (401 Unauthorized).' });
+        }
+      } else if (gw.mode === 'live' && prov === 'telebirr') {
+        const fabricAppId = gw.public_config?.fabric_app_id || gw.public_config?.merchant_id || '';
+        const tokenProbe = await applyTelebirrFabricToken({
+          fabricAppId,
+          appSecret: plain,
+        });
+        if (!tokenProbe.ok) {
+          gw.health_status = 'error';
+          return res.status(400).json({ error: tokenProbe.error || 'Telebirr Fabric token handshake failed.' });
+        }
+      } else if (gw.mode === 'live' && prov === 'mpesa') {
+        const consumerKey = gw.public_config?.public_key || '';
+        const oauthProbe = await getMpesaAccessToken({
+          consumerKey,
+          consumerSecret: plain,
+        });
+        if (!oauthProbe.ok) {
+          gw.health_status = 'error';
+          return res.status(400).json({ error: oauthProbe.error || 'M-Pesa Safaricom OAuth handshake failed.' });
+        }
+      }
+    }
+    gw.health_status = 'verified';
+    gw.last_tested_at = new Date().toISOString();
+    recordAudit(tenant?.name, user?.full_name, 'gateway.tested', prov, { mode: gw.mode });
+    res.json({ ok: true, status: 'verified', tested_at: gw.last_tested_at, gateways: sanitizeGateways(store) });
+  } catch (err) {
+    gw.health_status = 'error';
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Verification failed' });
+  }
+});
+
+app.get('/api/v1/payments/transactions', (req, res) => {
+  const { store } = activeCtx(req);
+  const intents = store.paymentIntents || [];
+  const settledInbound = intents.filter((i) => i.direction === 'receive' && i.status === 'settled').reduce((s, i) => s + Number(i.amount || 0), 0);
+  const settledOutbound = intents.filter((i) => i.direction === 'pay' && i.status === 'settled').reduce((s, i) => s + Number(i.amount || 0), 0);
+  const pendingCount = intents.filter((i) => i.status === 'pending').length;
+  const totalFees = intents.filter((i) => i.status === 'settled').reduce((s, i) => s + Number(i.fee_amount || 0), 0);
+  const activeGateways = Object.values(store.paymentGateways || {}).filter((g) => g.enabled && g.configured).length;
+  res.json({
+    intents,
+    summary: { settled_inbound: settledInbound, settled_outbound: settledOutbound, pending_count: pendingCount, total_fees: totalFees, active_gateways: activeGateways },
+    gateways: sanitizeGateways(store),
+  });
+});
+
+app.post('/api/v1/payments/links', async (req, res) => {
+  const { tenant, store } = activeCtx(req);
+  const {
+    provider,
+    party_id = null,
+    party_name = '',
+    amount = 0,
+    description = 'Invoice Payment',
+    reference_type = 'custom',
+    reference_id = null,
+    customer_phone = '',
+    customer_email = '',
+  } = req.body ?? {};
+  const amt = Number(amount || 0);
+  if (!Number.isFinite(amt) || amt <= 0) {
+    return res.status(400).json({ error: 'Payment amount must be greater than zero.' });
+  }
+  const gwMap = store.paymentGateways || {};
+  const chosenProvider = provider && gwMap[provider]?.enabled ? provider : Object.values(gwMap).find((g) => g.enabled && g.is_default)?.provider || Object.values(gwMap).find((g) => g.enabled)?.provider;
+  if (!chosenProvider) {
+    return res.status(400).json({ error: 'No payment gateway is enabled yet. Configure at least one gateway first.' });
+  }
+
+  let resolvedPartyName = String(party_name || '').trim();
+  if (!resolvedPartyName && party_id) {
+    const cust = store.customers.find((c) => c.id === party_id);
+    if (cust) resolvedPartyName = cust.name;
+  }
+
+  const feePct = PROVIDER_FEE_RATES[chosenProvider] ?? 0;
+  const fee = Math.round(amt * (feePct / 100) * 100) / 100;
+  const net = Math.round(Math.max(0, amt - fee) * 100) / 100;
+  const token = `pay-${crypto.randomUUID().slice(0, 10)}`;
+  const txRef = `AFRO-PAY-${1001 + (store.paymentIntents?.length || 0)}`;
+
+  let externalCheckoutUrl = null;
+  let checkoutRequestId = null;
+  const gw = gwMap[chosenProvider];
+  const origin = req.headers.origin || `http://${req.headers.host || 'localhost:3000'}`;
+  if (gw?.mode === 'live' && chosenProvider === 'chapa' && gw.encrypted_secrets?.secret_key) {
+    try {
+      const secretKey = decryptSecret(gw.encrypted_secrets.secret_key);
+      const chapaRes = await fetch('https://api.chapa.co/v1/transaction/initialize', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${secretKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: String(amt),
+          currency: store.settings?.currency || 'ETB',
+          tx_ref: txRef,
+          return_url: `${origin}/pay/${token}`,
+          first_name: resolvedPartyName || 'Customer',
+          ...(isValidEmail(customer_email) ? { email: String(customer_email).trim() } : {}),
+          customization: { title: store.settings?.business_name || 'AFRO Suite Payment', description: String(description).slice(0, 80) },
+        }),
+        signal: AbortSignal.timeout(4500),
+      }).catch(() => null);
+      if (chapaRes && chapaRes.ok) {
+        const json = await chapaRes.json().catch(() => null);
+        if (json?.data?.checkout_url) externalCheckoutUrl = json.data.checkout_url;
+      }
+    } catch {
+      // keep internal hosted checkout token if live upstream is unreachable
+    }
+  } else if (gw?.mode === 'live' && chosenProvider === 'telebirr' && gw.encrypted_secrets?.secret_key && gw.encrypted_secrets?.private_key) {
+    const tbRes = await initializeTelebirrOrder({
+      config: {
+        fabricAppId: gw.public_config?.fabric_app_id || gw.public_config?.merchant_id,
+        appSecret: decryptSecret(gw.encrypted_secrets.secret_key),
+        merchantAppId: gw.public_config?.merchant_app_id || gw.public_config?.merchant_id,
+        merchantCode: gw.public_config?.merchant_id,
+        privateKey: decryptSecret(gw.encrypted_secrets.private_key),
+      },
+      orderParams: {
+        merchOrderId: txRef,
+        title: String(description).slice(0, 64),
+        amount: amt,
+        notifyUrl: `${origin}/api/v1/webhooks/payments/${tenant?.id || 'tenant-demo-1'}`,
+        redirectUrl: `${origin}/pay/${token}`,
+      },
+    }).catch(() => null);
+    if (tbRes?.ok && tbRes.checkoutUrl) {
+      externalCheckoutUrl = tbRes.checkoutUrl;
+      checkoutRequestId = tbRes.prepayId || null;
+    }
+  } else if (gw?.mode === 'live' && chosenProvider === 'mpesa' && gw.encrypted_secrets?.secret_key && gw.encrypted_secrets?.passkey && customer_phone) {
+    const mpRes = await initiateMpesaStkPush({
+      config: {
+        consumerKey: gw.public_config?.public_key,
+        consumerSecret: decryptSecret(gw.encrypted_secrets.secret_key),
+        shortCode: gw.public_config?.merchant_id,
+        passkey: decryptSecret(gw.encrypted_secrets.passkey),
+      },
+      orderParams: {
+        amount: amt,
+        phoneNumber: customer_phone,
+        callbackUrl: `${origin}/api/mpesa/callback`,
+        accountReference: txRef.slice(0, 12),
+        transactionDesc: String(description).slice(0, 40),
+      },
+    }).catch(() => null);
+    if (mpRes?.ok) {
+      checkoutRequestId = mpRes.checkoutRequestId;
+    }
+  }
+
+  const intent = {
+    id: `pi-${crypto.randomUUID().slice(0, 8)}`,
+    tx_ref: txRef,
+    token,
+    direction: 'receive',
+    provider: chosenProvider,
+    party_id,
+    party_name: resolvedPartyName || 'Customer',
+    customer_email: isValidEmail(customer_email) ? String(customer_email).trim() : null,
+    customer_phone: String(customer_phone || '').trim() || null,
+    reference_type,
+    reference_id,
+    description: String(description || 'Invoice Payment').trim(),
+    amount: amt,
+    fee_amount: fee,
+    net_amount: net,
+    currency: store.settings?.currency || 'ETB',
+    status: 'pending',
+    payer_reference: null,
+    verified_signature: false,
+    gl_voucher_no: null,
+    external_checkout_url: externalCheckoutUrl,
+    checkout_request_id: checkoutRequestId,
+    invoice: null,
+    created_at: new Date().toISOString(),
+    settled_at: null,
+  };
+  store.paymentIntents.unshift(intent);
+  res.status(201).json({ intent, pay_path: `/pay/${token}` });
+});
+
+app.post('/api/v1/payments/payouts', (req, res) => {
+  const { tenant, user, store } = activeCtx(req);
+  const { provider = 'cbe_bank', party_id = null, party_name = '', destination_account = '', amount = 0, remarks = '' } = req.body ?? {};
+  const gw = store.paymentGateways?.[provider];
+  if (!gw || !gw.enabled || !gw.configured) {
+    return res.status(400).json({ error: 'Selected payment gateway is not enabled.' });
+  }
+  if (!OUTBOUND_CAPABLE.has(provider)) {
+    return res.status(400).json({ error: 'Selected gateway does not support outbound vendor payouts.' });
+  }
+  const amt = Number(amount || 0);
+  if (!Number.isFinite(amt) || amt <= 0) {
+    return res.status(400).json({ error: 'Payout amount must be greater than zero.' });
+  }
+  if (String(destination_account).trim().length < 4) {
+    return res.status(400).json({ error: 'Enter a valid destination bank account or mobile wallet.' });
+  }
+
+  let sup = null;
+  if (party_id) {
+    sup = store.suppliers.find((s) => s.id === party_id) || null;
+  }
+  const recipientName = sup?.name || String(party_name || '').trim() || 'Vendor / Supplier';
+  const txRef = `AFRO-OUT-${1001 + (store.paymentIntents?.length || 0)}`;
+  const voucherNo = `POUT-${1001 + store.glEntries.length}`;
+
+  if (sup) {
+    sup.balance = Math.max(0, Number(sup.balance || 0) - amt).toFixed(2);
+    store.supplierPayments.unshift({
+      id: `sp-${crypto.randomUUID().slice(0, 8)}`,
+      supplier_id: sup.id,
+      amount: amt.toFixed(2),
+      payment_method: provider,
+      notes: remarks || `Gateway payout (${txRef})`,
+      recorded_by: user.full_name,
+      created_at: new Date().toISOString(),
+    });
+  }
+
+  appendGlEntry(store, {
+    voucher_type: 'Gateway Payout',
+    voucher_no: voucherNo,
+    account_code: sup ? '2110' : '5200',
+    debit: amt,
+    credit: 0,
+    party: recipientName,
+    remarks: remarks || `Outbound payout to ${destination_account}`,
+  });
+  appendGlEntry(store, {
+    voucher_type: 'Gateway Payout',
+    voucher_no: voucherNo,
+    account_code: '1120',
+    debit: 0,
+    credit: amt,
+    party: recipientName,
+    remarks: `Paid via ${provider} (${txRef})`,
+  });
+
+  const payout = {
+    id: `pi-${crypto.randomUUID().slice(0, 8)}`,
+    tx_ref: txRef,
+    token: null,
+    direction: 'pay',
+    provider,
+    party_id: sup?.id || party_id,
+    party_name: recipientName,
+    destination_account: String(destination_account).trim(),
+    reference_type: sup ? 'supplier_payout' : 'expense_payout',
+    reference_id: sup?.id || null,
+    description: remarks?.trim() || `Secure payout to ${recipientName}`,
+    amount: amt,
+    fee_amount: 0,
+    net_amount: amt,
+    currency: store.settings?.currency || 'ETB',
+    status: 'settled',
+    payer_reference: `TRF-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+    verified_signature: true,
+    gl_voucher_no: voucherNo,
+    created_at: new Date().toISOString(),
+    settled_at: new Date().toISOString(),
+  };
+  store.paymentIntents.unshift(payout);
+  recordAudit(tenant?.name, user?.full_name, 'payment.payout_sent', txRef, { provider, recipient: recipientName, amount: amt });
+  res.status(201).json({ payout });
+});
+
+app.post('/api/v1/payments/intents/:id/settle', async (req, res) => {
+  const { tenant, user, store } = activeCtx(req);
+  const intent = (store.paymentIntents || []).find((i) => i.id === req.params.id);
+  if (!intent) return res.status(404).json({ error: 'Payment intent not found' });
+  if (intent.status === 'settled') {
+    if (!intent.invoice) {
+      await dispatchTransactionInvoice(intent, { merchant: buildTenantMerchantInfo(tenant, store) });
+    }
+    return res.json({ intent });
+  }
+  settleInboundIntent(store, intent, {
+    providerOverride: req.body?.provider,
+    payerReference: req.body?.payer_reference,
+    verifiedSig: true,
+  });
+  await dispatchTransactionInvoice(intent, { merchant: buildTenantMerchantInfo(tenant, store) });
+  recordAudit(tenant?.name, user?.full_name, 'payment.settled', intent.tx_ref, { amount: intent.amount, provider: intent.provider });
+  res.json({ intent });
+});
+
+app.post('/api/v1/payments/intents/:id/refund', (req, res) => {
+  const { tenant, user, store } = activeCtx(req);
+  const intent = (store.paymentIntents || []).find((i) => i.id === req.params.id);
+  if (!intent) return res.status(404).json({ error: 'Payment intent not found' });
+  if (intent.status !== 'settled' || intent.direction !== 'receive') {
+    return res.status(400).json({ error: 'Only settled inbound payments can be refunded.' });
+  }
+  const voucherNo = `REF-${1001 + store.glEntries.length}`;
+  appendGlEntry(store, {
+    voucher_type: 'Gateway Refund',
+    voucher_no: voucherNo,
+    account_code: intent.party_id ? '1210' : '4100',
+    debit: Number(intent.amount),
+    credit: 0,
+    party: intent.party_name,
+    remarks: `Refund ${intent.tx_ref}`,
+  });
+  appendGlEntry(store, {
+    voucher_type: 'Gateway Refund',
+    voucher_no: voucherNo,
+    account_code: '1120',
+    debit: 0,
+    credit: Number(intent.amount),
+    party: intent.party_name,
+    remarks: `Refund payout (${intent.provider})`,
+  });
+  intent.status = 'refunded';
+  intent.refunded_at = new Date().toISOString();
+  recordAudit(tenant?.name, user?.full_name, 'payment.refunded', intent.tx_ref, { amount: intent.amount });
+  res.json({ intent });
+});
+
+app.post('/api/v1/webhooks/payments/:tenantId', async (req, res) => {
+  const store = tenantData.get(req.params.tenantId);
+  if (!store) return res.status(404).json({ error: 'Tenant not found' });
+  const { tx_ref, provider = 'chapa', payer_reference } = req.body ?? {};
+  const sig = req.headers['x-afro-signature'] || req.headers['chapa-signature'] || req.headers['x-chapa-signature'] || '';
+  const gw = store.paymentGateways?.[provider];
+  if (gw?.encrypted_secrets?.webhook_secret) {
+    const whSecret = decryptSecret(gw.encrypted_secrets.webhook_secret);
+    if (!verifyWebhookSignature(req.body ?? {}, whSecret, String(sig))) {
+      return res.status(401).json({ error: 'Invalid webhook signature' });
+    }
+  }
+  const intent = (store.paymentIntents || []).find((i) => i.tx_ref === tx_ref);
+  if (!intent) return res.status(404).json({ error: 'Transaction reference not found' });
+  settleInboundIntent(store, intent, { providerOverride: provider, payerReference: payer_reference, verifiedSig: true });
+  await dispatchTransactionInvoice(intent, { merchant: buildTenantMerchantInfo(tenants.get(req.params.tenantId), store) });
+  res.json({ ok: true, status: intent.status, tx_ref: intent.tx_ref, invoice: intent.invoice || null });
+});
+
+function findPublicIntentByToken(token) {
+  for (const [tenantId, store] of tenantData.entries()) {
+    const intent = (store.paymentIntents || []).find((i) => i.token === token);
+    if (intent) {
+      const tenant = tenants.get(tenantId);
+      return { tenantId, tenant, store, intent };
+    }
+  }
+  return null;
+}
+
+function findPublicServiceOrderByToken(token) {
+  for (const order of serviceChapaOrders.values()) {
+    if (order.token === token) return order;
+  }
+  return null;
+}
+
+app.get('/api/v1/public/pay/:token', async (req, res) => {
+  const svcOrder = findPublicServiceOrderByToken(req.params.token);
+  if (svcOrder) {
+    if (svcOrder.status === 'settled' && !svcOrder.invoice) {
+      await dispatchTransactionInvoice(svcOrder, { merchant: DEFAULT_SERVICE_MERCHANT });
+    }
+    const prov = svcOrder.provider || 'chapa';
+    const walletLabel =
+      prov === 'telebirr'
+        ? 'AFRO-TECH Telebirr Merchant Checkout'
+        : prov === 'mpesa'
+          ? 'AFRO-TECH M-Pesa Safaricom Checkout'
+          : 'AFRO-TECH Chapa Merchant Checkout';
+    return res.json({
+      merchant: {
+        name: 'AFRO-TECH Digital Services',
+        tin_number: null,
+        phone: '+251 910 011 818',
+        address: 'Addis Ababa, Ethiopia',
+      },
+      intent: {
+        id: svcOrder.id,
+        tx_ref: svcOrder.tx_ref,
+        provider: prov,
+        party_name: svcOrder.customer_name,
+        customer_email: svcOrder.customer_email || null,
+        description: svcOrder.description,
+        amount: svcOrder.amount,
+        fee_amount: 0,
+        net_amount: svcOrder.amount,
+        currency: svcOrder.currency,
+        status: svcOrder.status,
+        payer_reference: svcOrder.payer_reference || svcOrder.chapa_reference,
+        gl_voucher_no: null,
+        return_url: svcOrder.return_url,
+        invoice: svcOrder.invoice || null,
+        created_at: svcOrder.created_at,
+        settled_at: svcOrder.settled_at,
+      },
+      enabled_gateways: [
+        {
+          provider: prov,
+          mode: svcOrder.mode,
+          is_default: true,
+          public_config: { settlement_account: walletLabel },
+        },
+      ],
+    });
+  }
+
+  const found = findPublicIntentByToken(req.params.token);
+  if (!found) return res.status(404).json({ error: 'Payment link not found or expired.' });
+  const { tenant, store, intent } = found;
+  if (intent.status === 'settled' && !intent.invoice) {
+    await dispatchTransactionInvoice(intent, { merchant: buildTenantMerchantInfo(tenant, store) });
+  }
+  const enabledGateways = sanitizeGateways(store)
+    .filter((g) => g.enabled && g.configured)
+    .map((g) => ({
+      provider: g.provider,
+      mode: g.mode,
+      is_default: g.is_default,
+      public_config: g.provider === 'cbe_bank' ? g.public_config : { settlement_account: g.public_config?.settlement_account || '' },
+    }));
+  res.json({
+    merchant: {
+      name: store.settings?.business_name || tenant?.name || 'AFRO Suite Merchant',
+      tin_number: store.settings?.tin_number || null,
+      phone: store.settings?.business_phone || null,
+      address: store.settings?.business_address || null,
+    },
+    intent: {
+      id: intent.id,
+      tx_ref: intent.tx_ref,
+      provider: intent.provider,
+      party_name: intent.party_name,
+      customer_email: intent.customer_email || null,
+      description: intent.description,
+      amount: intent.amount,
+      fee_amount: intent.fee_amount,
+      net_amount: intent.net_amount,
+      currency: intent.currency,
+      status: intent.status,
+      payer_reference: intent.payer_reference,
+      gl_voucher_no: intent.gl_voucher_no,
+      invoice: intent.invoice || null,
+      created_at: intent.created_at,
+      settled_at: intent.settled_at,
+    },
+    enabled_gateways: enabledGateways,
+  });
+});
+
+app.post('/api/v1/public/pay/:token/confirm', async (req, res) => {
+  const { provider, payer_name = '', payer_reference = '', payer_email = '' } = req.body ?? {};
+  const svcOrder = findPublicServiceOrderByToken(req.params.token);
+  if (svcOrder) {
+    const prov = svcOrder.provider || 'chapa';
+    if (!String(payer_name).trim()) {
+      return res.status(400).json({ error: 'Enter payer full name to authorize this payment.' });
+    }
+    if (!String(payer_reference).trim()) {
+      return res.status(400).json({ error: `Enter ${prov.toUpperCase()} wallet phone or transaction reference.` });
+    }
+    if (svcOrder.status !== 'settled') {
+      svcOrder.customer_name = String(payer_name).trim();
+      if (isValidEmail(payer_email)) {
+        svcOrder.customer_email = String(payer_email).trim();
+      }
+      svcOrder.payer_reference = String(payer_reference).trim();
+      svcOrder.status = 'settled';
+      svcOrder.settled_at = new Date().toISOString();
+      await dispatchTransactionInvoice(svcOrder, { merchant: DEFAULT_SERVICE_MERCHANT });
+      await sendContactTelegramNotification({
+        name: `${svcOrder.customer_name} (Service Payment)`,
+        email: svcOrder.customer_email,
+        phone: svcOrder.customer_phone || '',
+        message: `${prov.toUpperCase()} Checkout Confirmed: ${svcOrder.amount} ${svcOrder.currency} for ${svcOrder.description} (Ref: ${svcOrder.tx_ref})`,
+      }).catch(() => null);
+    } else if (!svcOrder.invoice) {
+      await dispatchTransactionInvoice(svcOrder, { merchant: DEFAULT_SERVICE_MERCHANT });
+    }
+    const receiptSignature = signWebhookPayload(
+      { tx_ref: svcOrder.tx_ref, amount: svcOrder.amount, settled_at: svcOrder.settled_at },
+      'afro-receipt-verify',
+    );
+    return res.json({
+      ok: true,
+      intent: {
+        id: svcOrder.id,
+        tx_ref: svcOrder.tx_ref,
+        provider: prov,
+        party_name: svcOrder.customer_name,
+        customer_email: svcOrder.customer_email || null,
+        description: svcOrder.description,
+        amount: svcOrder.amount,
+        fee_amount: 0,
+        net_amount: svcOrder.amount,
+        currency: svcOrder.currency,
+        status: svcOrder.status,
+        payer_reference: svcOrder.payer_reference,
+        gl_voucher_no: null,
+        return_url: svcOrder.return_url,
+        invoice: svcOrder.invoice || null,
+        created_at: svcOrder.created_at,
+        settled_at: svcOrder.settled_at,
+      },
+      invoice: svcOrder.invoice || null,
+      receipt_signature: receiptSignature,
+    });
+  }
+
+  const found = findPublicIntentByToken(req.params.token);
+  if (!found) return res.status(404).json({ error: 'Payment link not found or expired.' });
+  const { tenant, store, intent } = found;
+  const chosen = provider && store.paymentGateways?.[provider]?.enabled ? provider : intent.provider;
+  if (!String(payer_name).trim()) {
+    return res.status(400).json({ error: 'Enter payer full name to authorize this payment.' });
+  }
+  if (!String(payer_reference).trim()) {
+    return res.status(400).json({ error: 'Enter payment reference or wallet phone number.' });
+  }
+  if (intent.status === 'settled') {
+    if (!intent.invoice) {
+      await dispatchTransactionInvoice(intent, { merchant: buildTenantMerchantInfo(tenant, store) });
+    }
+    return res.json({
+      ok: true,
+      intent,
+      invoice: intent.invoice || null,
+      receipt_signature: signWebhookPayload({ tx_ref: intent.tx_ref, amount: intent.amount }, 'afro-receipt-verify'),
+    });
+  }
+  intent.party_name = String(payer_name).trim();
+  if (isValidEmail(payer_email)) {
+    intent.customer_email = String(payer_email).trim();
+  }
+  settleInboundIntent(store, intent, {
+    providerOverride: chosen,
+    payerReference: String(payer_reference).trim(),
+    verifiedSig: true,
+  });
+  await dispatchTransactionInvoice(intent, { merchant: buildTenantMerchantInfo(tenant, store) });
+  const receiptSignature = signWebhookPayload({ tx_ref: intent.tx_ref, amount: intent.amount, settled_at: intent.settled_at }, 'afro-receipt-verify');
+  res.json({ ok: true, intent, invoice: intent.invoice || null, receipt_signature: receiptSignature });
+});
+
 /* ── Bot Studio Endpoints ──────────────────────────────────── */
 app.get('/api/v1/telegram/config', (req, res) => {
   const { store } = activeCtx(req);
@@ -3221,6 +5345,100 @@ app.post('/api/v1/marketing/campaigns/:id/pause', (req, res) => {
   const c = store.marketingCampaigns.find((x) => x.id === req.params.id);
   if (c) c.status = 'paused';
   res.json({ ok: true, campaign: c });
+});
+
+/* ── Workspace Notifications Feed ──────────────────────────── */
+app.get('/api/v1/notifications/feed', (req, res) => {
+  const { tenant, store } = activeCtx(req);
+  const bType = tenant?.business_type || 'store';
+  const alerts = [];
+
+  if (bType === 'pharmacy' || bType === 'store') {
+    // Low stock alerts (retail / pharmacy)
+    const lowStock = (store.products || []).filter(
+      (p) => Number(p.stock) <= Number(p.low_stock_threshold ?? 10)
+    );
+    for (const p of lowStock.slice(0, 4)) {
+      alerts.push({
+        id: `low-stock-${p.id}`,
+        title: `Low stock: ${p.name}`,
+        detail: `${p.stock} left (reorder at ${p.low_stock_threshold ?? 10})`,
+        severity: Number(p.stock) === 0 ? 'bad' : 'warn',
+        route: '/app/products',
+        icon: 'fa-solid fa-boxes-stacked',
+      });
+    }
+
+    // Expiring batches
+    const expiring = (store.batches || [])
+      .map(enrichBatch)
+      .filter((b) => b.quantity > 0 && (b.expired || b.expiring_soon));
+    for (const b of expiring.slice(0, 3)) {
+      alerts.push({
+        id: `expiry-${b.id}`,
+        title: b.expired ? `Expired batch: ${b.product_name}` : `Expiring soon: ${b.product_name}`,
+        detail: `Batch ${b.batch_no} · Qty ${b.quantity} (${b.expiry_date})`,
+        severity: b.expired ? 'bad' : 'warn',
+        route: '/app/expiry',
+        icon: 'fa-solid fa-hourglass-half',
+      });
+    }
+
+    // Pending sales/purchase orders
+    const pendingOrders = (store.orders || []).filter((o) => o.status === 'draft' || o.status === 'pending');
+    if (pendingOrders.length > 0) {
+      alerts.push({
+        id: `orders-pending-${pendingOrders.length}`,
+        title: `${pendingOrders.length} open quote/order${pendingOrders.length > 1 ? 's' : ''}`,
+        detail: 'Ready for review or conversion to invoice',
+        severity: 'info',
+        route: '/app/orders',
+        icon: 'fa-solid fa-file-signature',
+      });
+    }
+  }
+
+  if (bType === 'hospital') {
+    const waitingAppts = (store.appointments || []).filter((a) => a.status === 'scheduled' || a.status === 'waiting');
+    if (waitingAppts.length > 0) {
+      alerts.push({
+        id: `appts-waiting-${waitingAppts.length}`,
+        title: `${waitingAppts.length} queued appointment${waitingAppts.length > 1 ? 's' : ''}`,
+        detail: 'Patients awaiting triage or consultation',
+        severity: 'info',
+        route: '/app/queue',
+        icon: 'fa-solid fa-calendar-check',
+      });
+    }
+  }
+
+  if (bType === 'school') {
+    const unpaidFees = (store.fees || []).filter((f) => f.status === 'unpaid' || f.status === 'partial');
+    if (unpaidFees.length > 0) {
+      alerts.push({
+        id: `fees-unpaid-${unpaidFees.length}`,
+        title: `${unpaidFees.length} pending student fee${unpaidFees.length > 1 ? 's' : ''}`,
+        detail: 'Follow up with guardian payment reminders',
+        severity: 'warn',
+        route: '/app/fees',
+        icon: 'fa-solid fa-money-bill-wave',
+      });
+    }
+  }
+
+  // Trial reminder
+  if (tenant?.status === 'trial' && typeof tenant.trial_days_left === 'number') {
+    alerts.push({
+      id: `trial-days-${tenant.trial_days_left}`,
+      title: `Trial active · ${tenant.trial_days_left} days left`,
+      detail: 'Manage your workspace subscription plan',
+      severity: tenant.trial_days_left <= 7 ? 'warn' : 'info',
+      route: '/app/subscription',
+      icon: 'fa-solid fa-receipt',
+    });
+  }
+
+  res.json({ alerts });
 });
 
 /* ── Admin ─────────────────────────────────────────────────── */

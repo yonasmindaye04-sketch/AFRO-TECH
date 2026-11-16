@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { api, fmtDateTime, fmtMoney } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, Card, DataTable, EmptyState, ErrorBox, Field, Modal, OkBox, PageHeader, Spinner, StatCard } from '../ui'
+import { computeSmartReorderQty } from '../utils/erpEngine'
 
 interface Warehouse {
   id: string
@@ -53,7 +54,11 @@ export default function Warehouses(): JSX.Element {
 
   const whQ = useApiData<{ warehouses: Warehouse[]; products: ProductRow[] }>('/erp/warehouses')
   const sleQ = useApiData<{ entries: StockLedgerEntry[] }>('/erp/stock-ledger')
+  const salesQ = useApiData<{ sales: Array<{ items?: Array<{ product_id: string; quantity: number }> }> }>('/retail/sales?limit=100')
   const suppliersQ = useApiData<{ suppliers: SupplierOpt[] }>('/retail/suppliers')
+
+  const [leadDays, setLeadDays] = useState('7')
+  const [safetyDays, setSafetyDays] = useState('3')
 
   const [openWh, setOpenWh] = useState(false)
   const [whForm, setWhForm] = useState({ name: '', code: '', location: '' })
@@ -62,18 +67,68 @@ export default function Warehouses(): JSX.Element {
   const [openTransfer, setOpenTransfer] = useState(false)
   const [trForm, setTrForm] = useState({ product_id: '', from_warehouse_id: '', to_warehouse_id: '', quantity: '1' })
 
-  const [poTarget, setPoTarget] = useState<ProductRow | null>(null)
+  const [poTarget, setPoTarget] = useState<(ProductRow & { suggestedQty?: number }) | null>(null)
   const [poForm, setPoForm] = useState({ supplier_id: '', quantity: '20', unit_cost: '0' })
 
-  const warehouses = whQ.data?.warehouses ?? []
-  const products = whQ.data?.products ?? []
+  const warehouses = useMemo(() => whQ.data?.warehouses ?? [], [whQ.data])
+  const products = useMemo(() => whQ.data?.products ?? [], [whQ.data])
   const entries = sleQ.data?.entries ?? []
-  const lowStockItems = products.filter((p) => Number(p.stock) <= Number(p.low_stock_threshold))
+
+  // Average daily sales over last 14 days (min floor from ledger activity)
+  const dailySalesMap = useMemo(() => {
+    const totals = new Map<string, number>()
+    for (const s of salesQ.data?.sales ?? []) {
+      for (const it of s.items ?? []) {
+        totals.set(it.product_id, (totals.get(it.product_id) ?? 0) + Number(it.quantity || 0))
+      }
+    }
+    return totals
+  }, [salesQ.data])
+
+  const smartRows = useMemo(() => {
+    const ld = Math.max(1, Number(leadDays) || 7)
+    const sd = Math.max(0, Number(safetyDays) || 3)
+    return products.map((p) => {
+      const unitsSold14d = dailySalesMap.get(p.id) ?? 0
+      const avgDailySales = Math.round((unitsSold14d / 14) * 100) / 100
+      const smart = computeSmartReorderQty({
+        stock: Number(p.stock),
+        threshold: Number(p.low_stock_threshold),
+        avgDailySales,
+        leadTimeDays: ld,
+        safetyDays: sd,
+      })
+      return { ...p, avgDailySales, ...smart }
+    })
+  }, [products, dailySalesMap, leadDays, safetyDays])
+
+  const lowStockItems = smartRows.filter((p) => p.needsReorder)
+  const driftCount = useMemo(() => {
+    if (!warehouses.length) return 0
+    return products.filter((p) => {
+      const whSum = warehouses.reduce((s, w) => s + Number(w.stock_map?.[p.id] ?? 0), 0)
+      return Math.abs(whSum - Number(p.stock || 0)) > 0.001
+    }).length
+  }, [products, warehouses])
   const totalUnits = warehouses.reduce((s, w) => s + Number(w.total_units || 0), 0)
 
   const reloadAll = (): void => {
     whQ.reload()
     sleQ.reload()
+  }
+
+  const syncBins = async (): Promise<void> => {
+    setBusy(true)
+    setErrMsg(null)
+    try {
+      const r = await api.post<{ reconciled_skus: number }>('/erp/warehouses/reconcile', {})
+      setNotice(`Synced warehouse bin allocations across ${r.reconciled_skus} SKU(s).`)
+      reloadAll()
+    } catch (err) {
+      setErrMsg(err instanceof Error ? err.message : 'Sync failed')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const createWarehouse = async (e: FormEvent): Promise<void> => {
@@ -115,8 +170,10 @@ export default function Warehouses(): JSX.Element {
     }
   }
 
-  const openQuickPo = (p: ProductRow): void => {
-    const suggested = Math.max(10, Number(p.low_stock_threshold) * 2 - Number(p.stock))
+  const openQuickPo = (p: ProductRow & { suggestedOrderQty?: number }): void => {
+    const suggested = p.suggestedOrderQty && p.suggestedOrderQty > 0
+      ? p.suggestedOrderQty
+      : Math.max(10, Number(p.low_stock_threshold) * 2 - Number(p.stock))
     setPoForm({
       supplier_id: suppliersQ.data?.suppliers?.[0]?.id || '',
       quantity: String(suggested),
@@ -177,8 +234,20 @@ export default function Warehouses(): JSX.Element {
         <StatCard icon="fa-solid fa-warehouse" label="Active Warehouses" value={warehouses.length} />
         <StatCard icon="fa-solid fa-cubes" label="Total Stocked Units" value={totalUnits} />
         <StatCard icon="fa-solid fa-book" label="Ledger Vouchers" value={entries.length} />
-        <StatCard icon="fa-solid fa-triangle-exclamation" label="Low-Stock Items" value={lowStockItems.length} tone={lowStockItems.length ? '#f59e0b' : undefined} />
+        <StatCard icon="fa-solid fa-triangle-exclamation" label="Smart Reorder Alerts" value={lowStockItems.length} tone={lowStockItems.length ? '#f59e0b' : undefined} />
       </div>
+
+      {driftCount > 0 && (
+        <div className="pl-warn-box" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+          <span>
+            <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" style={{ marginRight: 6 }} />
+            <strong>Ghost Inventory Warning:</strong> {driftCount} SKU(s) have warehouse bin totals different from catalog stock.
+          </span>
+          <button type="button" className="pl-btn pl-btn-primary pl-btn-sm" disabled={busy} onClick={syncBins}>
+            Sync Warehouse Bins
+          </button>
+        </div>
+      )}
 
       {notice && <OkBox message={notice} />}
       {errMsg && <ErrorBox message={errMsg} />}
@@ -285,32 +354,96 @@ export default function Warehouses(): JSX.Element {
       {tab === 'reorder' && (
         whQ.loading ? (
           <Spinner />
-        ) : !lowStockItems.length ? (
-          <EmptyState icon="fa-solid fa-circle-check" title="All items are above reorder levels" hint="Items falling at or below their low-stock threshold appear here for 1-click PO creation." />
         ) : (
-          <DataTable
-            rows={lowStockItems}
-            searchPlaceholder="Search low stock items…"
-            columns={[
-              { key: 'name', header: 'Item', render: (p) => <strong>{p.name}</strong> },
-              { key: 'category', header: 'Category', render: (p) => p.category },
-              { key: 'stock', header: 'Current Stock', render: (p) => <Badge tone={p.stock === 0 ? 'bad' : 'warn'}>{p.stock} {p.unit}</Badge> },
-              { key: 'low_stock_threshold', header: 'Reorder Level', render: (p) => `${p.low_stock_threshold} ${p.unit}` },
-              { key: 'cost_price', header: 'Unit Cost', render: (p) => `${fmtMoney(p.cost_price)} ETB` },
-              {
-                key: 'act',
-                header: '',
-                width: '140px',
-                render: (p) => (
-                  <div className="pl-row-actions">
-                    <button type="button" className="pl-btn pl-btn-primary pl-btn-sm" onClick={() => openQuickPo(p)}>
-                      Create PO
-                    </button>
-                  </div>
-                ),
-              },
-            ]}
-          />
+          <>
+            <Card>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
+                <div>
+                  <h2 style={{ marginBottom: 4 }}>Dynamic Lead-Time Replenishment</h2>
+                  <p style={{ color: 'var(--text-dim)', fontSize: '.85rem', margin: 0 }}>
+                    Replaces static thresholds by combining 14-day sales velocity with supplier lead time and safety buffer days.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.84rem' }}>
+                    <span>Lead time (days)</span>
+                    <input
+                      className="pl-input"
+                      type="number"
+                      min="1"
+                      max="90"
+                      style={{ width: 74 }}
+                      value={leadDays}
+                      onChange={(e) => setLeadDays(e.target.value)}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.84rem' }}>
+                    <span>Safety buffer (days)</span>
+                    <input
+                      className="pl-input"
+                      type="number"
+                      min="0"
+                      max="60"
+                      style={{ width: 74 }}
+                      value={safetyDays}
+                      onChange={(e) => setSafetyDays(e.target.value)}
+                    />
+                  </label>
+                </div>
+              </div>
+            </Card>
+            {!lowStockItems.length && (
+              <EmptyState icon="fa-solid fa-circle-check" title="All items are above dynamic reorder points" hint="Inspect live 14-day sales velocity and days-of-cover below, or adjust lead time / safety buffer days above." />
+            )}
+            <DataTable
+              rows={smartRows}
+              searchPlaceholder="Search reorder recommendations…"
+              columns={[
+                { key: 'name', header: 'Item', render: (p) => <strong>{p.name}</strong> },
+                {
+                  key: 'stock',
+                  header: 'On Hand',
+                  render: (p) => (
+                    <Badge tone={p.stock === 0 ? 'bad' : p.needsReorder ? 'warn' : 'good'}>
+                      {p.stock} {p.unit}
+                    </Badge>
+                  ),
+                },
+                {
+                  key: 'velocity',
+                  header: '14d Velocity',
+                  render: (p) => `${p.avgDailySales.toFixed(2)} / day`,
+                },
+                { key: 'dynamicReorderPoint', header: 'Dynamic Reorder Pt', render: (p) => `${p.dynamicReorderPoint} ${p.unit}` },
+                {
+                  key: 'daysOfCover',
+                  header: 'Days of Cover',
+                  render: (p) => (p.daysOfCover !== null ? `${p.daysOfCover}d` : 'Low velocity'),
+                },
+                {
+                  key: 'suggestedOrderQty',
+                  header: 'Recommended Order',
+                  render: (p) => (
+                    <strong style={{ color: p.needsReorder ? 'var(--accent)' : 'var(--text-dim)' }}>
+                      {p.needsReorder ? `${p.suggestedOrderQty} ${p.unit}` : 'Covered'}
+                    </strong>
+                  ),
+                },
+                {
+                  key: 'act',
+                  header: '',
+                  width: '130px',
+                  render: (p) => (
+                    <div className="pl-row-actions">
+                      <button type="button" className={`pl-btn ${p.needsReorder ? 'pl-btn-primary' : 'pl-btn-ghost'} pl-btn-sm`} onClick={() => openQuickPo(p)}>
+                        Create PO
+                      </button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          </>
         )
       )}
 

@@ -51,6 +51,7 @@ const EN_STRINGS = {
   'whatWeDo.2.title': 'Mobile & Full Platforms',
   'whatWeDo.2.desc': 'iOS & Android apps, custom dashboards, and end-to-end digital platforms.',
   'whatWeDo.ctaAll': 'View All Services & Pricing',
+  'whatWeDo.ctaPay': 'Pay for a Service',
 
   // Process
   'process.title': 'Our Process',
@@ -107,6 +108,8 @@ const EN_STRINGS = {
   'contact.readyToSend': 'Ready to send',
   'contact.looksGood': 'Looks good',
   'contact.validEmail': 'Valid email format',
+  'contact.tabInquiry': 'Send Inquiry',
+  'contact.tabPay': 'Pay for Service',
 
   // Footer
   'footer.copy': '© 2026 · Made in Addis Ababa',
@@ -151,6 +154,7 @@ const EN_STRINGS = {
   'servicesPage.readyTitle': 'Ready to start?',
   'servicesPage.readySub': "Tell us about your project and we'll send you a detailed proposal within 24 hours.",
   'servicesPage.whatsappUs': 'WhatsApp Us',
+  'servicesPage.payNow': 'Pay Now',
 } as const;
 
 export type TranslationKey = keyof typeof EN_STRINGS;
@@ -192,6 +196,7 @@ const AM_STRINGS: Record<TranslationKey, string> = {
   'whatWeDo.2.title': 'ሞባይል እና ሙሉ መድረኮች',
   'whatWeDo.2.desc': 'የ iOS እና Android አፖች፣ ብጁ ዳሽቦርዶች እና ሙሉ ዲጂታል ሲስተሞች።',
   'whatWeDo.ctaAll': 'ሁሉንም አገልግሎቶችና ዋጋ ይመልከቱ',
+  'whatWeDo.ctaPay': 'ለአገልግሎት ይክፈሉ',
 
   // Process
   'process.title': 'የአሰራር ሂደታችን',
@@ -248,6 +253,8 @@ const AM_STRINGS: Record<TranslationKey, string> = {
   'contact.readyToSend': 'ለመላክ ዝግጁ ነው',
   'contact.looksGood': 'ጥሩ ነው',
   'contact.validEmail': 'ትክክለኛ የኢሜይል ቅርጽ',
+  'contact.tabInquiry': 'መልእክት ላክ',
+  'contact.tabPay': 'ለአገልግሎት ክፈል',
 
   // Footer
   'footer.copy': '© 2026 · አዲስ አበባ የተሰራ',
@@ -292,6 +299,7 @@ const AM_STRINGS: Record<TranslationKey, string> = {
   'servicesPage.readyTitle': 'ለመጀመር ዝግጁ ነዎት?',
   'servicesPage.readySub': 'ስለ ፕሮጀክትዎ ይንገሩን እና በ24 ሰዓታት ውስጥ ዝርዝር ፕሮፖዛል እንልክልዎታለን።',
   'servicesPage.whatsappUs': 'በዋትስአፕ ያግኙን',
+  'servicesPage.payNow': 'አሁን ይክፈሉ',
 };
 
 const OM_STRINGS: Record<TranslationKey, string> = {
@@ -331,6 +339,7 @@ const OM_STRINGS: Record<TranslationKey, string> = {
   'whatWeDo.2.title': 'Mobaayilii fi Sirna Guutuu',
   'whatWeDo.2.desc': 'Appii iOS fi Android, daashboordii addaa fi sirnoota dijitaalaa guutuu.',
   'whatWeDo.ctaAll': 'Tajaajila & Gatii Hunda Ilaalaa',
+  'whatWeDo.ctaPay': 'Tajaajilaaf Kaffalaa',
 
   // Process
   'process.title': 'Adeemsa Hojii Keenya',
@@ -387,6 +396,8 @@ const OM_STRINGS: Record<TranslationKey, string> = {
   'contact.readyToSend': 'Erguuf qophii dha',
   'contact.looksGood': 'Gaarii dha',
   'contact.validEmail': 'Bifti imeelii sirrii dha',
+  'contact.tabInquiry': 'Gaaffii Ergaa',
+  'contact.tabPay': 'Tajaajila Kaffalaa',
 
   // Footer
   'footer.copy': '© 2026 · Finfinneetti hojjetame',
@@ -431,6 +442,7 @@ const OM_STRINGS: Record<TranslationKey, string> = {
   'servicesPage.readyTitle': 'Jalqabuuf qophii dhaa?',
   'servicesPage.readySub': 'Waa’ee pirojektii keessanii nuuf himaa, sa’aatii 24 keessatti yaada bal’aa isiniif ergina.',
   'servicesPage.whatsappUs': 'WhatsApp Nuuf Ergaa',
+  'servicesPage.payNow': 'Amma Kaffalaa',
 };
 
 const TI_STRINGS: Record<TranslationKey, string> = {
@@ -470,6 +482,7 @@ const TI_STRINGS: Record<TranslationKey, string> = {
   'whatWeDo.2.title': 'ሞባይልን ምሉእ መድረኻትን',
   'whatWeDo.2.desc': 'ናይ iOS ከምኡውን Android ኣፓት፣ ብጁ ዳሽቦርዳትን ምሉእ ዲጂታል ሲስተማትን።',
   'whatWeDo.ctaAll': 'ኩሎም ኣገልግሎታትን ዋጋን ርኣዩ',
+  'whatWeDo.ctaPay': 'ንኣገልግሎት ክፈሉ',
 
   // Process
   'process.title': 'ኣሰራርሓና',
@@ -526,6 +539,8 @@ const TI_STRINGS: Record<TranslationKey, string> = {
   'contact.readyToSend': 'ንምስዳድ ድሉው እዩ',
   'contact.looksGood': 'ጽቡቕ ኣሎ',
   'contact.validEmail': 'ቅኑዕ ቅርጺ ኢሜይል',
+  'contact.tabInquiry': 'መልእኽቲ ስደዱ',
+  'contact.tabPay': 'ንኣገልግሎት ክፈሉ',
 
   // Footer
   'footer.copy': '© 2026 · ኣብ ኣዲስ ኣበባ ዝተሰርሐ',
@@ -570,6 +585,7 @@ const TI_STRINGS: Record<TranslationKey, string> = {
   'servicesPage.readyTitle': 'ንምጅማር ድሉዋት ዲኹም?',
   'servicesPage.readySub': 'ብዛዕባ ፕሮጀክትኹም ንገሩና፣ ኣብ ውሽጢ 24 ሰዓታት ዝርዝር እማመ ክንልእከልኩም ኢና።',
   'servicesPage.whatsappUs': 'ብዋትስኣፕ ርኸቡና',
+  'servicesPage.payNow': 'ሕጂ ክፈሉ',
 };
 
 const DICTIONARY: Record<LanguageCode, Record<TranslationKey, string>> = {

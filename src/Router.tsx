@@ -10,6 +10,7 @@ const App = lazy(() => import('./app.tsx'))
 const ServicesPage = lazy(() => import('./pages/ServicesPage.tsx'))
 const ProductsPage = lazy(() => import('./pages/ProductsPage.tsx'))
 const PlatformRoot = lazy(() => import('./platform/index.tsx'))
+const PublicCheckout = lazy(() => import('./platform/pages/PublicCheckout.tsx'))
 
 function Fallback(): JSX.Element {
   return (
@@ -27,6 +28,7 @@ export default function Router(): JSX.Element {
               <Route path="/" element={<App />} />
               <Route path="/services" element={<ServicesPage />} />
               <Route path="/products" element={<ProductsPage />} />
+              <Route path="/pay/:token" element={<PublicCheckout />} />
               <Route path="/app/*" element={<PlatformRoot />} />
             </Routes>
           </Suspense>

@@ -1,8 +1,14 @@
-import { useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { api, fmtDate, fmtMoney } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, Card, DataTable, EmptyState, ErrorBox, Field, Modal, OkBox, PageHeader, Spinner, StatCard } from '../ui'
-import { computeFinancialStatements, validateJournalEntry, type CoaAccount } from '../utils/erpEngine'
+import {
+  computeFinancialStatements,
+  detectAccountingExceptions,
+  validateJournalEntry,
+  type AccountingExceptionItem,
+  type CoaAccount,
+} from '../utils/erpEngine'
 
 interface GlEntry {
   id: string
@@ -32,6 +38,8 @@ interface JournalEntry {
   total_debit: string
   total_credit: string
   status: string
+  reversed_by?: string | null
+  reversal_of?: string | null
   created_by: string
   lines: Array<{ account_code: string; debit: number; credit: number }>
 }
@@ -42,7 +50,16 @@ interface PartnerOpt {
   balance: string
 }
 
-type Tab = 'coa' | 'statements' | 'gl' | 'je'
+interface ReconciliationSnapshot {
+  accounts: CoaAccount[]
+  gl_entries: GlEntry[]
+  products: Array<{ id: string; name: string; stock: number; cost_price: number | string }>
+  warehouses: Array<{ id: string; name: string; stock_map?: Record<string, number> }>
+  customers: PartnerOpt[]
+  suppliers: PartnerOpt[]
+}
+
+type Tab = 'coa' | 'statements' | 'gl' | 'je' | 'reconcile'
 
 const ROOT_TONE: Record<string, 'good' | 'warn' | 'info' | 'bad' | 'neutral'> = {
   Asset: 'info',
@@ -63,6 +80,8 @@ export default function Accounting(): JSX.Element {
   const jeQ = useApiData<{ journal_entries: JournalEntry[] }>('/erp/journal-entries')
   const customersQ = useApiData<{ customers: PartnerOpt[] }>('/retail/customers')
   const suppliersQ = useApiData<{ suppliers: PartnerOpt[] }>('/retail/suppliers')
+  const snapQ = useApiData<ReconciliationSnapshot>('/erp/reconciliation-snapshot')
+  const [revBusyId, setRevBusyId] = useState<string | null>(null)
 
   const [openJe, setOpenJe] = useState(false)
   const [postingDate, setPostingDate] = useState(() => new Date().toISOString().slice(0, 10))
@@ -99,12 +118,68 @@ export default function Accounting(): JSX.Element {
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
   }
 
+  const exceptions = useMemo(() => {
+    if (!snapQ.data) return []
+    return detectAccountingExceptions({
+      accounts: snapQ.data.accounts,
+      glEntries: snapQ.data.gl_entries,
+      products: snapQ.data.products,
+      warehouses: snapQ.data.warehouses,
+      customers: snapQ.data.customers,
+      suppliers: snapQ.data.suppliers,
+    })
+  }, [snapQ.data])
+
+  const openIssuesCount = exceptions.filter((e) => e.severity !== 'ok').length
+
   const reloadAll = (): void => {
     coaQ.reload()
     glQ.reload()
     jeQ.reload()
     customersQ.reload()
     suppliersQ.reload()
+    snapQ.reload()
+  }
+
+  const reverseJournalEntry = async (je: JournalEntry): Promise<void> => {
+    setRevBusyId(je.id)
+    setErrMsg(null)
+    setNotice(null)
+    try {
+      const res = await api.post<{ reversal: { number: string } }>(`/erp/journal-entries/${je.id}/reverse`, {})
+      setNotice(`Reversed ${je.number} via contra Journal Entry ${res.reversal.number}. Ledger & Trial Balance updated.`)
+      reloadAll()
+    } catch (err) {
+      setErrMsg(err instanceof Error ? err.message : 'Failed to reverse journal entry')
+    } finally {
+      setRevBusyId(null)
+    }
+  }
+
+  const syncWarehouseBins = async (): Promise<void> => {
+    setBusy(true)
+    setErrMsg(null)
+    try {
+      const res = await api.post<{ reconciled_skus: number }>('/erp/warehouses/reconcile', {})
+      setNotice(`Warehouse bins synchronized across ${res.reconciled_skus} SKU(s).`)
+      reloadAll()
+    } catch (err) {
+      setErrMsg(err instanceof Error ? err.message : 'Could not synchronize warehouses')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const openAdjustingJe = (ex: AccountingExceptionItem): void => {
+    const absVar = Math.abs(Number(ex.variance || 0)).toFixed(2)
+    const acct = ex.suggestedAccountCode || '1410'
+    setRemarks(`Month-end reconciliation adjustment: ${ex.area}`)
+    setLines([
+      { account_code: ex.variance >= 0 ? acct : '5200', debit: absVar, credit: '0' },
+      { account_code: ex.variance >= 0 ? '3100' : acct, debit: '0', credit: absVar },
+    ])
+    setFormErr(null)
+    setOpenJe(true)
   }
 
   const submitJe = async (e: FormEvent): Promise<void> => {
@@ -183,6 +258,9 @@ export default function Accounting(): JSX.Element {
               </button>
               <button type="button" className={`sub-tab ${tab === 'je' ? 'sub-tab-active' : ''}`} onClick={() => setTab('je')}>
                 Journal Entries ({journalEntries.length})
+              </button>
+              <button type="button" className={`sub-tab ${tab === 'reconcile' ? 'sub-tab-active' : ''}`} onClick={() => setTab('reconcile')}>
+                Reconcile &amp; Checks{openIssuesCount > 0 ? ` (${openIssuesCount})` : ''}
               </button>
             </div>
             <button
@@ -419,9 +497,92 @@ export default function Accounting(): JSX.Element {
               { key: 'total_debit', header: 'Debit', render: (j) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(j.total_debit)} ETB</span> },
               { key: 'total_credit', header: 'Credit', render: (j) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(j.total_credit)} ETB</span> },
               { key: 'created_by', header: 'Posted By', render: (j) => j.created_by },
-              { key: 'status', header: 'Status', render: (j) => <Badge tone="good">{j.status.toUpperCase()}</Badge>, width: '100px' },
+              {
+                key: 'status',
+                header: 'Status',
+                render: (j) => (
+                  <Badge tone={j.status === 'reversed' ? 'warn' : 'good'}>
+                    {j.status === 'reversed' && j.reversed_by ? `REVERSED (${j.reversed_by})` : j.status.toUpperCase()}
+                  </Badge>
+                ),
+                width: '150px',
+              },
+              {
+                key: 'act',
+                header: '',
+                width: '120px',
+                render: (j) => (
+                  <div className="pl-row-actions">
+                    {j.status === 'submitted' && !j.reversal_of && (
+                      <button
+                        type="button"
+                        className="pl-btn pl-btn-ghost pl-btn-sm"
+                        disabled={revBusyId === j.id}
+                        aria-label={`Reverse journal entry ${j.number}`}
+                        onClick={() => reverseJournalEntry(j)}
+                      >
+                        <i className="fa-solid fa-rotate-left" aria-hidden="true" />{' '}
+                        {revBusyId === j.id ? 'Reversing…' : 'Reverse'}
+                      </button>
+                    )}
+                  </div>
+                ),
+              },
             ]}
           />
+        )
+      )}
+
+      {tab === 'reconcile' && (
+        snapQ.loading ? (
+          <Spinner label="Scanning ledgers and stock subledgers…" />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <Card>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                <div>
+                  <h2 style={{ marginBottom: 4 }}>Month-End Reconciliation &amp; Exception Scanner</h2>
+                  <p style={{ color: 'var(--text-dim)', fontSize: '.86rem', margin: 0 }}>
+                    Continuously cross-checks Trial Balance, Voucher parity, Inventory GL (1410), Warehouse Bins, AR (1210), and AP (2110).
+                  </p>
+                </div>
+                <Badge tone={openIssuesCount === 0 ? 'good' : 'warn'}>
+                  {openIssuesCount === 0 ? 'ALL BOOKS RECONCILED' : `${openIssuesCount} EXCEPTION(S) TO REVIEW`}
+                </Badge>
+              </div>
+            </Card>
+
+            {exceptions.map((ex) => (
+              <Card key={ex.id}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                      <Badge tone={ex.severity === 'ok' ? 'good' : ex.severity === 'warn' ? 'warn' : 'bad'}>
+                        {ex.severity === 'ok' ? 'RECONCILED' : ex.severity === 'warn' ? 'VARIANCE' : 'CRITICAL'}
+                      </Badge>
+                      <span style={{ fontSize: '.78rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                        {ex.area}
+                      </span>
+                    </div>
+                    <strong style={{ fontSize: '.98rem', display: 'block' }}>{ex.title}</strong>
+                    <span style={{ color: 'var(--text-dim)', fontSize: '.86rem' }}>{ex.detail}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {ex.id === 'exc-warehouse-sync' && ex.severity !== 'ok' && (
+                      <button type="button" className="pl-btn pl-btn-primary pl-btn-sm" disabled={busy} onClick={syncWarehouseBins}>
+                        Sync Warehouse Bins
+                      </button>
+                    )}
+                    {ex.severity !== 'ok' && ex.suggestedAccountCode && Math.abs(ex.variance) >= 1 && (
+                      <button type="button" className="pl-btn pl-btn-ghost pl-btn-sm" onClick={() => openAdjustingJe(ex)}>
+                        Pre-fill Adjusting JE
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
         )
       )}
 

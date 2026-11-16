@@ -1,7 +1,14 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useTheme } from '../context/useTheme'
+import { api } from './api'
+import {
+  countUnreadAlerts,
+  filterQuickSearchItems,
+  resolvePageTitle,
+  type WorkspaceAlert,
+} from './utils/topbarHelpers'
 
 interface NavItem {
   to: string
@@ -36,6 +43,7 @@ const RETAIL_NAV: NavItem[] = [
   { to: '/app/expenses', icon: 'fa-solid fa-file-invoice-dollar', label: 'Expenses' },
   { to: '/app/payroll', icon: 'fa-solid fa-money-check-dollar', label: 'Payroll' },
   { to: '/app/accounting', icon: 'fa-solid fa-scale-balanced', label: 'Accounting & GL' },
+  { to: '/app/payments', icon: 'fa-solid fa-credit-card', label: 'Payments & Gateways' },
   { to: '/app/reports', icon: 'fa-solid fa-chart-line', label: 'Reports' },
 ]
 
@@ -54,6 +62,7 @@ const HOSPITAL_NAV: NavItem[] = [
   { to: '/app/expenses', icon: 'fa-solid fa-coins', label: 'Expenses' },
   { to: '/app/payroll', icon: 'fa-solid fa-money-check-dollar', label: 'Payroll' },
   { to: '/app/accounting', icon: 'fa-solid fa-scale-balanced', label: 'Accounting & GL' },
+  { to: '/app/payments', icon: 'fa-solid fa-credit-card', label: 'Payments & Gateways' },
   { to: '/app/manufacturing', icon: 'fa-solid fa-building-columns', label: 'Fixed Assets' },
   { to: '/app/hospital-reports', icon: 'fa-solid fa-chart-line', label: 'Reports' },
 ]
@@ -74,6 +83,7 @@ const SCHOOL_NAV: NavItem[] = [
   { to: '/app/expenses', icon: 'fa-solid fa-coins', label: 'Expenses' },
   { to: '/app/payroll', icon: 'fa-solid fa-money-check-dollar', label: 'Payroll' },
   { to: '/app/accounting', icon: 'fa-solid fa-scale-balanced', label: 'Accounting & GL' },
+  { to: '/app/payments', icon: 'fa-solid fa-credit-card', label: 'Payments & Gateways' },
   { to: '/app/manufacturing', icon: 'fa-solid fa-building-columns', label: 'Fixed Assets' },
   { to: '/app/school-reports', icon: 'fa-solid fa-chart-line', label: 'Reports' },
 ]
@@ -87,6 +97,7 @@ function navFor(type: string): NavItem[] {
 export default function Shell({ children }: { children: ReactNode }): JSX.Element {
   const { me, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [open, setOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
@@ -95,6 +106,14 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
       return false
     }
   })
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [alerts, setAlerts] = useState<WorkspaceAlert[]>([])
+  const [readIds, setReadIds] = useState<string[]>([])
+  const topbarActionsRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
   const tenant = me?.tenant
   const firmType = tenant?.business_type || 'store'
   const baseItems = tenant ? navFor(tenant.business_type) : []
@@ -125,6 +144,50 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
       document.documentElement.removeAttribute('data-firm')
     }
   }, [firmType])
+
+  useEffect(() => {
+    if (!me) return
+    let cancelled = false
+    api
+      .get<{ alerts: WorkspaceAlert[] }>('/notifications/feed')
+      .then((res) => {
+        if (!cancelled) setAlerts(Array.isArray(res.alerts) ? res.alerts : [])
+      })
+      .catch(() => {
+        if (!cancelled) setAlerts([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [me, location.pathname])
+
+  useEffect(() => {
+    if (!notifOpen && !searchOpen) return
+    const onMouseDown = (e: MouseEvent) => {
+      if (topbarActionsRef.current && !topbarActionsRef.current.contains(e.target as Node)) {
+        setNotifOpen(false)
+        setSearchOpen(false)
+      }
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setNotifOpen(false)
+        setSearchOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [notifOpen, searchOpen])
+
+  useEffect(() => {
+    if (searchOpen) {
+      requestAnimationFrame(() => searchInputRef.current?.focus())
+    }
+  }, [searchOpen])
 
   // Function to determine if a nav item should be shown based on user permissions and role
   const shouldShowNavItem = (item: NavItem): boolean => {
@@ -211,6 +274,8 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
         return permissions.includes('payments.view') || permissions.includes('payments.create')
       case '/app/accounting':
         return permissions.includes('payments.view') || permissions.includes('billing.view') || permissions.includes('reports.view')
+      case '/app/payments':
+        return permissions.includes('payments.view') || permissions.includes('billing.view') || permissions.includes('fees.view')
       case '/app/reports':
         // Reports: reports.view
         return permissions.includes('reports.view')
@@ -264,12 +329,27 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
 
   // Filter the base items based on permissions
   const items = baseItems.filter(shouldShowNavItem)
+  const ownerMenuItems: NavItem[] =
+    me?.role === 'owner' && tenant
+      ? [
+          { to: '/app/users', icon: 'fa-solid fa-users-gear', label: 'Team' },
+          { to: '/app/settings', icon: 'fa-solid fa-gear', label: 'Settings' },
+          { to: '/app/bot-studio', icon: 'fa-solid fa-robot', label: 'My Telegram Bot' },
+          { to: '/app/marketing', icon: 'fa-solid fa-bullhorn', label: 'Marketing' },
+          { to: '/app/subscription', icon: 'fa-solid fa-receipt', label: 'Subscription' },
+        ]
+      : []
+  const searchableItems = [...items, ...ownerMenuItems]
+  const filteredSearchItems = filterQuickSearchItems(searchableItems, searchQuery)
+  const currentPageTitle = resolvePageTitle(location.pathname, searchableItems)
+  const unreadCount = countUnreadAlerts(alerts, readIds)
+  const canOpenSettings =
+    me?.role === 'owner' || me?.role === 'afrotech_admin' || (me?.permissions ?? []).includes('settings.manage')
+  const canOpenBotStudio =
+    me?.role === 'owner' || me?.role === 'afrotech_admin' || (me?.permissions ?? []).includes('telegram.manage')
 
   return (
     <div className={`pl-root pl-firm-${firmType}`} data-firm={firmType}>
-      <button type="button" className="pl-menu-toggle" onClick={() => setOpen(true)} aria-label="Open menu">
-        <i className="fa-solid fa-bars" aria-hidden="true" />
-      </button>
       {open && <div className="pl-scrim" onClick={() => setOpen(false)} />}
       <div className={`pl-shell ${open ? 'sidebar-open' : ''} ${collapsed ? 'sidebar-collapsed' : ''}`}>
         <aside className={`pl-sidebar ${open ? 'open' : ''} ${collapsed ? 'collapsed' : ''}`}>
@@ -282,15 +362,6 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
                   {firmType}
                 </span>
               )}
-              <button
-                type="button"
-                className="pl-theme-toggle"
-                onClick={toggleTheme}
-                title={dark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-                aria-label={dark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-              >
-                <i className={dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon'} aria-hidden="true" />
-              </button>
               <button
                 type="button"
                 className="pl-theme-toggle pl-collapse-btn"
@@ -324,30 +395,18 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
                 <span className="pl-nav-label">Admin Panel</span>
               </NavLink>
             )}
-            {me?.role === 'owner' && tenant && (
-              <>
-                <NavLink to="/app/users" onClick={() => setOpen(false)} title="Team" aria-label="Team">
-                  <i className="fa-solid fa-users-gear" aria-hidden="true" />
-                  <span className="pl-nav-label">Team</span>
-                </NavLink>
-                <NavLink to="/app/settings" onClick={() => setOpen(false)} title="Settings" aria-label="Settings">
-                  <i className="fa-solid fa-gear" aria-hidden="true" />
-                  <span className="pl-nav-label">Settings</span>
-                </NavLink>
-                <NavLink to="/app/bot-studio" onClick={() => setOpen(false)} title="My Telegram Bot" aria-label="My Telegram Bot">
-                  <i className="fa-solid fa-robot" aria-hidden="true" />
-                  <span className="pl-nav-label">My Telegram Bot</span>
-                </NavLink>
-                <NavLink to="/app/marketing" onClick={() => setOpen(false)} title="Marketing" aria-label="Marketing">
-                  <i className="fa-solid fa-bullhorn" aria-hidden="true" />
-                  <span className="pl-nav-label">Marketing</span>
-                </NavLink>
-                <NavLink to="/app/subscription" onClick={() => setOpen(false)} title="Subscription" aria-label="Subscription">
-                  <i className="fa-solid fa-receipt" aria-hidden="true" />
-                  <span className="pl-nav-label">Subscription</span>
-                </NavLink>
-              </>
-            )}
+            {ownerMenuItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={() => setOpen(false)}
+                title={item.label}
+                aria-label={item.label}
+              >
+                <i className={item.icon} aria-hidden="true" />
+                <span className="pl-nav-label">{item.label}</span>
+              </NavLink>
+            ))}
           </nav>
           <div className="pl-side-foot">
             <div className="pl-user-chip" title={me?.full_name || 'User'}>
@@ -375,9 +434,188 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
           </div>
         </aside>
 
-        <main className="pl-main" id="main-content">
-          {children}
-        </main>
+        <div className="pl-content-col">
+          <header className="pl-topbar" role="banner">
+            <div className="pl-topbar-left">
+              <button
+                type="button"
+                className="pl-menu-toggle"
+                onClick={() => setOpen(true)}
+                aria-label="Open menu"
+              >
+                <i className="fa-solid fa-bars" aria-hidden="true" />
+              </button>
+              <div className="pl-topbar-title-wrap">
+                <span className="pl-topbar-title">{currentPageTitle}</span>
+                {tenant && <span className="pl-topbar-tenant">{tenant.name}</span>}
+              </div>
+            </div>
+
+            <div className="pl-topbar-actions" ref={topbarActionsRef}>
+              <div className="pl-topbar-item">
+                <button
+                  type="button"
+                  className="pl-topbar-icon-btn"
+                  onClick={() => {
+                    setSearchOpen((o) => !o)
+                    setNotifOpen(false)
+                  }}
+                  title="Quick search"
+                  aria-label="Quick search"
+                  aria-expanded={searchOpen}
+                  data-testid="topbar-search-btn"
+                >
+                  <i className="fa-solid fa-magnifying-glass" aria-hidden="true" />
+                </button>
+
+                {searchOpen && (
+                  <div className="pl-top-popover pl-search-popover" role="dialog" aria-label="Quick navigation">
+                    <div className="pl-popover-head">
+                      <span>Quick Jump</span>
+                    </div>
+                    <input
+                      ref={searchInputRef}
+                      type="search"
+                      className="pl-input pl-popover-search"
+                      placeholder="Jump to module..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      aria-label="Search modules"
+                    />
+                    <div className="pl-popover-list">
+                      {filteredSearchItems.length === 0 ? (
+                        <div className="pl-popover-empty">No matching module</div>
+                      ) : (
+                        filteredSearchItems.slice(0, 8).map((item) => (
+                          <button
+                            key={item.to}
+                            type="button"
+                            className="pl-popover-row"
+                            onClick={() => {
+                              navigate(item.to)
+                              setSearchOpen(false)
+                              setSearchQuery('')
+                            }}
+                          >
+                            <i className={item.icon} aria-hidden="true" />
+                            <span>{item.label}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="pl-topbar-item">
+                <button
+                  type="button"
+                  className="pl-topbar-icon-btn"
+                  onClick={() => {
+                    setNotifOpen((o) => !o)
+                    setSearchOpen(false)
+                  }}
+                  title="Notifications"
+                  aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
+                  aria-expanded={notifOpen}
+                  data-testid="topbar-notifications-btn"
+                >
+                  <i className="fa-solid fa-bell" aria-hidden="true" />
+                  {unreadCount > 0 && (
+                    <span className="pl-bell-badge" aria-hidden="true">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {notifOpen && (
+                  <div className="pl-top-popover pl-notif-popover" role="dialog" aria-label="Workspace notifications">
+                    <div className="pl-popover-head">
+                      <span>Notifications</span>
+                      {alerts.length > 0 && unreadCount > 0 && (
+                        <button
+                          type="button"
+                          className="pl-popover-action"
+                          onClick={() => setReadIds(alerts.map((a) => a.id))}
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+                    <div className="pl-popover-list">
+                      {alerts.length === 0 ? (
+                        <div className="pl-popover-empty">All caught up — no active alerts</div>
+                      ) : (
+                        alerts.map((alert) => {
+                          const isRead = readIds.includes(alert.id)
+                          return (
+                            <button
+                              key={alert.id}
+                              type="button"
+                              className={`pl-notif-row ${isRead ? 'read' : 'unread'}`}
+                              onClick={() => {
+                                setReadIds((prev) => (prev.includes(alert.id) ? prev : [...prev, alert.id]))
+                                setNotifOpen(false)
+                                navigate(alert.route)
+                              }}
+                            >
+                              <i className={`${alert.icon} severity-${alert.severity}`} aria-hidden="true" />
+                              <div className="pl-notif-text">
+                                <strong>{alert.title}</strong>
+                                <small>{alert.detail}</small>
+                              </div>
+                            </button>
+                          )
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {canOpenBotStudio && (
+                <button
+                  type="button"
+                  className="pl-topbar-icon-btn"
+                  onClick={() => navigate('/app/bot-studio')}
+                  title="Telegram Bot Studio"
+                  aria-label="Telegram Bot Studio"
+                  data-testid="topbar-bot-btn"
+                >
+                  <i className="fa-solid fa-robot" aria-hidden="true" />
+                </button>
+              )}
+
+              {canOpenSettings && (
+                <button
+                  type="button"
+                  className="pl-topbar-icon-btn"
+                  onClick={() => navigate('/app/settings')}
+                  title="Workspace Settings"
+                  aria-label="Workspace Settings"
+                  data-testid="topbar-settings-btn"
+                >
+                  <i className="fa-solid fa-gear" aria-hidden="true" />
+                </button>
+              )}
+
+              <button
+                type="button"
+                className="pl-theme-toggle pl-topbar-icon-btn"
+                onClick={toggleTheme}
+                title={dark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                aria-label={dark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                data-testid="topbar-theme-toggle"
+              >
+                <i className={dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon'} aria-hidden="true" />
+              </button>
+            </div>
+          </header>
+
+          <main className="pl-main" id="main-content">
+            {children}
+          </main>
+        </div>
       </div>
     </div>
   )

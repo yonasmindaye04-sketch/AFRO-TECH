@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { api, fmtDate, fmtMoney } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { exportCsv } from '../utils/csv'
-import { DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
+import { DataTable, EmptyState, ErrorBox, Field, Modal, PageHeader, Spinner } from '../ui'
 
 interface CreditRow {
   id: string
@@ -25,13 +25,32 @@ export default function Credit(): JSX.Element {
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [payLinkModal, setPayLinkModal] = useState<{ name: string; url: string; amount: string } | null>(null)
 
   const openStatement = async (c: CreditRow): Promise<void> => {
+    setError(null)
     try {
       const r = await api.get<Statement>(`/retail/customers/${c.id}/statement`)
       setStatement(r)
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : 'Could not load statement')
+      setError(err instanceof Error ? err.message : 'Could not load statement')
+    }
+  }
+
+  const createPayLinkForCustomer = async (c: CreditRow): Promise<void> => {
+    setError(null)
+    try {
+      const res = await api.post<{ pay_path: string }>('/payments/links', {
+        party_id: c.id,
+        party_name: c.name,
+        amount: Number(c.balance),
+        description: `Credit settlement — ${c.name}`,
+        reference_type: 'customer_credit',
+        reference_id: c.id,
+      })
+      setPayLinkModal({ name: c.name, amount: c.balance, url: `${window.location.origin}${res.pay_path}` })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create payment link')
     }
   }
 
@@ -82,6 +101,8 @@ export default function Credit(): JSX.Element {
         </div>
       </div>
 
+      {error && <ErrorBox message={error} />}
+
       {loading ? (
         <Spinner />
       ) : rows.length === 0 ? (
@@ -96,14 +117,17 @@ export default function Credit(): JSX.Element {
             {
               key: 'act',
               header: '',
-              width: '220px',
+              width: '300px',
               render: (r) => (
                 <div className="pl-row-actions">
                   <button type="button" className="pl-btn pl-btn-ghost pl-btn-sm" onClick={() => openStatement(r)}>
                     Statement
                   </button>
+                  <button type="button" className="pl-btn pl-btn-ghost pl-btn-sm" onClick={() => void createPayLinkForCustomer(r)}>
+                    Pay Link
+                  </button>
                   <button type="button" className="pl-btn pl-btn-primary pl-btn-sm" onClick={() => setPayFor(r)}>
-                    Collect payment
+                    Collect
                   </button>
                 </div>
               ),
@@ -212,6 +236,22 @@ export default function Credit(): JSX.Element {
               <button type="button" className="pl-btn pl-btn-ghost" onClick={() => window.print()}>
                 <i className="fa-solid fa-print" aria-hidden="true" /> Print statement
               </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={payLinkModal !== null} title={payLinkModal ? `Online Payment Link — ${payLinkModal.name}` : ''} onClose={() => setPayLinkModal(null)}>
+        {payLinkModal && (
+          <div>
+            <p style={{ color: 'var(--text-dim)', fontSize: '.9rem', marginBottom: 12 }}>
+              Share this secure checkout link with <strong>{payLinkModal.name}</strong> to collect <strong>{fmtMoney(payLinkModal.amount)} ETB</strong> via your configured gateways.
+            </p>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              <input className="pl-input" readOnly value={payLinkModal.url} aria-label="Customer payment link" />
+              <a className="pl-btn pl-btn-primary pl-btn-sm" href={payLinkModal.url} target="_blank" rel="noreferrer">
+                Open Checkout
+              </a>
             </div>
           </div>
         )}

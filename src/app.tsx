@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Lenis from 'lenis';
 import Navbar from './components/Navbar';
 import { AfroCoder } from './components/AfroCoder';
+import { ServicePayNow } from './components/ServicePayNow';
 import { useReveal } from './hooks/useReveal';
 import { whatWeDo } from './data';
 import { useLanguage } from './context/languageCtx';
@@ -340,6 +341,10 @@ export default function App() {
   const [fieldErrors, setFieldErrors] = useState<ContactFieldErrors>({});
   const [touched, setTouched]       = useState<Partial<Record<ContactFieldName, boolean>>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [contactTab, setContactTab] = useState<'inquiry' | 'pay'>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('tx_ref') || window.location.hash === '#pay-now' ? 'pay' : 'inquiry';
+  });
   const [toast, setToast]           = useState<{ type:'success'|'error'; msg:string }|null>(null);
 
   const showToast = (type:'success'|'error', msg:string) => {
@@ -529,10 +534,21 @@ export default function App() {
             </div>
           ))}
         </div>
-        <div className="what-we-do-cta">
+        <div className="what-we-do-cta" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <Link to="/services" className="btn-primary">
             {t('whatWeDo.ctaAll')} <i className="fa-solid fa-arrow-right" aria-hidden="true" />
           </Link>
+          <button
+            type="button"
+            className="btn-ghost"
+            style={{ background: 'transparent', color: 'var(--accent)', border: '1px solid var(--border2)' }}
+            onClick={() => {
+              setContactTab('pay');
+              scrollTo('contact-section');
+            }}
+          >
+            <i className="fa-solid fa-shield-halved" aria-hidden="true" /> {t('whatWeDo.ctaPay')}
+          </button>
         </div>
       </section>
 
@@ -662,6 +678,31 @@ export default function App() {
           </div>
 
           <div className="contact-form-wrap">
+            <div className="contact-mode-tabs" role="tablist" aria-label="Contact or pay for service">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={contactTab === 'inquiry'}
+                className={`contact-mode-tab ${contactTab === 'inquiry' ? 'active' : ''}`}
+                onClick={() => setContactTab('inquiry')}
+              >
+                <i className="fa-solid fa-paper-plane" aria-hidden="true" /> {t('contact.tabInquiry')}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={contactTab === 'pay'}
+                className={`contact-mode-tab ${contactTab === 'pay' ? 'active' : ''}`}
+                onClick={() => setContactTab('pay')}
+                data-testid="contact-tab-pay"
+              >
+                <i className="fa-solid fa-lock" aria-hidden="true" /> {t('contact.tabPay')}
+              </button>
+            </div>
+
+            {contactTab === 'pay' ? (
+              <ServicePayNow returnPath="/" onStatusToast={showToast} />
+            ) : (
             <form onSubmit={handleSubmit} noValidate>
               <div className="form-row">
                 <div className={`form-group ${fieldErrors.name ? 'has-error' : ''}`}>
@@ -761,6 +802,7 @@ export default function App() {
                 {submitting ? <>{t('contact.sending')}</> : <>{t('contact.submit')}</>}
               </button>
             </form>
+            )}
           </div>
         </div>
       </section>
