@@ -24,6 +24,22 @@ function activateAsyncStyles(): void {
 }
 activateAsyncStyles()
 
+/* Recover gracefully if a user has an older client session open when a new
+   bundle is deployed or the dev server restarts and a lazy chunk hash changes. */
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault()
+  try {
+    const key = 'afro_chunk_reload_at'
+    const last = Number(sessionStorage.getItem(key) || '0')
+    if (Date.now() - last > 10_000) {
+      sessionStorage.setItem(key, String(Date.now()))
+      window.location.reload()
+    }
+  } catch {
+    window.location.reload()
+  }
+})
+
 const rootElement = document.getElementById('root')
 if (!rootElement) {
   throw new Error('Failed to find the root element. Make sure your HTML has a <div id="root"></div>.')

@@ -57,7 +57,9 @@ export function round2(n: number): number {
 }
 
 export function computeFinancialStatements(accounts: CoaAccount[], glEntries: GlEntryRow[] = []): FinancialStatements {
-  const byType = (t: RootType) => accounts.filter((a) => a.root_type === t)
+  const safeAccounts = Array.isArray(accounts) ? accounts : []
+  const safeGl = Array.isArray(glEntries) ? glEntries : []
+  const byType = (t: RootType) => safeAccounts.filter((a) => a && a.root_type === t)
   const sum = (list: CoaAccount[]) => round2(list.reduce((s, a) => s + Number(a.balance || 0), 0))
 
   const assets = byType('Asset')
@@ -74,8 +76,8 @@ export function computeFinancialStatements(accounts: CoaAccount[], glEntries: Gl
   const netProfit = round2(totalIncome - totalExpenses)
   const liabilitiesAndEquity = round2(totalLiabilities + totalEquity + netProfit)
 
-  const trialDebit = round2(glEntries.reduce((s, e) => s + Number(e.debit || 0), 0))
-  const trialCredit = round2(glEntries.reduce((s, e) => s + Number(e.credit || 0), 0))
+  const trialDebit = round2(safeGl.reduce((s, e) => s + Number(e?.debit || 0), 0))
+  const trialCredit = round2(safeGl.reduce((s, e) => s + Number(e?.credit || 0), 0))
 
   return {
     assets,
@@ -186,15 +188,22 @@ export interface AccountingExceptionItem {
 }
 
 export function detectAccountingExceptions(input: {
-  accounts: CoaAccount[]
-  glEntries: VoucherGlLine[]
+  accounts?: CoaAccount[]
+  glEntries?: VoucherGlLine[]
   products?: Array<{ id: string; name: string; stock: number; cost_price: number | string }>
   warehouses?: Array<{ id: string; name: string; stock_map?: Record<string, number> }>
   customers?: Array<{ balance?: number | string }>
   suppliers?: Array<{ balance?: number | string }>
 }): AccountingExceptionItem[] {
   const findings: AccountingExceptionItem[] = []
-  const fs = computeFinancialStatements(input.accounts, input.glEntries)
+  const accounts = Array.isArray(input?.accounts) ? input.accounts : []
+  const glEntries = Array.isArray(input?.glEntries) ? input.glEntries : []
+  const products = Array.isArray(input?.products) ? input.products : []
+  const warehouses = Array.isArray(input?.warehouses) ? input.warehouses : []
+  const customers = Array.isArray(input?.customers) ? input.customers : null
+  const suppliers = Array.isArray(input?.suppliers) ? input.suppliers : null
+
+  const fs = computeFinancialStatements(accounts, glEntries)
 
   // 1. Trial balance parity
   const trialDiff = round2(Math.abs(fs.trialDebit - fs.trialCredit))
@@ -212,7 +221,8 @@ export function detectAccountingExceptions(input: {
 
   // 2. Per-voucher balance check
   const byVoucher = new Map<string, { debit: number; credit: number; type: string }>()
-  for (const row of input.glEntries) {
+  for (const row of glEntries) {
+    if (!row) continue
     const key = row.voucher_no || 'UNKNOWN'
     const cur = byVoucher.get(key) ?? { debit: 0, credit: 0, type: row.voucher_type || 'Voucher' }
     cur.debit += Number(row.debit || 0)
@@ -241,12 +251,10 @@ export function detectAccountingExceptions(input: {
   })
 
   // 3. Multi-warehouse vs catalog stock parity (ghost inventory check)
-  const products = input.products ?? []
-  const warehouses = input.warehouses ?? []
   if (products.length > 0 && warehouses.length > 0) {
     const mismatches: string[] = []
     for (const p of products) {
-      const whTotal = warehouses.reduce((s, w) => s + Number(w.stock_map?.[p.id] ?? 0), 0)
+      const whTotal = warehouses.reduce((s, w) => s + Number(w?.stock_map?.[p.id] ?? 0), 0)
       const catStock = Number(p.stock || 0)
       if (Math.abs(whTotal - catStock) > 0.001) {
         mismatches.push(`${p.name}: catalog ${catStock} vs bins ${whTotal}`)
@@ -269,7 +277,7 @@ export function detectAccountingExceptions(input: {
   }
 
   // 4. Inventory valuation vs GL 1410
-  const invAccount = input.accounts.find((a) => a.code === '1410')
+  const invAccount = accounts.find((a) => a.code === '1410')
   if (invAccount && products.length > 0) {
     const physicalVal = round2(products.reduce((s, p) => s + Number(p.stock || 0) * Number(p.cost_price || 0), 0))
     const glVal = round2(invAccount.balance)
@@ -289,9 +297,9 @@ export function detectAccountingExceptions(input: {
   }
 
   // 5. Subledger AR/AP vs GL 1210 / 2110
-  const arAccount = input.accounts.find((a) => a.code === '1210')
-  if (arAccount && input.customers) {
-    const custSub = round2(input.customers.reduce((s, c) => s + Number(c.balance || 0), 0))
+  const arAccount = accounts.find((a) => a.code === '1210')
+  if (arAccount && customers) {
+    const custSub = round2(customers.reduce((s, c) => s + Number(c?.balance || 0), 0))
     const diff = round2(custSub - Number(arAccount.balance || 0))
     findings.push({
       id: 'exc-ar-subledger',
@@ -304,9 +312,9 @@ export function detectAccountingExceptions(input: {
     })
   }
 
-  const apAccount = input.accounts.find((a) => a.code === '2110')
-  if (apAccount && input.suppliers) {
-    const supSub = round2(input.suppliers.reduce((s, sup) => s + Number(sup.balance || 0), 0))
+  const apAccount = accounts.find((a) => a.code === '2110')
+  if (apAccount && suppliers) {
+    const supSub = round2(suppliers.reduce((s, sup) => s + Number(sup?.balance || 0), 0))
     const diff = round2(supSub - Number(apAccount.balance || 0))
     findings.push({
       id: 'exc-ap-subledger',

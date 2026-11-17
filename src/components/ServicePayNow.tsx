@@ -19,12 +19,14 @@ import { celebrateVerifiedPayment } from '../utils/paymentCelebration';
 import {
   classifyTelebirrVerifyOutcome,
   evaluateTelebirrPollCycle,
+  evaluateTelebirrSessionCountdown,
   extractTelebirrBackendError,
   normalizeTelebirrMerchantConfig,
   resolveTelebirrGatewayIndicator,
   TELEBIRR_GATEWAY_HEARTBEAT_MS,
   TELEBIRR_MAX_POLL_ATTEMPTS,
   TELEBIRR_POLL_INTERVAL_MS,
+  TELEBIRR_SESSION_TTL_MS,
   type TelebirrErrorLogEntry,
   type TelebirrMerchantConfig,
 } from '../utils/telebirrCheckout';
@@ -43,6 +45,7 @@ interface CheckoutSession {
   checkout_url: string;
   service_name: string;
   customer_message?: string;
+  expires_at?: string;
 }
 
 interface InvoiceReceiptMeta {
@@ -125,6 +128,7 @@ export function ServicePayNow({
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [session, setSession] = useState<CheckoutSession | null>(null);
+  const [tbNowMs, setTbNowMs] = useState(() => Date.now());
   const [verifiedReceipt, setVerifiedReceipt] = useState<VerifiedOrderReceipt | null>(null);
   const [resendingInvoice, setResendingInvoice] = useState(false);
   const [downloadingReceipt, setDownloadingReceipt] = useState(false);
@@ -266,6 +270,36 @@ export function ServicePayNow({
     [probingTbGateway, tbGatewayConfig, tbGatewayNetErr],
   );
 
+  const hasActiveTelebirrCountdown =
+    !verifiedReceipt &&
+    (session?.provider === 'telebirr' || (payView === 'qr' && Boolean(qrSession?.expiresAt)));
+
+  useEffect(() => {
+    if (!hasActiveTelebirrCountdown) return;
+    const tick = window.setInterval(() => {
+      setTbNowMs(Date.now());
+    }, 1000);
+    return () => {
+      window.clearInterval(tick);
+    };
+  }, [hasActiveTelebirrCountdown]);
+
+  const serviceTbCountdown = useMemo(
+    () =>
+      session?.provider === 'telebirr'
+        ? evaluateTelebirrSessionCountdown(session.expires_at ?? null, tbNowMs)
+        : null,
+    [session, tbNowMs],
+  );
+
+  const qrCountdown = useMemo(
+    () => (qrSession ? evaluateTelebirrSessionCountdown(qrSession.expiresAt, tbNowMs) : null),
+    [qrSession, tbNowMs],
+  );
+
+  const activeTbSessionExpired =
+    payView === 'qr' ? Boolean(qrCountdown?.expired) : Boolean(serviceTbCountdown?.expired);
+
   const activeTbSessionTxRef =
     payView === 'qr'
       ? (qrSession?.txRef ?? null)
@@ -278,11 +312,19 @@ export function ServicePayNow({
         activeTxRef: activeTbSessionTxRef,
         verified: Boolean(verifiedReceipt),
         terminalFailure: tbPollTerminalFailure,
+        expired: activeTbSessionExpired,
         paused: tbPollPaused,
         attempts: tbPollAttempts,
         maxAttempts: TELEBIRR_MAX_POLL_ATTEMPTS,
       }),
-    [activeTbSessionTxRef, verifiedReceipt, tbPollTerminalFailure, tbPollPaused, tbPollAttempts],
+    [
+      activeTbSessionTxRef,
+      verifiedReceipt,
+      tbPollTerminalFailure,
+      activeTbSessionExpired,
+      tbPollPaused,
+      tbPollAttempts,
+    ],
   );
 
   useEffect(() => {
@@ -324,8 +366,24 @@ export function ServicePayNow({
           }
           if (outcome === 'failed') {
             const statusText = String(data?.status || 'FAILED').toUpperCase();
+            const isExpired = Boolean(data?.expired) || statusText === 'EXPIRED';
+            if (isExpired) {
+              const expiredIso =
+                typeof data?.expires_at === 'string' && data.expires_at
+                  ? data.expires_at
+                  : new Date(Date.now() - 1000).toISOString();
+              setTbNowMs(Date.now());
+              setSession((prev) =>
+                prev && prev.provider === 'telebirr' ? { ...prev, expires_at: expiredIso } : prev,
+              );
+              setQrSession((prev) => (prev ? { ...prev, expiresAt: expiredIso } : prev));
+            }
             setTbPollTerminalFailure(true);
-            setServerError(`Telebirr reported order ${activeTbSessionTxRef} as ${statusText}. Please try again.`);
+            setServerError(
+              isExpired
+                ? 'Session Expired. Please start a new Telebirr payment session.'
+                : `Telebirr reported order ${activeTbSessionTxRef} as ${statusText}. Please try again.`,
+            );
             return;
           }
           if (outcome === 'verified' && data) {
@@ -508,6 +566,7 @@ export function ServicePayNow({
       setTrackedRefs((prev) =>
         prev.includes(normalized.txRef) ? prev : [normalized.txRef, ...prev],
       );
+      setTbNowMs(Date.now());
       setQrSession(normalized);
       setVerifiedReceipt(null);
     } catch (err: unknown) {
@@ -576,8 +635,20 @@ export function ServicePayNow({
         return;
       }
       if (outcome === 'failed') {
+        const statusText = String(data?.status || 'FAILED').toUpperCase();
+        const isExpired = Boolean(data?.expired) || statusText === 'EXPIRED';
+        if (isExpired) {
+          const expiredIso =
+            typeof data?.expires_at === 'string' && data.expires_at
+              ? data.expires_at
+              : new Date(Date.now() - 1000).toISOString();
+          setTbNowMs(Date.now());
+          setQrSession((prev) => (prev ? { ...prev, expiresAt: expiredIso } : prev));
+        }
         setTbPollTerminalFailure(true);
-        const msg = `Telebirr reported order ${qrSession.txRef} as ${String(data?.status || 'FAILED').toUpperCase()}.`;
+        const msg = isExpired
+          ? 'Session Expired. Generate a new QR code to continue.'
+          : `Telebirr reported order ${qrSession.txRef} as ${statusText}.`;
         onStatusToast?.('error', msg);
         return;
       }
@@ -700,6 +771,8 @@ export function ServicePayNow({
       setTbPollPaused(false);
       setTbPollTerminalFailure(false);
       setTbPollCountdownSec(TELEBIRR_POLL_INTERVAL_MS / 1000);
+      const createdAtMs = Date.now();
+      setTbNowMs(createdAtMs);
       setSession({
         provider,
         tx_ref: data.tx_ref,
@@ -709,6 +782,12 @@ export function ServicePayNow({
         checkout_url: data.checkout_url,
         service_name: activePackage.name,
         customer_message: data.customer_message,
+        expires_at:
+          provider === 'telebirr'
+            ? typeof data.expires_at === 'string' && data.expires_at
+              ? data.expires_at
+              : new Date(createdAtMs + TELEBIRR_SESSION_TTL_MS).toISOString()
+            : undefined,
       });
       setVerifiedReceipt(null);
       onStatusToast?.('success', `${activeProvider.label} session ${data.tx_ref} ready. Proceed to complete payment.`);
@@ -1189,12 +1268,56 @@ export function ServicePayNow({
             </div>
           </div>
 
+          {session.provider === 'telebirr' && serviceTbCountdown && (
+            <>
+              <div
+                className={`tb-session-timer ${serviceTbCountdown.expired ? 'is-expired' : serviceTbCountdown.isUrgent ? 'is-urgent' : ''}`}
+                data-testid="service-telebirr-session-timer"
+                data-expired={serviceTbCountdown.expired ? 'true' : 'false'}
+              >
+                <div className="tb-session-timer-row">
+                  <span className="tb-session-timer-label">
+                    <i
+                      className={`fa-solid ${serviceTbCountdown.expired ? 'fa-hourglass-end' : 'fa-hourglass-half'}`}
+                      aria-hidden="true"
+                    />{' '}
+                    {serviceTbCountdown.expired ? 'Session Expired' : 'Active Session Window (10 min)'}
+                  </span>
+                  <strong className="tb-session-timer-clock tb-tabular" data-testid="service-telebirr-session-clock">
+                    {serviceTbCountdown.label}
+                  </strong>
+                </div>
+                <div className="tb-session-progress" aria-hidden="true">
+                  <div
+                    className="tb-session-progress-bar"
+                    style={{ width: `${serviceTbCountdown.progressPct}%` }}
+                  />
+                </div>
+              </div>
+
+              {serviceTbCountdown.expired && (
+                <div
+                  className="chapa-alert chapa-alert-error tb-session-expired-alert"
+                  role="alert"
+                  data-testid="service-telebirr-session-expired"
+                >
+                  <i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />
+                  <span>
+                    <strong>Session Expired</strong> — Your 10-minute Telebirr payment session has timed out. Start a new session to generate a fresh checkout link.
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+
           <p className="chapa-session-hint">
-            {session.customer_message
-              ? session.customer_message
-              : session.mode === 'live'
-                ? `Your encrypted checkout session has been created with ${sessionProviderLabel}. Continue below to authorize payment.`
-                : 'Continue to the encrypted checkout page below to enter your payment authorization and receive an instant verified receipt.'}
+            {session.provider === 'telebirr' && serviceTbCountdown?.expired
+              ? 'This Telebirr checkout session has expired and can no longer be authorized.'
+              : session.customer_message
+                ? session.customer_message
+                : session.mode === 'live'
+                  ? `Your encrypted checkout session has been created with ${sessionProviderLabel}. Continue below to authorize payment.`
+                  : 'Continue to the encrypted checkout page below to enter your payment authorization and receive an instant verified receipt.'}
           </p>
 
           {session.provider === 'telebirr' && (
@@ -1213,9 +1336,11 @@ export function ServicePayNow({
                 <span className="tb-tabular">
                   {tbPollDecision.shouldPoll
                     ? `Auto-checking Telebirr every 5s · Next check in ${tbPollCountdownSec}s${tbPollAttempts > 0 ? ` · Checks: ${tbPollAttempts}` : ''}`
-                    : tbPollDecision.reason === 'paused'
-                      ? 'Automatic 5s status check paused.'
-                      : 'Automatic status polling stopped.'}
+                    : tbPollDecision.reason === 'expired'
+                      ? 'Session Expired · Automatic status checks stopped.'
+                      : tbPollDecision.reason === 'paused'
+                        ? 'Automatic 5s status check paused.'
+                        : 'Automatic status polling stopped.'}
                 </span>
               </div>
               {(tbPollDecision.reason === 'active' || tbPollDecision.reason === 'paused') && (
@@ -1234,16 +1359,35 @@ export function ServicePayNow({
           )}
 
           <div className="chapa-session-actions">
-            <a
-              href={session.checkout_url}
-              className="btn-primary chapa-proceed-btn"
-              data-testid="chapa-proceed-link"
-            >
-              <i className="fa-solid fa-lock" aria-hidden="true" />{' '}
-              {session.provider === 'mpesa' && session.mode === 'live'
-                ? `Verify M-Pesa STK Payment (${formatEtb(session.amount)})`
-                : `Continue to ${sessionProviderLabel} Checkout (${formatEtb(session.amount)})`}
-            </a>
+            {session.provider === 'telebirr' ? (
+              <button
+                type="button"
+                className="btn-primary chapa-proceed-btn"
+                disabled={Boolean(serviceTbCountdown?.expired)}
+                onClick={() => {
+                  if (!serviceTbCountdown?.expired) {
+                    window.location.assign(session.checkout_url);
+                  }
+                }}
+                data-testid="chapa-proceed-link"
+              >
+                <i className="fa-solid fa-lock" aria-hidden="true" />{' '}
+                {serviceTbCountdown?.expired
+                  ? 'Session Expired — Pay Disabled'
+                  : `Pay ${formatEtb(session.amount)} via TeleBirr`}
+              </button>
+            ) : (
+              <a
+                href={session.checkout_url}
+                className="btn-primary chapa-proceed-btn"
+                data-testid="chapa-proceed-link"
+              >
+                <i className="fa-solid fa-lock" aria-hidden="true" />{' '}
+                {session.provider === 'mpesa' && session.mode === 'live'
+                  ? `Verify M-Pesa STK Payment (${formatEtb(session.amount)})`
+                  : `Continue to ${sessionProviderLabel} Checkout (${formatEtb(session.amount)})`}
+              </a>
+            )}
             <button
               type="button"
               className="chapa-secondary-btn"
@@ -1254,7 +1398,9 @@ export function ServicePayNow({
                 setTbPollTerminalFailure(false);
               }}
             >
-              Edit Details
+              {session.provider === 'telebirr' && serviceTbCountdown?.expired
+                ? 'Start New Session'
+                : 'Edit Details'}
             </button>
           </div>
         </div>

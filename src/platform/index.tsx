@@ -1,11 +1,12 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './AuthContext'
 import Shell from './Shell'
 import Login from './Login'
 import Register from './Register'
 import SocialAuthCallback from './SocialAuthCallback'
 import Spinner from './pages/Spinner'
+import { RouteErrorBoundary } from './components/RouteErrorBoundary'
 import './platform.css'
 
 const RetailDashboard = lazy(() => import('./retail/RetailDashboard'))
@@ -113,6 +114,8 @@ function Gate({ children }: { children: JSX.Element }): JSX.Element {
 
 function Inner(): JSX.Element {
   const { me } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
   const isAdminRoute = me?.role === 'afrotech_admin'
 
   if (me && me.tenant && me.tenant.status === 'suspended') {
@@ -130,7 +133,8 @@ function Inner(): JSX.Element {
 
   return (
     <Shell>
-      <Suspense fallback={<Spinner />}>
+      <RouteErrorBoundary resetKey={location.pathname} onBackToDashboard={() => navigate('/app')}>
+        <Suspense fallback={<Spinner />}>
         {isAdminRoute ? (
           <Routes>
             <Route path="*" element={<AdminPanel />} />
@@ -203,7 +207,8 @@ function Inner(): JSX.Element {
             <Route path="*" element={<Navigate to="/app" replace />} />
          </Routes>
         )}
-     </Suspense>
+        </Suspense>
+      </RouteErrorBoundary>
    </Shell>
   )
 }

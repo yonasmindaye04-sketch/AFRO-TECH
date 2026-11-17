@@ -130,12 +130,13 @@ export function DataTable<T>({
 }): JSX.Element {
   const [searchQuery, setSearchQuery] = useState('')
   const deferredQuery = useDeferredValue(searchQuery)
+  const safeRows = Array.isArray(rows) ? rows : []
 
-  if (!rows.length && !searchQuery) return <EmptyState title={empty ?? 'Nothing here yet'} />
+  if (!safeRows.length && !searchQuery) return <EmptyState title={empty ?? 'Nothing here yet'} />
 
   const filteredRows = !deferredQuery.trim()
-    ? rows
-    : rows.filter((row) => {
+    ? safeRows
+    : safeRows.filter((row) => {
         const q = deferredQuery.toLowerCase()
         return columns.some((c) => {
           const text = c.searchText ? c.searchText(row) : String((row as Record<string, unknown>)[c.key] ?? '')
@@ -145,7 +146,7 @@ export function DataTable<T>({
 
   return (
     <div className="pl-table-container" style={{ display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
-      {searchable && rows.length > 0 && (
+      {searchable && safeRows.length > 0 && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
           <SearchInput
             value={searchQuery}

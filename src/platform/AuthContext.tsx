@@ -41,8 +41,13 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
       .then((res) => {
         if (!cancelled) persist(res.token, res.me)
       })
-      .catch(() => {
-        if (!cancelled) saveAuth(null)
+      .catch((err) => {
+        if (!cancelled) {
+          saveAuth(null)
+          if (err instanceof ApiError && err.status === 401) {
+            setMe(null)
+          }
+        }
       })
       .finally(() => {
         if (!cancelled) setReady(true)

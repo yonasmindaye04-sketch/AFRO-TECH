@@ -96,10 +96,12 @@ export default function Accounting(): JSX.Element {
   const [openPe, setOpenPe] = useState(false)
   const [peForm, setPeForm] = useState({ direction: 'receive' as 'receive' | 'pay', party_id: '', amount: '', payment_method: 'cash', remarks: '' })
 
-  const accounts = coaQ.data?.accounts ?? []
-  const allGl = glQ.data?.entries ?? []
+  const accounts = Array.isArray(coaQ.data?.accounts) ? coaQ.data.accounts : []
+  const allGl = Array.isArray(glQ.data?.entries) ? glQ.data.entries : []
   const glEntries = allGl.filter((g) => !acctFilter || g.account_code === acctFilter)
-  const journalEntries = jeQ.data?.journal_entries ?? []
+  const journalEntries = Array.isArray(jeQ.data?.journal_entries) ? jeQ.data.journal_entries : []
+  const customersList = Array.isArray(customersQ.data?.customers) ? customersQ.data.customers : []
+  const suppliersList = Array.isArray(suppliersQ.data?.suppliers) ? suppliersQ.data.suppliers : []
 
   const statements = computeFinancialStatements(accounts, allGl)
 
@@ -121,16 +123,17 @@ export default function Accounting(): JSX.Element {
   const exceptions = useMemo(() => {
     if (!snapQ.data) return []
     return detectAccountingExceptions({
-      accounts: snapQ.data.accounts,
-      glEntries: snapQ.data.gl_entries,
-      products: snapQ.data.products,
-      warehouses: snapQ.data.warehouses,
-      customers: snapQ.data.customers,
-      suppliers: snapQ.data.suppliers,
+      accounts: Array.isArray(snapQ.data.accounts) ? snapQ.data.accounts : [],
+      glEntries: Array.isArray(snapQ.data.gl_entries) ? snapQ.data.gl_entries : [],
+      products: Array.isArray(snapQ.data.products) ? snapQ.data.products : [],
+      warehouses: Array.isArray(snapQ.data.warehouses) ? snapQ.data.warehouses : [],
+      customers: Array.isArray(snapQ.data.customers) ? snapQ.data.customers : [],
+      suppliers: Array.isArray(snapQ.data.suppliers) ? snapQ.data.suppliers : [],
     })
   }, [snapQ.data])
 
   const openIssuesCount = exceptions.filter((e) => e.severity !== 'ok').length
+  const apiError = coaQ.error || glQ.error || jeQ.error || snapQ.error
 
   const reloadAll = (): void => {
     coaQ.reload()
@@ -273,8 +276,8 @@ export default function Accounting(): JSX.Element {
                   party_id:
                     f.party_id ||
                     (f.direction === 'receive'
-                      ? customersQ.data?.customers?.[0]?.id ?? ''
-                      : suppliersQ.data?.suppliers?.[0]?.id ?? ''),
+                      ? customersList[0]?.id ?? ''
+                      : suppliersList[0]?.id ?? ''),
                 }))
                 setOpenPe(true)
               }}
@@ -297,6 +300,16 @@ export default function Accounting(): JSX.Element {
 
       {notice && <OkBox message={notice} />}
       {errMsg && <ErrorBox message={errMsg} />}
+      {apiError && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <ErrorBox message={`Could not load full accounting data: ${apiError}`} />
+          </div>
+          <button type="button" className="pl-btn pl-btn-ghost pl-btn-sm" onClick={reloadAll}>
+            <i className="fa-solid fa-rotate-right" aria-hidden="true" /> Retry
+          </button>
+        </div>
+      )}
 
       {tab === 'statements' && (
         coaQ.loading ? (
@@ -468,12 +481,12 @@ export default function Accounting(): JSX.Element {
               searchPlaceholder="Search GL entries…"
               columns={[
                 { key: 'posting_date', header: 'Date', render: (e) => fmtDate(e.posting_date), width: '110px' },
-                { key: 'voucher_type', header: 'Voucher Type', render: (e) => e.voucher_type },
-                { key: 'voucher_no', header: 'Voucher #', render: (e) => <strong>{e.voucher_no}</strong>, width: '125px' },
-                { key: 'account_name', header: 'Account', render: (e) => `${e.account_code} · ${e.account_name}` },
+                { key: 'voucher_type', header: 'Voucher Type', render: (e) => e.voucher_type || '—' },
+                { key: 'voucher_no', header: 'Voucher #', render: (e) => <strong>{e.voucher_no || '—'}</strong>, width: '125px' },
+                { key: 'account_name', header: 'Account', render: (e) => `${e.account_code || ''} · ${e.account_name || ''}` },
                 { key: 'party', header: 'Party', render: (e) => e.party ?? '—' },
-                { key: 'debit', header: 'Debit', render: (e) => (e.debit > 0 ? <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(e.debit)}</span> : '—'), width: '105px' },
-                { key: 'credit', header: 'Credit', render: (e) => (e.credit > 0 ? <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(e.credit)}</span> : '—'), width: '105px' },
+                { key: 'debit', header: 'Debit', render: (e) => (Number(e.debit || 0) > 0 ? <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(e.debit)}</span> : '—'), width: '105px' },
+                { key: 'credit', header: 'Credit', render: (e) => (Number(e.credit || 0) > 0 ? <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(e.credit)}</span> : '—'), width: '105px' },
                 { key: 'remarks', header: 'Remarks', render: (e) => e.remarks || '—' },
               ]}
             />
@@ -500,11 +513,14 @@ export default function Accounting(): JSX.Element {
               {
                 key: 'status',
                 header: 'Status',
-                render: (j) => (
-                  <Badge tone={j.status === 'reversed' ? 'warn' : 'good'}>
-                    {j.status === 'reversed' && j.reversed_by ? `REVERSED (${j.reversed_by})` : j.status.toUpperCase()}
-                  </Badge>
-                ),
+                render: (j) => {
+                  const status = String(j.status || 'submitted')
+                  return (
+                    <Badge tone={status === 'reversed' ? 'warn' : 'good'}>
+                      {status === 'reversed' && j.reversed_by ? `REVERSED (${j.reversed_by})` : status.toUpperCase()}
+                    </Badge>
+                  )
+                },
                 width: '150px',
               },
               {
@@ -663,7 +679,7 @@ export default function Accounting(): JSX.Element {
           <Field label={peForm.direction === 'receive' ? 'Customer' : 'Supplier'}>
             <select className="pl-select" value={peForm.party_id} onChange={(e) => setPeForm((f) => ({ ...f, party_id: e.target.value }))}>
               <option value="">Select party…</option>
-              {(peForm.direction === 'receive' ? customersQ.data?.customers ?? [] : suppliersQ.data?.suppliers ?? []).map((p) => (
+              {(peForm.direction === 'receive' ? customersList : suppliersList).map((p) => (
                 <option key={p.id} value={p.id}>{p.name} (Bal: {fmtMoney(p.balance)} ETB)</option>
               ))}
             </select>

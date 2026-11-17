@@ -1895,6 +1895,51 @@ footer .logo-text { font-size:1.15rem; }
   transition:border-color .16s, color .16s;
 }
 .tb-poll-toggle:hover { border-color:var(--accent); color:var(--accent); }
+.tb-session-timer {
+  padding:10px 12px; border-radius:8px; background:var(--surface); border:1px solid var(--border2);
+  display:flex; flex-direction:column; gap:7px;
+}
+.tb-session-timer.is-urgent {
+  border-color:rgba(245,158,11,.55); background:rgba(245,158,11,.08);
+}
+.tb-session-timer.is-expired {
+  border-color:rgba(248,113,113,.5); background:rgba(248,113,113,.1);
+}
+[data-theme="light"] .tb-session-timer.is-expired {
+  background:#fef2f2; border-color:#fca5a5;
+}
+.tb-session-timer-row {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+}
+.tb-session-timer-label {
+  display:inline-flex; align-items:center; gap:6px; font-size:.79rem; font-weight:600; color:var(--text-mid);
+}
+.tb-session-timer-label i { color:var(--accent); }
+.tb-session-timer.is-urgent .tb-session-timer-label,
+.tb-session-timer.is-urgent .tb-session-timer-label i,
+.tb-session-timer.is-urgent .tb-session-timer-clock { color:#f59e0b; }
+.tb-session-timer.is-expired .tb-session-timer-label,
+.tb-session-timer.is-expired .tb-session-timer-label i,
+.tb-session-timer.is-expired .tb-session-timer-clock { color:#f87171; }
+[data-theme="light"] .tb-session-timer.is-expired .tb-session-timer-label,
+[data-theme="light"] .tb-session-timer.is-expired .tb-session-timer-clock { color:#b91c1c; }
+.tb-session-timer-clock {
+  font-family:'Space Mono',monospace; font-size:.94rem; font-weight:700; color:var(--accent);
+}
+.tb-session-progress {
+  width:100%; height:4px; border-radius:999px; background:var(--border); overflow:hidden;
+}
+.tb-session-progress-bar {
+  height:100%; border-radius:999px; background:var(--accent);
+  transition:width .4s linear, background-color .2s ease;
+}
+.tb-session-timer.is-urgent .tb-session-progress-bar { background:#f59e0b; }
+.tb-session-timer.is-expired .tb-session-progress-bar { background:#ef4444; width:0%; }
+.tb-session-expired-alert { margin:0; }
+.chapa-proceed-btn:disabled,
+.chapa-secondary-btn:disabled {
+  opacity:.5; cursor:not-allowed; pointer-events:none; filter:grayscale(.35);
+}
 .tb-error-log {
   margin-top:4px; padding:12px 14px; border-radius:10px;
   background:rgba(248,113,113,.07); border:1px solid rgba(248,113,113,.32);

@@ -10,6 +10,7 @@ import {
   buildTelebirrOrderSummary,
   classifyTelebirrVerifyOutcome,
   evaluateTelebirrPollCycle,
+  evaluateTelebirrSessionCountdown,
   extractTelebirrBackendError,
   formatTelebirrStageLabel,
   normalizeTelebirrMerchantConfig,
@@ -18,6 +19,7 @@ import {
   TELEBIRR_MAX_POLL_ATTEMPTS,
   TELEBIRR_NOTE_MAX_LEN,
   TELEBIRR_POLL_INTERVAL_MS,
+  TELEBIRR_SESSION_TTL_MS,
   validateTelebirrDirectForm,
   type TelebirrErrorLogEntry,
   type TelebirrMerchantConfig,
@@ -39,6 +41,7 @@ interface TelebirrH5Session {
   prepay_id: string | null;
   receive_code: string | null;
   merchant_code_masked: string | null;
+  expires_at: string;
 }
 
 interface TelebirrInvoiceMeta {
@@ -116,6 +119,7 @@ export function TelebirrPayPanel({
   const [probingGateway, setProbingGateway] = useState(true);
   const [gatewayNetworkError, setGatewayNetworkError] = useState(false);
   const [session, setSession] = useState<TelebirrH5Session | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [verifiedReceipt, setVerifiedReceipt] = useState<TelebirrVerifiedReceipt | null>(null);
   const [errorLogs, setErrorLogs] = useState<TelebirrErrorLogEntry[]>([]);
   const inFlightVerifyRef = useRef(false);
@@ -214,25 +218,38 @@ export function TelebirrPayPanel({
 
     if (outcome === 'failed') {
       const statusText = String(data?.status || 'FAILED').toUpperCase();
+      const isExpired = Boolean(data?.expired) || statusText === 'EXPIRED';
+      if (isExpired) {
+        const expiredIso =
+          typeof data?.expires_at === 'string' && data.expires_at
+            ? data.expires_at
+            : new Date(Date.now() - 1000).toISOString();
+        setNowMs(Date.now());
+        setSession((prev) => (prev ? { ...prev, expires_at: expiredIso } : prev));
+      }
       const errEntry = extractTelebirrBackendError({
         resStatus,
         payload: {
-          code: `ORDER_${statusText}`,
+          code: isExpired ? 'SESSION_EXPIRED' : `ORDER_${statusText}`,
           stage: 'query_order',
           status_code: resStatus,
           message:
             typeof data?.message === 'string' && data.message.trim()
               ? data.message
-              : `Telebirr reported order ${txRef} as ${statusText}. Please start a fresh payment.`,
+              : isExpired
+                ? 'Session Expired. Please start a new Telebirr payment session.'
+                : `Telebirr reported order ${txRef} as ${statusText}. Please start a fresh payment.`,
         },
         defaultStage: 'query_order',
-        fallbackMessage: `Telebirr reported order ${txRef} as ${statusText}.`,
+        fallbackMessage: isExpired
+          ? 'Session Expired. Please start a new Telebirr payment session.'
+          : `Telebirr reported order ${txRef} as ${statusText}.`,
         txRef,
       });
       recordBackendError(errEntry);
       setPollTerminalFailure(true);
       setPendingNotice(null);
-      setServerError(`[${errEntry.code}] ${errEntry.message}`);
+      setServerError(isExpired ? 'Session Expired. Start a new Telebirr payment session to continue.' : `[${errEntry.code}] ${errEntry.message}`);
       return;
     }
 
@@ -372,6 +389,21 @@ export function TelebirrPayPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialReturnTxRef]);
 
+  useEffect(() => {
+    if (!session || verifiedReceipt) return;
+    const tick = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => {
+      window.clearInterval(tick);
+    };
+  }, [session, verifiedReceipt]);
+
+  const sessionCountdown = useMemo(
+    () => (session ? evaluateTelebirrSessionCountdown(session.expires_at, nowMs) : null),
+    [session, nowMs],
+  );
+
   const activePollTxRef = session?.tx_ref ?? pendingReturnTxRef;
   const pollDecision = useMemo(
     () =>
@@ -379,11 +411,12 @@ export function TelebirrPayPanel({
         activeTxRef: activePollTxRef,
         verified: Boolean(verifiedReceipt),
         terminalFailure: pollTerminalFailure,
+        expired: Boolean(sessionCountdown?.expired),
         paused: pollPaused,
         attempts: pollAttempts,
         maxAttempts: TELEBIRR_MAX_POLL_ATTEMPTS,
       }),
-    [activePollTxRef, verifiedReceipt, pollTerminalFailure, pollPaused, pollAttempts],
+    [activePollTxRef, verifiedReceipt, pollTerminalFailure, sessionCountdown?.expired, pollPaused, pollAttempts],
   );
 
   useEffect(() => {
@@ -521,6 +554,8 @@ export function TelebirrPayPanel({
       setPollPaused(false);
       setPollTerminalFailure(false);
       setPollCountdownSec(TELEBIRR_POLL_INTERVAL_MS / 1000);
+      const createdAtMs = Date.now();
+      setNowMs(createdAtMs);
       setSession({
         tx_ref: data.tx_ref,
         amount: Number(data.amount ?? validation.amount),
@@ -531,6 +566,10 @@ export function TelebirrPayPanel({
         prepay_id: data.prepay_id || null,
         receive_code: data.receive_code || null,
         merchant_code_masked: data.merchant_code_masked || config.merchantCodeMasked,
+        expires_at:
+          typeof data.expires_at === 'string' && data.expires_at
+            ? data.expires_at
+            : new Date(createdAtMs + TELEBIRR_SESSION_TTL_MS).toISOString(),
       });
       onStatusToast?.('success', `Telebirr H5 pre-order ${data.tx_ref} ready. Auto-verifying every 5s.`);
     } catch (err: unknown) {
@@ -826,6 +865,46 @@ export function TelebirrPayPanel({
             <div className="tb-h5-amount tb-tabular">{formatEtb(session.amount)}</div>
           </div>
 
+          {sessionCountdown && (
+            <div
+              className={`tb-session-timer ${sessionCountdown.expired ? 'is-expired' : sessionCountdown.isUrgent ? 'is-urgent' : ''}`}
+              data-testid="telebirr-session-timer"
+              data-expired={sessionCountdown.expired ? 'true' : 'false'}
+            >
+              <div className="tb-session-timer-row">
+                <span className="tb-session-timer-label">
+                  <i
+                    className={`fa-solid ${sessionCountdown.expired ? 'fa-hourglass-end' : 'fa-hourglass-half'}`}
+                    aria-hidden="true"
+                  />{' '}
+                  {sessionCountdown.expired ? 'Session Expired' : 'Active Session Window (10 min)'}
+                </span>
+                <strong className="tb-session-timer-clock tb-tabular" data-testid="telebirr-session-clock">
+                  {sessionCountdown.label}
+                </strong>
+              </div>
+              <div className="tb-session-progress" aria-hidden="true">
+                <div
+                  className="tb-session-progress-bar"
+                  style={{ width: `${sessionCountdown.progressPct}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {sessionCountdown?.expired && (
+            <div
+              className="chapa-alert chapa-alert-error tb-session-expired-alert"
+              role="alert"
+              data-testid="telebirr-session-expired"
+            >
+              <i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />
+              <span>
+                <strong>Session Expired</strong> — Your 10-minute Telebirr payment window has ended. Start a new session to generate a fresh checkout link.
+              </span>
+            </div>
+          )}
+
           <div className="tb-h5-details">
             <div>
               <span>Order Reference</span>
@@ -850,9 +929,11 @@ export function TelebirrPayPanel({
           </div>
 
           <p className="chapa-session-hint">
-            {session.mode === 'live'
-              ? 'Your RSA-PSS signed Telebirr H5 checkout URL is ready. Continue to authorize in the Telebirr SuperApp or web paygate, then return for automatic verification.'
-              : 'Open the Telebirr H5 test checkout below to simulate wallet authorization, or verify payment status directly.'}
+            {sessionCountdown?.expired
+              ? 'This pre-order reference can no longer be authorized. Create a new payment session below.'
+              : session.mode === 'live'
+                ? 'Your RSA-PSS signed Telebirr H5 checkout URL is ready. Continue to authorize in the Telebirr SuperApp or web paygate, then return for automatic verification.'
+                : 'Open the Telebirr H5 checkout below to authorize wallet payment within 10 minutes, or verify payment status directly.'}
           </p>
 
           <div className="tb-poll-bar" role="status" aria-live="polite" data-testid="telebirr-poll-status">
@@ -870,11 +951,13 @@ export function TelebirrPayPanel({
               <span className="tb-tabular">
                 {pollDecision.shouldPoll
                   ? `Auto-checking verification every 5s · Next check in ${pollCountdownSec}s${pollAttempts > 0 ? ` · Checks: ${pollAttempts}` : ''}`
-                  : pollDecision.reason === 'paused'
-                    ? 'Automatic 5s status check paused.'
-                    : pollDecision.reason === 'max_attempts'
-                      ? 'Automatic status polling timed out after 5 minutes. Use Check Payment Status to verify manually.'
-                      : 'Polling stopped.'}
+                  : pollDecision.reason === 'expired'
+                    ? 'Session Expired · Automatic status checks stopped.'
+                    : pollDecision.reason === 'paused'
+                      ? 'Automatic 5s status check paused.'
+                      : pollDecision.reason === 'max_attempts'
+                        ? 'Automatic status polling timed out. Use Check Payment Status to verify manually.'
+                        : 'Polling stopped.'}
               </span>
             </div>
             {(pollDecision.reason === 'active' || pollDecision.reason === 'paused') && (
@@ -892,7 +975,7 @@ export function TelebirrPayPanel({
             )}
           </div>
 
-          {serverError && (
+          {serverError && !sessionCountdown?.expired && (
             <div className="chapa-alert chapa-alert-error" role="alert">
               <i className="fa-solid fa-circle-exclamation" aria-hidden="true" />
               <span>{serverError}</span>
@@ -900,22 +983,28 @@ export function TelebirrPayPanel({
           )}
 
           <div className="chapa-session-actions">
-            <a
-              href={session.checkout_url}
+            <button
+              type="button"
               className="btn-primary chapa-proceed-btn"
+              disabled={Boolean(sessionCountdown?.expired)}
               data-testid="telebirr-h5-launch"
               onClick={() => {
+                if (sessionCountdown?.expired) return;
                 setPollPaused(false);
                 setPollCountdownSec(TELEBIRR_POLL_INTERVAL_MS / 1000);
+                window.location.assign(session.checkout_url);
               }}
             >
-              <i className="fa-solid fa-lock" aria-hidden="true" /> Open Telebirr H5 Checkout ({formatEtb(session.amount)})
-            </a>
+              <i className="fa-solid fa-lock" aria-hidden="true" />{' '}
+              {sessionCountdown?.expired
+                ? 'Session Expired — Pay Disabled'
+                : `Pay ${formatEtb(session.amount)} via Telebirr H5`}
+            </button>
             <div className="tb-secondary-row">
               <button
                 type="button"
                 className="chapa-secondary-btn"
-                disabled={verifying}
+                disabled={verifying || Boolean(sessionCountdown?.expired)}
                 onClick={() => {
                   setPollCountdownSec(TELEBIRR_POLL_INTERVAL_MS / 1000);
                   void verifyTelebirrTransaction(session.tx_ref, false);
@@ -936,8 +1025,9 @@ export function TelebirrPayPanel({
                   setPollPaused(false);
                   setPollTerminalFailure(false);
                 }}
+                data-testid="telebirr-edit-order-btn"
               >
-                Edit Order
+                {sessionCountdown?.expired ? 'Start New Session' : 'Edit Order'}
               </button>
             </div>
           </div>

@@ -1193,6 +1193,8 @@ function extractTelebirrHost(rawUrl) {
   }
 }
 
+const TELEBIRR_SESSION_TTL_MS = 10 * 60 * 1000;
+
 const telebirrGatewayProbeCache = {
   checkedAtMs: 0,
   result: null,
@@ -1324,6 +1326,9 @@ app.post('/api/telebirr/initialize', async (req, res) => {
     receiveCode = tbInit.receiveCode;
   }
 
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + TELEBIRR_SESSION_TTL_MS).toISOString();
+
   const order = {
     id: `svc-${crypto.randomUUID().slice(0, 8)}`,
     provider: 'telebirr',
@@ -1346,7 +1351,8 @@ app.post('/api/telebirr/initialize', async (req, res) => {
     status: 'pending',
     payer_reference: null,
     chapa_reference: null,
-    created_at: new Date().toISOString(),
+    created_at: createdAt,
+    expires_at: expiresAt,
     settled_at: null,
   };
   serviceChapaOrders.set(merchOrderId, order);
@@ -1365,6 +1371,8 @@ app.post('/api/telebirr/initialize', async (req, res) => {
     currency: 'ETB',
     checkout_url: checkoutUrl,
     return_url: returnUrl,
+    created_at: createdAt,
+    expires_at: expiresAt,
   });
 });
 
@@ -1477,7 +1485,7 @@ app.post('/api/telebirr/qr', async (req, res) => {
   }
 
   const createdAt = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + TELEBIRR_SESSION_TTL_MS).toISOString();
 
   const order = {
     id: `svc-${crypto.randomUUID().slice(0, 8)}`,
@@ -1597,11 +1605,20 @@ app.get('/api/telebirr/verify/:txRef', async (req, res) => {
   if (order.status === 'settled' && !order.invoice) {
     await dispatchTransactionInvoice(order, { merchant: DEFAULT_SERVICE_MERCHANT });
   }
+  const isOrderExpired =
+    order.status !== 'settled'
+    && Boolean(order.expires_at)
+    && Date.parse(order.expires_at) <= Date.now();
+  if (isOrderExpired) {
+    order.status = 'expired';
+  }
   return res.json({
     ok: true,
     verified: order.status === 'settled',
-    status: order.status,
+    expired: isOrderExpired || order.status === 'expired',
+    status: isOrderExpired || order.status === 'expired' ? 'EXPIRED' : order.status,
     mode: order.mode,
+    expires_at: order.expires_at || null,
     order,
     invoice: order.invoice || null,
   });
@@ -3531,27 +3548,39 @@ app.get('/api/v1/erp/stock-ledger', (req, res) => {
 });
 
 // Accounting: Chart of Accounts, GL Entries, Journal Entries, Exceptions & 1-Click Reversal
+function ensureStoreAccounts(store) {
+  if (!Array.isArray(store.accounts) || store.accounts.length === 0) {
+    store.accounts = DEFAULT_COA.map((a) => ({ ...a }));
+  }
+  if (!Array.isArray(store.glEntries)) store.glEntries = [];
+  if (!Array.isArray(store.journalEntries)) store.journalEntries = [];
+  return store;
+}
 app.get('/api/v1/erp/accounts', (req, res) => {
   const { store } = activeCtx(req);
+  ensureStoreAccounts(store);
   res.json({ accounts: store.accounts });
 });
 app.get('/api/v1/erp/gl-entries', (req, res) => {
   const { store } = activeCtx(req);
+  ensureStoreAccounts(store);
   res.json({ entries: store.glEntries });
 });
 app.get('/api/v1/erp/journal-entries', (req, res) => {
   const { store } = activeCtx(req);
+  ensureStoreAccounts(store);
   res.json({ journal_entries: store.journalEntries });
 });
 app.get('/api/v1/erp/reconciliation-snapshot', (req, res) => {
   const { store } = activeCtx(req);
+  ensureStoreAccounts(store);
   res.json({
     accounts: store.accounts,
     gl_entries: store.glEntries,
-    products: store.products,
-    warehouses: store.warehouses,
-    customers: store.customers,
-    suppliers: store.suppliers,
+    products: Array.isArray(store.products) ? store.products : [],
+    warehouses: Array.isArray(store.warehouses) ? store.warehouses : [],
+    customers: Array.isArray(store.customers) ? store.customers : [],
+    suppliers: Array.isArray(store.suppliers) ? store.suppliers : [],
   });
 });
 app.post('/api/v1/erp/journal-entries', (req, res) => {
@@ -5985,6 +6014,18 @@ app.post('/api/v1/public/pay/:token/confirm', async (req, res) => {
   const svcOrder = findPublicServiceOrderByToken(req.params.token);
   if (svcOrder) {
     const prov = svcOrder.provider || 'chapa';
+    if (
+      prov === 'telebirr'
+      && svcOrder.status !== 'settled'
+      && svcOrder.expires_at
+      && Date.parse(svcOrder.expires_at) <= Date.now()
+    ) {
+      svcOrder.status = 'expired';
+      return res.status(410).json({
+        error: 'Session Expired. Please start a new Telebirr payment session.',
+        code: 'SESSION_EXPIRED',
+      });
+    }
     const runtime = resolveGatewayRuntime({ store: null, provider: prov, env: process.env });
     if (runtime.mode === 'live' && prov !== 'cbe_bank') {
       const verifyRes = await verifyGatewaySettlement({ runtime, intent: svcOrder });
@@ -6448,6 +6489,12 @@ app.all('/api/v1/*splat', (req, res) => {
       items: [],
       rows: [],
       data: [],
+      entries: [],
+      accounts: [],
+      gl_entries: [],
+      journal_entries: [],
+      products: [],
+      warehouses: [],
       users: [],
       roles: [],
       departments: [],

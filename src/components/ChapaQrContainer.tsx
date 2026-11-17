@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { formatEtb } from '../utils/serviceCheckout';
-import type { TelebirrErrorLogEntry, TelebirrPollDecision } from '../utils/telebirrCheckout';
 import {
-  formatQrExpiryCountdown,
+  evaluateTelebirrSessionCountdown,
+  type TelebirrErrorLogEntry,
+  type TelebirrPollDecision,
+} from '../utils/telebirrCheckout';
+import {
   renderTelebirrQrDataUrl,
   type TelebirrQrSession,
 } from '../utils/telebirrQr';
@@ -73,7 +76,7 @@ export function ChapaQrContainer({
     session?.qrDataUrl ||
     (session && fallbackQr?.payload === session.qrPayload ? fallbackQr.url : '') ||
     '';
-  const expiry = formatQrExpiryCountdown(session?.expiresAt ?? null, nowMs);
+  const expiry = evaluateTelebirrSessionCountdown(session?.expiresAt ?? null, nowMs);
   const containerState = loading ? 'loading' : error ? 'error' : session ? 'ready' : 'idle';
 
   const handleCopyPayload = async (): Promise<void> => {
@@ -171,7 +174,7 @@ export function ChapaQrContainer({
               )}
               {expiry.expired && (
                 <div className="chapa-qr-expired-overlay">
-                  <span>QR Expired</span>
+                  <span>Session Expired</span>
                   <button type="button" className="btn-primary" onClick={onRegenerate}>
                     Refresh QR
                   </button>
@@ -186,6 +189,41 @@ export function ChapaQrContainer({
           </div>
 
           <div className="chapa-qr-meta">
+            <div
+              className={`tb-session-timer ${expiry.expired ? 'is-expired' : expiry.isUrgent ? 'is-urgent' : ''}`}
+              data-testid="qr-session-timer"
+              data-expired={expiry.expired ? 'true' : 'false'}
+            >
+              <div className="tb-session-timer-row">
+                <span className="tb-session-timer-label">
+                  <i
+                    className={`fa-solid ${expiry.expired ? 'fa-hourglass-end' : 'fa-hourglass-half'}`}
+                    aria-hidden="true"
+                  />{' '}
+                  {expiry.expired ? 'Session Expired' : 'QR Session Expires'}
+                </span>
+                <strong className="tb-session-timer-clock tb-tabular" data-testid="qr-session-clock">
+                  {expiry.label}
+                </strong>
+              </div>
+              <div className="tb-session-progress" aria-hidden="true">
+                <div className="tb-session-progress-bar" style={{ width: `${expiry.progressPct}%` }} />
+              </div>
+            </div>
+
+            {expiry.expired && (
+              <div
+                className="chapa-alert chapa-alert-error tb-session-expired-alert"
+                role="alert"
+                data-testid="chapa-qr-expired-alert"
+              >
+                <i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />
+                <span>
+                  <strong>Session Expired</strong> — Your 10-minute Telebirr QR session has timed out. Generate a new QR code to continue.
+                </span>
+              </div>
+            )}
+
             <dl className="chapa-qr-specs">
               <div>
                 <dt>Transaction Ref</dt>
@@ -196,7 +234,7 @@ export function ChapaQrContainer({
               <div>
                 <dt>QR Validity</dt>
                 <dd className={`tb-tabular ${expiry.expired ? 'is-expired' : ''}`}>
-                  {expiry.expired ? 'Expired — generate a new QR' : `Expires in ${expiry.label}`}
+                  {expiry.expired ? 'Session Expired' : `Expires in ${expiry.label}`}
                 </dd>
               </div>
               <div>
@@ -227,6 +265,7 @@ export function ChapaQrContainer({
               <button
                 type="button"
                 className="chapa-secondary-btn"
+                disabled={expiry.expired}
                 onClick={() => void handleCopyPayload()}
                 data-testid="telebirr-qr-copy"
               >
@@ -258,9 +297,11 @@ export function ChapaQrContainer({
                 <span className="tb-tabular">
                   {pollReason === 'active'
                     ? `Auto-checking Telebirr every 5s · Next check in ${pollCountdownSec}s${pollAttempts > 0 ? ` · Checks: ${pollAttempts}` : ''}`
-                    : pollReason === 'paused'
-                      ? 'Automatic 5s status check paused.'
-                      : 'Automatic status polling stopped.'}
+                    : pollReason === 'expired'
+                      ? 'Session Expired · Automatic status checks stopped.'
+                      : pollReason === 'paused'
+                        ? 'Automatic 5s status check paused.'
+                        : 'Automatic status polling stopped.'}
                 </span>
               </div>
               {(pollReason === 'active' || pollReason === 'paused') && (
@@ -279,20 +320,27 @@ export function ChapaQrContainer({
               <button
                 type="button"
                 className="chapa-secondary-btn"
-                disabled={verifying}
+                disabled={verifying || expiry.expired}
                 onClick={onVerifyNow}
                 data-testid="telebirr-qr-verify-btn"
               >
                 {verifying ? 'Checking Status…' : 'Check Payment Status'}
               </button>
               {session.checkoutUrl && (
-                <a
-                  href={session.checkoutUrl}
-                  className="btn-primary chapa-qr-open-btn"
+                <button
+                  type="button"
+                  className="btn-primary chapa-proceed-btn chapa-qr-open-btn"
+                  disabled={expiry.expired}
+                  onClick={() => {
+                    if (!expiry.expired && session.checkoutUrl) {
+                      window.location.assign(session.checkoutUrl);
+                    }
+                  }}
                   data-testid="telebirr-qr-open-link"
                 >
-                  <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" /> Open Hosted Checkout
-                </a>
+                  <i className="fa-solid fa-lock" aria-hidden="true" />{' '}
+                  {expiry.expired ? 'Session Expired — Pay Disabled' : 'Pay via Telebirr Checkout'}
+                </button>
               )}
             </div>
           </div>

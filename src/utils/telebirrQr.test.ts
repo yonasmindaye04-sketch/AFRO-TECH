@@ -5,6 +5,7 @@ import {
   formatQrExpiryCountdown,
   normalizeTelebirrQrSession,
   renderTelebirrQrDataUrl,
+  TELEBIRR_QR_TTL_MS,
 } from './telebirrQr';
 
 test('buildTelebirrQrRequestSignature distinguishes distinct orders cleanly', () => {
@@ -55,13 +56,14 @@ test('normalizeTelebirrQrSession validates required tx_ref & qr_payload and norm
   assert.equal(normalized.qrDataUrl, 'data:image/png;base64,iVBORw0KGgo=');
 });
 
-test('formatQrExpiryCountdown formats MM:SS accurately and detects expiry', () => {
+test('formatQrExpiryCountdown formats MM:SS cleanly for 10-minute session TTL and detects expiry', () => {
+  assert.equal(TELEBIRR_QR_TTL_MS, 10 * 60 * 1000);
   const now = Date.parse('2026-11-16T20:00:00.000Z');
-  const future = '2026-11-16T20:14:05.000Z';
+  const future = '2026-11-16T20:09:05.000Z';
   assert.deepEqual(formatQrExpiryCountdown(future, now), {
-    label: '14:05',
+    label: '09:05',
     expired: false,
-    remainingSec: 845,
+    remainingSec: 545,
   });
 
   const past = '2026-11-16T19:59:50.000Z';

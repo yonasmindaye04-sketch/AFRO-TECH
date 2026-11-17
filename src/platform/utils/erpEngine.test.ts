@@ -155,3 +155,21 @@ test('evaluateThreeWayMatch detects exact match, partial receipt, and price/qty 
   assert.equal(priceVar.amountVariance, 50)
 })
 
+test('computeFinancialStatements and detectAccountingExceptions handle missing/malformed arrays without throwing', () => {
+  const fs = computeFinancialStatements(undefined as unknown as CoaAccount[], undefined as unknown as [])
+  assert.equal(fs.totalAssets, 0)
+  assert.equal(fs.trialBalanced, true)
+
+  const findings = detectAccountingExceptions({
+    accounts: undefined,
+    glEntries: undefined,
+    products: undefined,
+    warehouses: undefined,
+    customers: undefined,
+    suppliers: undefined,
+  })
+  assert.equal(findings.length, 2)
+  assert.equal(findings[0]?.severity, 'ok')
+})
+
+

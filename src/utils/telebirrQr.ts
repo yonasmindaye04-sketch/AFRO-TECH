@@ -1,7 +1,8 @@
 import QRCode from 'qrcode';
 import type { PaymentPlanMode } from './serviceCheckout';
+import { evaluateTelebirrSessionCountdown, TELEBIRR_SESSION_TTL_MS } from './telebirrCheckout';
 
-export const TELEBIRR_QR_TTL_MS = 15 * 60 * 1000;
+export const TELEBIRR_QR_TTL_MS = TELEBIRR_SESSION_TTL_MS;
 
 export interface TelebirrQrSession {
   txRef: string;
@@ -78,20 +79,12 @@ export function formatQrExpiryCountdown(
   expiresAtIso: string | null,
   nowMs = Date.now(),
 ): { label: string; expired: boolean; remainingSec: number } {
-  if (!expiresAtIso) {
-    return { label: '15:00', expired: false, remainingSec: 900 };
-  }
-  const expiresMs = Date.parse(expiresAtIso);
-  if (!Number.isFinite(expiresMs)) {
-    return { label: '15:00', expired: false, remainingSec: 900 };
-  }
-  const diffSec = Math.max(0, Math.floor((expiresMs - nowMs) / 1000));
-  if (diffSec === 0) {
-    return { label: '00:00', expired: true, remainingSec: 0 };
-  }
-  const mins = String(Math.floor(diffSec / 60)).padStart(2, '0');
-  const secs = String(diffSec % 60).padStart(2, '0');
-  return { label: `${mins}:${secs}`, expired: false, remainingSec: diffSec };
+  const res = evaluateTelebirrSessionCountdown(expiresAtIso, nowMs);
+  return {
+    label: res.label,
+    expired: res.expired,
+    remainingSec: res.remainingSec,
+  };
 }
 
 export async function renderTelebirrQrDataUrl(qrPayload: string): Promise<string> {

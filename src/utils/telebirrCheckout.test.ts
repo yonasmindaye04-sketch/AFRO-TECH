@@ -5,6 +5,7 @@ import {
   buildTelebirrOrderSummary,
   classifyTelebirrVerifyOutcome,
   evaluateTelebirrPollCycle,
+  evaluateTelebirrSessionCountdown,
   extractTelebirrBackendError,
   formatTelebirrStageLabel,
   normalizeTelebirrMerchantConfig,
@@ -13,6 +14,7 @@ import {
   TELEBIRR_GATEWAY_HEARTBEAT_MS,
   TELEBIRR_MAX_POLL_ATTEMPTS,
   TELEBIRR_POLL_INTERVAL_MS,
+  TELEBIRR_SESSION_TTL_MS,
   validateTelebirrDirectForm,
 } from './telebirrCheckout';
 
@@ -159,6 +161,37 @@ test('TELEBIRR_POLL_INTERVAL_MS is 5000ms and polling guards stop cleanly on ver
     evaluateTelebirrPollCycle({ activeTxRef: 'TB-SVC-1', verified: false, paused: false, attempts: 60 }),
     { shouldPoll: false, reason: 'max_attempts' },
   );
+  assert.deepEqual(
+    evaluateTelebirrPollCycle({ activeTxRef: 'TB-SVC-1', verified: false, expired: true, paused: false, attempts: 2 }),
+    { shouldPoll: false, reason: 'expired' },
+  );
+});
+
+test('evaluateTelebirrSessionCountdown tracks 10-minute expiry accurately and flags Session Expired at 00:00', () => {
+  assert.equal(TELEBIRR_SESSION_TTL_MS, 10 * 60 * 1000);
+  const startMs = Date.parse('2026-11-17T10:00:00.000Z');
+  const expiresAt = new Date(startMs + TELEBIRR_SESSION_TTL_MS).toISOString();
+
+  const full = evaluateTelebirrSessionCountdown(expiresAt, startMs);
+  assert.equal(full.label, '10:00');
+  assert.equal(full.expired, false);
+  assert.equal(full.isUrgent, false);
+  assert.equal(full.progressPct, 100);
+
+  const urgent = evaluateTelebirrSessionCountdown(expiresAt, startMs + 8 * 60 * 1000 + 5 * 1000);
+  assert.equal(urgent.label, '01:55');
+  assert.equal(urgent.expired, false);
+  assert.equal(urgent.isUrgent, true);
+
+  const atExpiry = evaluateTelebirrSessionCountdown(expiresAt, startMs + TELEBIRR_SESSION_TTL_MS);
+  assert.equal(atExpiry.label, '00:00');
+  assert.equal(atExpiry.expired, true);
+  assert.equal(atExpiry.remainingSec, 0);
+  assert.equal(atExpiry.progressPct, 0);
+
+  const pastExpiry = evaluateTelebirrSessionCountdown(expiresAt, startMs + TELEBIRR_SESSION_TTL_MS + 42_000);
+  assert.equal(pastExpiry.label, '00:00');
+  assert.equal(pastExpiry.expired, true);
 });
 
 test('extractTelebirrBackendError and appendTelebirrErrorLog extract exact backend codes and coalesce consecutive duplicates', () => {

@@ -9,6 +9,7 @@ import {
 
 export const TELEBIRR_NOTE_MAX_LEN = 24;
 export const TELEBIRR_GATEWAY_HEARTBEAT_MS = 15000;
+export const TELEBIRR_SESSION_TTL_MS = 10 * 60 * 1000;
 
 export type TelebirrConnectionStatus = 'live' | 'pending';
 
@@ -219,9 +220,72 @@ export function classifyTelebirrVerifyOutcome(
   return 'pending';
 }
 
+export interface TelebirrSessionCountdown {
+  label: string;
+  expired: boolean;
+  remainingMs: number;
+  remainingSec: number;
+  isUrgent: boolean;
+  progressPct: number;
+}
+
+/**
+ * Evaluates a 10-minute active Telebirr payment session expiry timestamp into MM:SS countdown state.
+ */
+export function evaluateTelebirrSessionCountdown(
+  expiresAtIso: string | null,
+  nowMs = Date.now(),
+): TelebirrSessionCountdown {
+  const defaultSec = Math.floor(TELEBIRR_SESSION_TTL_MS / 1000);
+  if (!expiresAtIso) {
+    return {
+      label: '10:00',
+      expired: false,
+      remainingMs: TELEBIRR_SESSION_TTL_MS,
+      remainingSec: defaultSec,
+      isUrgent: false,
+      progressPct: 100,
+    };
+  }
+  const expiresMs = Date.parse(expiresAtIso);
+  if (!Number.isFinite(expiresMs)) {
+    return {
+      label: '10:00',
+      expired: false,
+      remainingMs: TELEBIRR_SESSION_TTL_MS,
+      remainingSec: defaultSec,
+      isUrgent: false,
+      progressPct: 100,
+    };
+  }
+  const remainingMs = Math.min(TELEBIRR_SESSION_TTL_MS, Math.max(0, expiresMs - nowMs));
+  const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
+  if (remainingMs <= 0 || remainingSec <= 0) {
+    return {
+      label: '00:00',
+      expired: true,
+      remainingMs: 0,
+      remainingSec: 0,
+      isUrgent: false,
+      progressPct: 0,
+    };
+  }
+  const mins = String(Math.floor(remainingSec / 60)).padStart(2, '0');
+  const secs = String(remainingSec % 60).padStart(2, '0');
+  const progressPct = Math.max(0, Math.min(100, Math.round((remainingMs / TELEBIRR_SESSION_TTL_MS) * 100)));
+  return {
+    label: `${mins}:${secs}`,
+    expired: false,
+    remainingMs,
+    remainingSec,
+    isUrgent: remainingSec <= 120,
+    progressPct,
+  };
+}
+
 export interface TelebirrPollDecision {
   shouldPoll: boolean;
-  reason: 'active' | 'idle' | 'verified' | 'paused' | 'failed' | 'max_attempts';
+  reason: 'active' | 'idle' | 'verified' | 'paused' | 'failed' | 'expired' | 'max_attempts';
 }
 
 /**
@@ -231,6 +295,7 @@ export function evaluateTelebirrPollCycle(input: {
   activeTxRef: string | null;
   verified: boolean;
   terminalFailure?: boolean;
+  expired?: boolean;
   paused: boolean;
   attempts: number;
   maxAttempts?: number;
@@ -240,6 +305,9 @@ export function evaluateTelebirrPollCycle(input: {
   }
   if (input.verified) {
     return { shouldPoll: false, reason: 'verified' };
+  }
+  if (input.expired) {
+    return { shouldPoll: false, reason: 'expired' };
   }
   if (input.terminalFailure) {
     return { shouldPoll: false, reason: 'failed' };

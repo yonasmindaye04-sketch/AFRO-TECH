@@ -146,14 +146,14 @@
   background: var(--surface); border-bottom: 1px solid var(--border);
 }
 .pl-topbar-left {
-  display: flex; align-items: center; gap: 12px; min-width: 0;
+  display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1;
 }
 .pl-topbar-title-wrap {
-  display: flex; align-items: baseline; gap: 10px; min-width: 0; flex-wrap: wrap;
+  display: flex; align-items: baseline; gap: 10px; min-width: 0; flex-wrap: wrap; max-width: 100%;
 }
 .pl-topbar-title {
   font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 1rem;
-  color: var(--text); white-space: nowrap;
+  color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
 }
 .pl-topbar-tenant {
   font-size: .78rem; color: var(--text-dim); white-space: nowrap;
@@ -257,7 +257,7 @@
 .pl-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
 .pl-page-title { font-family: 'Space Grotesk', sans-serif; font-size: 1.5rem; letter-spacing: -.01em; }
 .pl-page-sub { color: var(--text-dim); font-size: .9rem; margin-top: 2px; }
-.pl-page-actions { display: flex; gap: 10px; }
+.pl-page-actions { display: flex; gap: 10px; flex-wrap: wrap; max-width: 100%; }
 
 /* â”€â”€ Buttons & inputs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .pl-btn {
@@ -1814,8 +1814,8 @@ label:has(input[type="radio"]) {
   .pl-scanner-frame video { aspect-ratio: 3 / 4; object-fit: cover; }
 }
 
-/* ── Subscription page tabs ── */
-.sub-tabs { display: flex; gap: 8px; }
+/* ── Subscription & Accounting sub-tabs ── */
+.sub-tabs { display: flex; gap: 8px; flex-wrap: wrap; max-width: 100%; }
 .sub-tab {
   padding: 7px 16px;
   border: 1px solid var(--border);
