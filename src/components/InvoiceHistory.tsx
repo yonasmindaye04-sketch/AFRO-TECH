@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { loadAuth } from '../platform/api';
 import {
   computeInvoiceHistoryStats,
+  fetchAndDownloadVerifiedPdfReceipt,
   filterLocalInvoices,
   formatDeliveryStatusLabel,
   formatInvoiceHistoryDate,
@@ -51,6 +52,7 @@ export function InvoiceHistory({
   const [requiresLookup, setRequiresLookup] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [resendingRef, setResendingRef] = useState<string | null>(null);
+  const [downloadingRef, setDownloadingRef] = useState<string | null>(null);
   const [rowFeedback, setRowFeedback] = useState<Record<string, string>>({});
 
   const mergedRefsKey = useMemo(() => {
@@ -181,6 +183,25 @@ export function InvoiceHistory({
       onStatusToast?.('error', msg);
     } finally {
       setResendingRef(null);
+    }
+  };
+
+  const handleDownloadPdf = async (item: InvoiceHistoryItem): Promise<void> => {
+    setDownloadingRef(item.tx_ref);
+    try {
+      const res = await fetchAndDownloadVerifiedPdfReceipt(item.tx_ref, {
+        fallbackFilename: item.filename,
+        pdfUrl: item.pdf_url,
+      });
+      const okMsg = `Downloaded ${res.filename} (${Math.max(1, Math.round(res.sizeBytes / 1024))} KB).`;
+      setRowFeedback((prev) => ({ ...prev, [item.tx_ref]: okMsg }));
+      onStatusToast?.('success', okMsg);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to download PDF receipt.';
+      setRowFeedback((prev) => ({ ...prev, [item.tx_ref]: msg }));
+      onStatusToast?.('error', msg);
+    } finally {
+      setDownloadingRef(null);
     }
   };
 
@@ -352,14 +373,19 @@ export function InvoiceHistory({
                     {formatInvoiceHistoryMoney(item.amount, item.currency)}
                   </div>
                   <div className="inv-hist-actions">
-                    <a
-                      href={item.pdf_url}
-                      download={item.filename}
+                    <button
+                      type="button"
                       className="invoice-pdf-btn"
+                      disabled={downloadingRef === item.tx_ref}
+                      onClick={() => void handleDownloadPdf(item)}
                       data-testid={`history-download-${item.tx_ref}`}
                     >
-                      <i className="fa-solid fa-download" aria-hidden="true" /> Download PDF
-                    </a>
+                      <i
+                        className={`fa-solid ${downloadingRef === item.tx_ref ? 'fa-spinner fa-spin' : 'fa-download'}`}
+                        aria-hidden="true"
+                      />{' '}
+                      {downloadingRef === item.tx_ref ? 'Preparing…' : 'Download PDF'}
+                    </button>
                     {(item.recipient_email || item.customer_email) && (
                       <button
                         type="button"

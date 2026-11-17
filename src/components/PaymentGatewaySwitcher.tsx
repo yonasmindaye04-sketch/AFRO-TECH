@@ -9,6 +9,13 @@ import {
   type ServicePaymentProvider,
 } from '../utils/serviceCheckout';
 
+import {
+  normalizeTelebirrMerchantConfig,
+  resolveTelebirrGatewayIndicator,
+  TELEBIRR_GATEWAY_HEARTBEAT_MS,
+  type TelebirrMerchantConfig,
+} from '../utils/telebirrCheckout';
+
 type GatewayModeMap = Partial<Record<ServicePaymentProvider, 'live' | 'sandbox'>>;
 
 export interface PaymentGatewaySwitcherProps {
@@ -41,30 +48,61 @@ export function PaymentGatewaySwitcher({
   onNotesChange,
 }: PaymentGatewaySwitcherProps): JSX.Element {
   const [gatewayModes, setGatewayModes] = useState<GatewayModeMap>({});
+  const [telebirrConfig, setTelebirrConfig] = useState<TelebirrMerchantConfig>(() => normalizeTelebirrMerchantConfig(null));
+  const [telebirrProbing, setTelebirrProbing] = useState(true);
+  const [telebirrNetErr, setTelebirrNetErr] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all(
-      SERVICE_PAYMENT_PROVIDERS.map(async (rail) => {
-        try {
-          const res = await fetch(rail.configEndpoint);
-          const data = await res.json().catch(() => null);
-          if (res.ok && data?.mode) {
-            return [rail.id, data.mode as 'live' | 'sandbox'] as const;
+    const pollGateways = (): void => {
+      Promise.all(
+        SERVICE_PAYMENT_PROVIDERS.map(async (rail) => {
+          try {
+            const res = await fetch(rail.configEndpoint);
+            const data = await res.json().catch(() => null);
+            if (rail.id === 'telebirr' && !cancelled) {
+              if (res.ok && data?.ok) {
+                setTelebirrNetErr(false);
+                setTelebirrConfig(normalizeTelebirrMerchantConfig(data));
+              } else {
+                setTelebirrNetErr(true);
+              }
+              setTelebirrProbing(false);
+            }
+            if (res.ok && data?.mode) {
+              return [rail.id, data.mode as 'live' | 'sandbox'] as const;
+            }
+          } catch {
+            if (rail.id === 'telebirr' && !cancelled) {
+              setTelebirrNetErr(true);
+              setTelebirrProbing(false);
+            }
           }
-        } catch {
-          // Ignore transient config check failure
-        }
-        return [rail.id, 'sandbox' as const] as const;
-      }),
-    ).then((entries) => {
-      if (cancelled) return;
-      setGatewayModes(Object.fromEntries(entries) as GatewayModeMap);
-    });
+          return [rail.id, 'sandbox' as const] as const;
+        }),
+      ).then((entries) => {
+        if (cancelled) return;
+        setGatewayModes(Object.fromEntries(entries) as GatewayModeMap);
+      });
+    };
+
+    pollGateways();
+    const timer = window.setInterval(pollGateways, TELEBIRR_GATEWAY_HEARTBEAT_MS);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, []);
+
+  const telebirrIndicator = useMemo(
+    () =>
+      resolveTelebirrGatewayIndicator({
+        probing: telebirrProbing,
+        config: telebirrConfig,
+        networkError: telebirrNetErr,
+      }),
+    [telebirrProbing, telebirrConfig, telebirrNetErr],
+  );
 
   const spec = GATEWAY_REQUIREMENTS[provider];
   const activeMode = gatewayModes[provider] ?? 'sandbox';
@@ -132,9 +170,26 @@ export function PaymentGatewaySwitcher({
             <div className="pgs-req-title">{spec.displayName}</div>
             <div className="pgs-req-summary">{spec.railSummary}</div>
           </div>
-          <span className={`pgs-mode-tag ${activeMode}`}>
-            {activeMode === 'live' ? 'Live Gateway' : 'Sandbox Mode'}
-          </span>
+          {provider === 'telebirr' ? (
+            <div
+              className={`tb-gateway-status is-${telebirrIndicator.status}`}
+              role="status"
+              aria-live="polite"
+              title={telebirrIndicator.detail}
+              data-testid="pgs-telebirr-status"
+              data-status={telebirrIndicator.status}
+            >
+              <span className={`tb-status-dot is-${telebirrIndicator.status}`} aria-hidden="true" />
+              <strong>{telebirrIndicator.label}</strong>
+              <span className="tb-status-sub">
+                {telebirrIndicator.status === 'live' ? 'Merchant Gateway' : 'Gateway Pending'}
+              </span>
+            </div>
+          ) : (
+            <span className={`pgs-mode-tag ${activeMode}`}>
+              {activeMode === 'live' ? 'Live Gateway' : 'Sandbox Mode'}
+            </span>
+          )}
         </div>
 
         <div className="pgs-spec-grid">

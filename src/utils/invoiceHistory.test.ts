@@ -7,6 +7,7 @@ import {
   formatInvoiceHistoryMoney,
   loadRecentInvoiceContext,
   normalizeInvoiceHistoryQuery,
+  parseContentDispositionFilename,
   saveRecentInvoiceContext,
   type InvoiceHistoryItem,
 } from './invoiceHistory';
@@ -100,3 +101,16 @@ test('saveRecentInvoiceContext and loadRecentInvoiceContext persist deduplicated
   assert.equal(loaded.email, 'abebe@asella.et');
   assert.deepEqual(loaded.txRefs, ['CHAPA-SVC-101', 'MPESA-SVC-202']);
 });
+
+test('parseContentDispositionFilename extracts quoted and UTF-8 filenames safely', () => {
+  assert.equal(
+    parseContentDispositionFilename('attachment; filename="INV-20261116-TB123.pdf"', 'fallback.pdf'),
+    'INV-20261116-TB123.pdf',
+  );
+  assert.equal(
+    parseContentDispositionFilename("attachment; filename*=UTF-8''INV-UTF8-99.pdf", 'fallback.pdf'),
+    'INV-UTF8-99.pdf',
+  );
+  assert.equal(parseContentDispositionFilename(null, 'fallback.pdf'), 'fallback.pdf');
+});
+

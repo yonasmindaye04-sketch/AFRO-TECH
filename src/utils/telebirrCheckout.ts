@@ -8,6 +8,9 @@ import {
 } from './serviceCheckout';
 
 export const TELEBIRR_NOTE_MAX_LEN = 24;
+export const TELEBIRR_GATEWAY_HEARTBEAT_MS = 15000;
+
+export type TelebirrConnectionStatus = 'live' | 'pending';
 
 export interface TelebirrMerchantConfig {
   mode: 'live' | 'sandbox';
@@ -15,6 +18,9 @@ export interface TelebirrMerchantConfig {
   merchantCodeMasked: string | null;
   publicKeyConfigured: boolean;
   webGatewayHost: string;
+  connectionStatus: TelebirrConnectionStatus;
+  connectionReason: string;
+  checkedAt: string | null;
 }
 
 export interface TelebirrDirectOrderSummary {
@@ -54,12 +60,71 @@ export function normalizeTelebirrMerchantConfig(raw: unknown): TelebirrMerchantC
       ? obj.web_gateway_host.trim()
       : '196.188.120.3:38443';
 
+  const connectionStatus: TelebirrConnectionStatus =
+    obj.connection_status === 'live'
+      ? 'live'
+      : obj.connection_status === 'pending'
+        ? 'pending'
+        : mode === 'live' && obj.gateway_reachable !== false
+          ? 'live'
+          : 'pending';
+
+  const connectionReason =
+    typeof obj.connection_reason === 'string' && obj.connection_reason.trim()
+      ? obj.connection_reason.trim()
+      : connectionStatus === 'live'
+        ? 'Connected to Telebirr Fabric merchant gateway.'
+        : 'Awaiting live Telebirr merchant gateway connection.';
+
+  const checkedAt =
+    typeof obj.checked_at === 'string' && obj.checked_at.trim() ? obj.checked_at.trim() : null;
+
   return {
     mode,
     merchantConfigured,
     merchantCodeMasked,
     publicKeyConfigured,
     webGatewayHost,
+    connectionStatus,
+    connectionReason,
+    checkedAt,
+  };
+}
+
+export function resolveTelebirrGatewayIndicator(input: {
+  probing: boolean;
+  config: TelebirrMerchantConfig;
+  networkError?: boolean;
+}): {
+  status: TelebirrConnectionStatus;
+  label: 'Live' | 'Pending';
+  detail: string;
+} {
+  if (input.networkError) {
+    return {
+      status: 'pending',
+      label: 'Pending',
+      detail: 'Reconnecting to Telebirr gateway…',
+    };
+  }
+  if (input.probing && !input.config.checkedAt) {
+    return {
+      status: 'pending',
+      label: 'Pending',
+      detail: 'Checking Telebirr merchant gateway…',
+    };
+  }
+  if (input.config.connectionStatus === 'live') {
+    return {
+      status: 'live',
+      label: 'Live',
+      detail: input.config.connectionReason,
+    };
+  }
+  return {
+    status: 'pending',
+    label: 'Pending',
+    detail: input.config.connectionReason,
   };
 }
 
@@ -128,3 +193,176 @@ export function validateTelebirrDirectForm(input: {
     errors: base.errors,
   };
 }
+
+export const TELEBIRR_POLL_INTERVAL_MS = 5000;
+export const TELEBIRR_MAX_POLL_ATTEMPTS = 60;
+
+export type TelebirrVerifyOutcome = 'verified' | 'pending' | 'failed' | 'error';
+
+/**
+ * Classifies /api/telebirr/verify/:txRef responses into deterministic polling outcomes.
+ */
+export function classifyTelebirrVerifyOutcome(
+  resOk: boolean,
+  payload: Record<string, unknown> | null,
+): TelebirrVerifyOutcome {
+  if (!resOk || !payload || payload.ok === false) {
+    return 'error';
+  }
+  if (payload.verified === true) {
+    return 'verified';
+  }
+  const statusUpper = String(payload.status || '').toUpperCase();
+  if (['FAILED', 'FAIL', 'CLOSED', 'CANCELLED', 'EXPIRED'].includes(statusUpper)) {
+    return 'failed';
+  }
+  return 'pending';
+}
+
+export interface TelebirrPollDecision {
+  shouldPoll: boolean;
+  reason: 'active' | 'idle' | 'verified' | 'paused' | 'failed' | 'max_attempts';
+}
+
+/**
+ * Pure guard determining whether 5-second automatic Telebirr verification polling should continue.
+ */
+export function evaluateTelebirrPollCycle(input: {
+  activeTxRef: string | null;
+  verified: boolean;
+  terminalFailure?: boolean;
+  paused: boolean;
+  attempts: number;
+  maxAttempts?: number;
+}): TelebirrPollDecision {
+  if (!input.activeTxRef) {
+    return { shouldPoll: false, reason: 'idle' };
+  }
+  if (input.verified) {
+    return { shouldPoll: false, reason: 'verified' };
+  }
+  if (input.terminalFailure) {
+    return { shouldPoll: false, reason: 'failed' };
+  }
+  if (input.paused) {
+    return { shouldPoll: false, reason: 'paused' };
+  }
+  const cap = input.maxAttempts ?? TELEBIRR_MAX_POLL_ATTEMPTS;
+  if (input.attempts >= cap) {
+    return { shouldPoll: false, reason: 'max_attempts' };
+  }
+  return { shouldPoll: true, reason: 'active' };
+}
+
+export interface TelebirrErrorLogEntry {
+  id: string;
+  timestamp: string;
+  stage: string;
+  code: string;
+  statusCode: number | null;
+  message: string;
+  txRef: string | null;
+  repeatCount: number;
+}
+
+const TELEBIRR_STAGE_LABELS: Record<string, string> = {
+  config: 'Config Check',
+  validation: 'Validation',
+  fabric_token: 'Fabric Auth',
+  pre_order: 'H5 Pre-Order',
+  initialize: 'H5 Initialize',
+  query_order: 'Verify Query',
+  verify_lookup: 'Order Lookup',
+  invoice: 'PDF Invoice',
+  network: 'Network',
+};
+
+export function formatTelebirrStageLabel(stage: string): string {
+  const clean = String(stage || '').trim().toLowerCase();
+  return TELEBIRR_STAGE_LABELS[clean] || (clean ? clean.replace(/_/g, ' ') : 'Gateway');
+}
+
+/**
+ * Extracts specific backend error code, stage, HTTP status, and message from a Telebirr API response.
+ */
+export function extractTelebirrBackendError(input: {
+  resStatus?: number | null;
+  payload?: Record<string, unknown> | null;
+  defaultStage: string;
+  fallbackMessage: string;
+  txRef?: string | null;
+  timestamp?: string;
+}): TelebirrErrorLogEntry {
+  const p = input.payload && typeof input.payload === 'object' ? input.payload : {};
+  const rawMsg = [p.query_error, p.message, p.error, p.errorMsg, p.msg]
+    .find((v) => typeof v === 'string' && v.trim().length > 0);
+  const message = typeof rawMsg === 'string' ? rawMsg.trim() : input.fallbackMessage;
+
+  const statusVal =
+    typeof p.status_code === 'number'
+      ? p.status_code
+      : typeof p.statusCode === 'number'
+        ? p.statusCode
+        : typeof input.resStatus === 'number' && input.resStatus > 0
+          ? input.resStatus
+          : null;
+
+  const rawCode = [p.error_code, p.code, p.errorCode]
+    .find((v) => typeof v === 'string' && v.trim().length > 0);
+  const code =
+    typeof rawCode === 'string'
+      ? rawCode.trim()
+      : statusVal
+        ? `HTTP_${statusVal}`
+        : 'TELEBIRR_ERROR';
+
+  const rawStage = typeof p.stage === 'string' && p.stage.trim() ? p.stage.trim() : input.defaultStage;
+  const txRef =
+    (typeof input.txRef === 'string' && input.txRef.trim()) ||
+    (typeof p.tx_ref === 'string' && p.tx_ref.trim()) ||
+    null;
+
+  const ts = input.timestamp || new Date().toISOString();
+
+  return {
+    id: `tb-err-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    timestamp: ts,
+    stage: rawStage,
+    code,
+    statusCode: statusVal,
+    message,
+    txRef,
+    repeatCount: 1,
+  };
+}
+
+/**
+ * Prepends a Telebirr error entry, coalescing consecutive identical errors (e.g. during 5s polling).
+ */
+export function appendTelebirrErrorLog(
+  entries: TelebirrErrorLogEntry[],
+  next: TelebirrErrorLogEntry,
+  maxEntries = 20,
+): TelebirrErrorLogEntry[] {
+  const latest = entries[0];
+  if (
+    latest &&
+    latest.stage === next.stage &&
+    latest.code === next.code &&
+    latest.message === next.message &&
+    latest.txRef === next.txRef
+  ) {
+    return [
+      {
+        ...latest,
+        timestamp: next.timestamp,
+        statusCode: next.statusCode ?? latest.statusCode,
+        repeatCount: latest.repeatCount + 1,
+      },
+      ...entries.slice(1),
+    ];
+  }
+
+  return [next, ...entries].slice(0, Math.max(1, maxEntries));
+}
+

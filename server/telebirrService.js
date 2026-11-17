@@ -139,6 +139,64 @@ export function sanitizeTelebirrError(message, secrets = []) {
 }
 
 /**
+ * Classifies transport/network/credential errors into actionable diagnostics without leaking secrets.
+ */
+export function formatTelebirrTransportError(err, stage = 'gateway', secrets = []) {
+  const rawName = err instanceof Error ? err.name : '';
+  const rawMessage = err instanceof Error ? err.message : String(err || 'Telebirr gateway request failed');
+  const causeCode =
+    err && typeof err === 'object' && err.cause && typeof err.cause === 'object'
+      ? String(err.cause.code || '')
+      : err && typeof err === 'object' && 'code' in err
+        ? String(err.code || '')
+        : '';
+
+  const upperCombined = `${rawName} ${causeCode} ${rawMessage}`.toUpperCase();
+  if (
+    rawName === 'TimeoutError'
+    || rawName === 'AbortError'
+    || upperCombined.includes('TIMEOUT')
+    || upperCombined.includes('ETIMEDOUT')
+    || upperCombined.includes('UND_ERR_CONNECT_TIMEOUT')
+  ) {
+    return {
+      code: 'GATEWAY_TIMEOUT',
+      statusCode: 504,
+      stage,
+      error: sanitizeTelebirrError(
+        `Connection timeout waiting for Telebirr Fabric API (${stage}${causeCode ? ` · ${causeCode}` : ''}).`,
+        secrets,
+      ),
+    };
+  }
+
+  if (
+    upperCombined.includes('ECONNREFUSED')
+    || upperCombined.includes('ENOTFOUND')
+    || upperCombined.includes('ECONNRESET')
+    || upperCombined.includes('EAI_AGAIN')
+    || upperCombined.includes('FETCH FAILED')
+  ) {
+    return {
+      code: causeCode || 'GATEWAY_UNREACHABLE',
+      statusCode: 502,
+      stage,
+      error: sanitizeTelebirrError(
+        `Unable to reach Telebirr Fabric gateway (${stage}${causeCode ? ` · ${causeCode}` : ''}: ${rawMessage}).`,
+        secrets,
+      ),
+    };
+  }
+
+  return {
+    code: causeCode || 'TELEBIRR_REQUEST_ERROR',
+    statusCode: 502,
+    stage,
+    error: sanitizeTelebirrError(rawMessage, secrets),
+  };
+}
+
+/**
  * Builds the canonical Telebirr payment.preorder payload.
  */
 export function buildTelebirrPreOrderPayload({
@@ -234,6 +292,36 @@ export function buildTelebirrCheckoutUrl({
 }
 
 /**
+ * Builds the transaction-specific payload encoded in a Telebirr QR code.
+ * Uses Ethio Telecom Fabric receiveCode when available in live mode, otherwise
+ * falls back to the signed H5 checkout URL or unique hosted pay link.
+ */
+export function buildTelebirrQrScanPayload({
+  mode,
+  receiveCode,
+  checkoutUrl,
+  publicPayUrl,
+  txRef,
+}) {
+  const cleanReceiveCode = String(receiveCode || '').trim();
+  const cleanCheckoutUrl = String(checkoutUrl || '').trim();
+  const cleanPublicPayUrl = String(publicPayUrl || '').trim();
+  const cleanTxRef = String(txRef || '').trim();
+
+  if (mode === 'live') {
+    if (cleanReceiveCode) return cleanReceiveCode;
+    if (cleanCheckoutUrl) return cleanCheckoutUrl;
+  }
+
+  const baseTarget = cleanPublicPayUrl || cleanCheckoutUrl;
+  if (!baseTarget) {
+    throw new Error('Telebirr QR target URL is required.');
+  }
+  const sep = baseTarget.includes('?') ? '&' : '?';
+  return `${baseTarget}${sep}scan=telebirr${cleanTxRef ? `&tx_ref=${encodeURIComponent(cleanTxRef)}` : ''}`;
+}
+
+/**
  * Step 1: Obtains a Fabric token from POST /payment/v1/token.
  */
 export async function applyTelebirrFabricToken({
@@ -245,7 +333,14 @@ export async function applyTelebirrFabricToken({
   const appKey = String(fabricAppId || '').trim();
   const secret = String(appSecret || '').trim();
   if (!appKey || !secret) {
-    return { ok: false, configured: false, error: 'Telebirr Fabric App ID and App Secret are required.' };
+    return {
+      ok: false,
+      configured: false,
+      code: 'MISSING_MERCHANT_CREDENTIALS',
+      statusCode: 400,
+      stage: 'fabric_token',
+      error: 'Telebirr Fabric App ID and App Secret are missing from merchant configuration.',
+    };
   }
 
   const endpoint = `${String(baseUrl || TELEBIRR_DEFAULT_BASE_URL).replace(/\/+$/, '')}/payment/v1/token`;
@@ -263,20 +358,40 @@ export async function applyTelebirrFabricToken({
     const data = await res.json().catch(() => null);
     const token = data?.token || data?.data?.token;
     if (!res.ok || !token) {
+      const upstreamCode = String(data?.errorCode || data?.code || '').trim();
+      const upstreamMsg = String(data?.errorMsg || data?.msg || data?.message || '').trim();
+      const isAuthError =
+        res.status === 401
+        || res.status === 403
+        || /invalid|unauthoriz|secret|app.?key|credential|auth/i.test(`${upstreamCode} ${upstreamMsg}`);
+      const errorCode = isAuthError
+        ? 'INVALID_MERCHANT_CREDENTIALS'
+        : upstreamCode || `FABRIC_TOKEN_HTTP_${res.status || 502}`;
+      const detail = upstreamMsg
+        ? isAuthError
+          ? `Invalid Telebirr merchant credentials: ${upstreamMsg}`
+          : upstreamMsg
+        : isAuthError
+          ? `Invalid Telebirr merchant credentials rejected by Fabric token API (HTTP ${res.status}).`
+          : `Telebirr Fabric token request failed (HTTP ${res.status}).`;
+
       return {
         ok: false,
         configured: true,
-        statusCode: res.status,
-        error: sanitizeTelebirrError(data?.errorMsg || data?.message || `Telebirr token HTTP ${res.status}`, [secret, appKey]),
+        code: errorCode,
+        stage: 'fabric_token',
+        statusCode: res.status || 502,
+        error: sanitizeTelebirrError(detail, [secret, appKey]),
       };
     }
 
     return { ok: true, configured: true, token: String(token) };
   } catch (err) {
+    const formatted = formatTelebirrTransportError(err, 'fabric_token', [secret, appKey]);
     return {
       ok: false,
       configured: true,
-      error: sanitizeTelebirrError(err instanceof Error ? err.message : 'Failed to reach Telebirr token API', [secret, appKey]),
+      ...formatted,
     };
   }
 }
@@ -300,7 +415,14 @@ export async function initializeTelebirrOrder({
   } = config || {};
 
   if (!fabricAppId || !appSecret || !merchantAppId || !merchantCode || !privateKey) {
-    return { ok: false, configured: false, error: 'Telebirr live credentials are incomplete.' };
+    return {
+      ok: false,
+      configured: false,
+      code: 'INCOMPLETE_MERCHANT_CREDENTIALS',
+      stage: 'pre_order',
+      statusCode: 400,
+      error: 'Telebirr live merchant credentials are incomplete.',
+    };
   }
 
   const tokenRes = await applyTelebirrFabricToken({ baseUrl, fabricAppId, appSecret, fetchFn });
@@ -321,7 +443,14 @@ export async function initializeTelebirrOrder({
       privateKey,
     });
   } catch (err) {
-    return { ok: false, configured: true, error: sanitizeTelebirrError(err instanceof Error ? err.message : 'Telebirr signing failed', [appSecret, privateKey]) };
+    return {
+      ok: false,
+      configured: true,
+      code: 'RSA_SIGNING_FAILED',
+      stage: 'pre_order',
+      statusCode: 500,
+      error: sanitizeTelebirrError(err instanceof Error ? err.message : 'Telebirr RSA payload signing failed', [appSecret, privateKey]),
+    };
   }
 
   const authHeader = tokenRes.token.startsWith('Bearer ') ? tokenRes.token : `Bearer ${tokenRes.token}`;
@@ -344,12 +473,16 @@ export async function initializeTelebirrOrder({
     const receiveCode = data?.data?.receiveCode || data?.biz_content?.receive_code || null;
 
     if (!res.ok || (!prepayId && !directUrl)) {
+      const upstreamCode = String(data?.errorCode || data?.code || '').trim();
+      const upstreamMsg = String(data?.errorMsg || data?.msg || data?.message || '').trim();
       return {
         ok: false,
         configured: true,
-        statusCode: res.status,
+        code: upstreamCode || `PREORDER_HTTP_${res.status || 502}`,
+        stage: 'pre_order',
+        statusCode: res.status || 502,
         error: sanitizeTelebirrError(
-          data?.errorMsg || data?.msg || data?.message || `Telebirr preOrder HTTP ${res.status}`,
+          upstreamMsg || `Telebirr Fabric preOrder rejected request (HTTP ${res.status}).`,
           [appSecret, privateKey],
         ),
       };
@@ -372,10 +505,11 @@ export async function initializeTelebirrOrder({
       raw: data,
     };
   } catch (err) {
+    const formatted = formatTelebirrTransportError(err, 'pre_order', [appSecret, privateKey]);
     return {
       ok: false,
       configured: true,
-      error: sanitizeTelebirrError(err instanceof Error ? err.message : 'Network error calling Telebirr preOrder', [appSecret, privateKey]),
+      ...formatted,
     };
   }
 }
@@ -394,7 +528,15 @@ export async function queryTelebirrOrder({ config, merchOrderId, fetchFn = fetch
   } = config || {};
 
   if (!fabricAppId || !appSecret || !merchantAppId || !merchantCode || !privateKey) {
-    return { ok: false, configured: false, verified: false, error: 'Telebirr credentials not configured.' };
+    return {
+      ok: false,
+      configured: false,
+      verified: false,
+      code: 'MISSING_MERCHANT_CREDENTIALS',
+      stage: 'query_order',
+      statusCode: 400,
+      error: 'Telebirr merchant credentials not configured.',
+    };
   }
 
   const tokenRes = await applyTelebirrFabricToken({ baseUrl, fabricAppId, appSecret, fetchFn });
@@ -402,22 +544,35 @@ export async function queryTelebirrOrder({ config, merchOrderId, fetchFn = fetch
     return { ...tokenRes, verified: false };
   }
 
-  const basePayload = {
-    timestamp: createTelebirrTimestamp(),
-    nonce_str: createTelebirrNonceStr(),
-    method: 'payment.query.order',
-    sign_type: 'SHA256WithRSA',
-    version: '1.0',
-    biz_content: {
-      appid: String(merchantAppId).trim(),
-      merch_code: String(merchantCode).trim(),
-      merch_order_id: String(merchOrderId).trim(),
-    },
-  };
-  const payload = {
-    ...basePayload,
-    sign: signTelebirrRequest(basePayload, privateKey),
-  };
+  let payload;
+  try {
+    const basePayload = {
+      timestamp: createTelebirrTimestamp(),
+      nonce_str: createTelebirrNonceStr(),
+      method: 'payment.query.order',
+      sign_type: 'SHA256WithRSA',
+      version: '1.0',
+      biz_content: {
+        appid: String(merchantAppId).trim(),
+        merch_code: String(merchantCode).trim(),
+        merch_order_id: String(merchOrderId).trim(),
+      },
+    };
+    payload = {
+      ...basePayload,
+      sign: signTelebirrRequest(basePayload, privateKey),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      configured: true,
+      verified: false,
+      code: 'RSA_SIGNING_FAILED',
+      stage: 'query_order',
+      statusCode: 500,
+      error: sanitizeTelebirrError(err instanceof Error ? err.message : 'Failed to sign queryOrder request', [appSecret, privateKey]),
+    };
+  }
 
   const authHeader = tokenRes.token.startsWith('Bearer ') ? tokenRes.token : `Bearer ${tokenRes.token}`;
   const endpoint = `${String(baseUrl || TELEBIRR_DEFAULT_BASE_URL).replace(/\/+$/, '')}/payment/v1/merchant/queryOrder`;
@@ -443,11 +598,22 @@ export async function queryTelebirrOrder({ config, merchOrderId, fetchFn = fetch
       || '',
     ).toUpperCase();
     const verified = res.ok && ['PAY_SUCCESS', 'TRADE_SUCCESS', 'COMPLETED', 'SUCCESS'].includes(statusRaw);
+    const upstreamMsg = String(data?.errorMsg || data?.msg || data?.message || '').trim();
+    const upstreamCode = String(data?.errorCode || data?.code || '').trim();
     return {
       ok: res.ok,
       configured: true,
       verified,
       status: statusRaw || (res.ok ? 'PENDING' : 'FAILED'),
+      statusCode: res.status,
+      ...(res.ok ? {} : {
+        code: upstreamCode || `QUERY_HTTP_${res.status || 502}`,
+        stage: 'query_order',
+        error: sanitizeTelebirrError(
+          upstreamMsg || `Telebirr order status query failed (HTTP ${res.status}).`,
+          [appSecret, privateKey],
+        ),
+      }),
       reference:
         data?.biz_content?.payment_order_id
         || data?.biz_content?.trade_voucher
@@ -457,11 +623,12 @@ export async function queryTelebirrOrder({ config, merchOrderId, fetchFn = fetch
       amount: Number(data?.biz_content?.total_amount || data?.data?.total_amount || 0),
     };
   } catch (err) {
+    const formatted = formatTelebirrTransportError(err, 'query_order', [appSecret, privateKey]);
     return {
       ok: false,
       configured: true,
       verified: false,
-      error: sanitizeTelebirrError(err instanceof Error ? err.message : 'Failed to query Telebirr order', [appSecret, privateKey]),
+      ...formatted,
     };
   }
 }

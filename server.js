@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import QRCode from 'qrcode';
 import { sendContactTelegramNotification } from './server/contactTelegram.js';
 import {
   decryptSecret,
@@ -21,6 +22,7 @@ import {
 } from './server/chapaService.js';
 import {
   applyTelebirrFabricToken,
+  buildTelebirrQrScanPayload,
   generateTelebirrOrderId,
   initializeTelebirrOrder,
   queryTelebirrOrder,
@@ -1191,9 +1193,14 @@ function extractTelebirrHost(rawUrl) {
   }
 }
 
-app.get('/api/telebirr/config', (_req, res) => {
+const telebirrGatewayProbeCache = {
+  checkedAtMs: 0,
+  result: null,
+};
+
+app.get('/api/telebirr/config', async (req, res) => {
   const cfg = getServerTelebirrConfig();
-  res.json({
+  const basePayload = {
     ok: true,
     provider: 'telebirr',
     currency: 'ETB',
@@ -1203,6 +1210,46 @@ app.get('/api/telebirr/config', (_req, res) => {
     merchant_code_masked: maskTelebirrMerchantCode(cfg.merchantCode),
     public_key_configured: Boolean(cfg.publicKey),
     web_gateway_host: extractTelebirrHost(cfg.webBaseUrl || 'https://196.188.120.3:38443/payment/web/paygate'),
+  };
+
+  if (!cfg.configured) {
+    return res.json({
+      ...basePayload,
+      connection_status: 'pending',
+      gateway_reachable: false,
+      connection_reason: 'Awaiting live Telebirr merchant credentials (sandbox preview active).',
+      checked_at: new Date().toISOString(),
+    });
+  }
+
+  const skipProbe = String(req.query.probe || '') === '0';
+  const now = Date.now();
+  if (!skipProbe && (now - telebirrGatewayProbeCache.checkedAtMs > 10_000 || !telebirrGatewayProbeCache.result)) {
+    const tokenRes = await applyTelebirrFabricToken({
+      baseUrl: cfg.baseUrl,
+      fabricAppId: cfg.fabricAppId,
+      appSecret: cfg.appSecret,
+    });
+    telebirrGatewayProbeCache.checkedAtMs = Date.now();
+    telebirrGatewayProbeCache.result = {
+      reachable: Boolean(tokenRes.ok),
+      reason: tokenRes.ok
+        ? 'Telebirr Fabric merchant gateway connected.'
+        : tokenRes.error || 'Telebirr Fabric merchant gateway unreachable.',
+      code: tokenRes.ok ? null : tokenRes.code || 'GATEWAY_PENDING',
+      checkedAt: new Date().toISOString(),
+    };
+  }
+
+  const probe = telebirrGatewayProbeCache.result;
+  const isLive = probe ? probe.reachable : true;
+  return res.json({
+    ...basePayload,
+    connection_status: isLive ? 'live' : 'pending',
+    gateway_reachable: isLive,
+    connection_reason: probe?.reason || 'Telebirr merchant gateway ready.',
+    ...(probe?.code ? { error_code: probe.code } : {}),
+    checked_at: probe?.checkedAt || new Date().toISOString(),
   });
 });
 
@@ -1265,6 +1312,9 @@ app.post('/api/telebirr/initialize', async (req, res) => {
     if (!tbInit.ok) {
       return res.status(tbInit.statusCode || 502).json({
         ok: false,
+        code: tbInit.code || 'TELEBIRR_INIT_FAILED',
+        stage: tbInit.stage || 'pre_order',
+        status_code: tbInit.statusCode || 502,
         message: tbInit.error || 'Telebirr gateway declined pre-order initialization.',
       });
     }
@@ -1318,6 +1368,169 @@ app.post('/api/telebirr/initialize', async (req, res) => {
   });
 });
 
+app.post('/api/telebirr/qr', async (req, res) => {
+  const {
+    serviceId,
+    serviceName = 'Digital Service Package',
+    paymentPlan = 'deposit',
+    amount,
+    fullName = '',
+    email = '',
+    phone = '',
+    notes = '',
+    returnPath = '/services',
+  } = req.body ?? {};
+
+  const numAmount = Math.round(Number(amount) * 100) / 100;
+  if (!Number.isFinite(numAmount) || numAmount < 50 || numAmount > 5_000_000) {
+    return res.status(400).json({
+      ok: false,
+      code: 'INVALID_AMOUNT',
+      stage: 'validation',
+      message: 'Amount must be between 50 and 5,000,000 ETB.',
+    });
+  }
+
+  const rawName = String(fullName || '').trim();
+  const cleanName = rawName.length >= 2 ? rawName : 'Telebirr QR Customer';
+  const rawEmail = String(email || '').trim();
+  if (rawEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+    return res.status(400).json({
+      ok: false,
+      code: 'INVALID_EMAIL',
+      stage: 'validation',
+      message: 'Please enter a valid receipt email address.',
+    });
+  }
+
+  const merchOrderId = generateTelebirrOrderId('TB-QR');
+  const token = `tbqr-${crypto.randomUUID().slice(0, 10)}`;
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
+  const origin = (process.env.PUBLIC_URL || `${proto}://${host}`).replace(/\/$/, '');
+  const safePath = String(returnPath || '/services').startsWith('/') ? returnPath : '/services';
+  const separator = safePath.includes('?') ? '&' : '?';
+  const returnUrl = `${origin}${safePath}${separator}tx_ref=${encodeURIComponent(merchOrderId)}&provider=telebirr#pay-now`;
+  const notifyUrl = `${origin}/api/telebirr/notify`;
+
+  const description = `${String(serviceName).trim()} (${paymentPlan === 'full' ? 'Full Payment' : paymentPlan === 'custom' ? 'Custom Quote' : '40% Deposit'})`;
+  const title = notes ? `${description} - ${String(notes).slice(0, 24)}` : description;
+
+  const cfg = getServerTelebirrConfig();
+  let mode = 'sandbox';
+  let checkoutUrl = `/pay/${token}`;
+  let prepayId = null;
+  let receiveCode = null;
+
+  if (cfg.configured) {
+    const tbInit = await initializeTelebirrOrder({
+      config: cfg,
+      orderParams: {
+        merchOrderId,
+        title,
+        amount: numAmount,
+        notifyUrl,
+        redirectUrl: returnUrl,
+      },
+    });
+    if (!tbInit.ok) {
+      return res.status(tbInit.statusCode || 502).json({
+        ok: false,
+        code: tbInit.code || 'TELEBIRR_QR_INIT_FAILED',
+        stage: tbInit.stage || 'pre_order',
+        status_code: tbInit.statusCode || 502,
+        message: tbInit.error || 'Telebirr gateway declined QR pre-order initialization.',
+      });
+    }
+    mode = 'live';
+    checkoutUrl = tbInit.checkoutUrl;
+    prepayId = tbInit.prepayId;
+    receiveCode = tbInit.receiveCode;
+  }
+
+  const qrPayload = buildTelebirrQrScanPayload({
+    mode,
+    receiveCode,
+    checkoutUrl,
+    publicPayUrl: `${origin}/pay/${token}`,
+    txRef: merchOrderId,
+  });
+
+  let qrDataUrl;
+  try {
+    qrDataUrl = await QRCode.toDataURL(qrPayload, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 320,
+      color: {
+        dark: '#0B0C10',
+        light: '#FFFFFF',
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      code: 'QR_ENCODE_FAILED',
+      stage: 'qr_generation',
+      message: err instanceof Error ? err.message : 'Unable to encode Telebirr QR image.',
+    });
+  }
+
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+  const order = {
+    id: `svc-${crypto.randomUUID().slice(0, 8)}`,
+    provider: 'telebirr',
+    flow: 'TELEBIRR_QR',
+    tx_ref: merchOrderId,
+    token,
+    service_id: serviceId ?? null,
+    service_name: String(serviceName).trim(),
+    payment_plan: paymentPlan,
+    amount: numAmount,
+    currency: 'ETB',
+    customer_name: cleanName,
+    customer_email: rawEmail || null,
+    customer_phone: String(phone || '').trim() || null,
+    description,
+    mode,
+    checkout_url: checkoutUrl,
+    return_url: returnUrl,
+    prepay_id: prepayId,
+    receive_code: receiveCode,
+    qr_payload: qrPayload,
+    expires_at: expiresAt,
+    status: 'pending',
+    payer_reference: null,
+    chapa_reference: null,
+    created_at: createdAt,
+    settled_at: null,
+  };
+  serviceChapaOrders.set(merchOrderId, order);
+
+  return res.status(201).json({
+    ok: true,
+    provider: 'telebirr',
+    flow: 'TELEBIRR_QR',
+    mode,
+    merchant_code_masked: maskTelebirrMerchantCode(cfg.merchantCode),
+    tx_ref: merchOrderId,
+    token,
+    prepay_id: prepayId,
+    receive_code: receiveCode,
+    qr_payload: qrPayload,
+    qr_data_url: qrDataUrl,
+    amount: numAmount,
+    currency: 'ETB',
+    service_name: String(serviceName).trim(),
+    checkout_url: checkoutUrl,
+    return_url: returnUrl,
+    created_at: createdAt,
+    expires_at: expiresAt,
+  });
+});
+
 app.get('/api/telebirr/verify/:txRef', async (req, res) => {
   const txRef = String(req.params.txRef || '').trim();
   const order = serviceChapaOrders.get(txRef);
@@ -1342,20 +1555,44 @@ app.get('/api/telebirr/verify/:txRef', async (req, res) => {
         mode: order.mode,
         order,
         invoice: order.invoice || null,
+        ...(!queryRes.ok && order.status !== 'settled'
+          ? {
+              query_ok: false,
+              query_error: queryRes.error || 'Telebirr upstream query did not respond.',
+              error_code: queryRes.code || 'QUERY_ERROR',
+              stage: queryRes.stage || 'query_order',
+              status_code: queryRes.statusCode || 502,
+            }
+          : {}),
       });
     }
-    return res.status(queryRes.ok ? 200 : 404).json({
+    return res.status(queryRes.ok ? 200 : queryRes.statusCode || 404).json({
       ok: queryRes.ok,
       verified: queryRes.verified,
       status: queryRes.status,
       amount: queryRes.amount,
       currency: 'ETB',
       tx_ref: txRef,
+      ...(!queryRes.ok
+        ? {
+            code: queryRes.code || 'QUERY_ERROR',
+            stage: queryRes.stage || 'query_order',
+            status_code: queryRes.statusCode || 502,
+            message: queryRes.error || 'Telebirr verification query failed.',
+          }
+        : {}),
     });
   }
 
   if (!order) {
-    return res.status(404).json({ ok: false, verified: false, message: 'Telebirr transaction reference not found.' });
+    return res.status(404).json({
+      ok: false,
+      verified: false,
+      code: 'ORDER_NOT_FOUND',
+      stage: 'verify_lookup',
+      status_code: 404,
+      message: `Telebirr transaction reference ${txRef || '(empty)'} not found on server.`,
+    });
   }
   if (order.status === 'settled' && !order.invoice) {
     await dispatchTransactionInvoice(order, { merchant: DEFAULT_SERVICE_MERCHANT });
@@ -1763,7 +2000,19 @@ app.get('/api/invoices/:txRef', async (req, res) => {
   const existing = invoiceRegistry.get(txRef);
 
   if (!found && !existing) {
-    return res.status(404).json({ ok: false, message: 'Transaction or invoice not found.' });
+    return res.status(404).json({
+      ok: false,
+      code: 'INVOICE_NOT_FOUND',
+      message: `Transaction or receipt reference ${txRef || '(empty)'} not found on backend.`,
+    });
+  }
+
+  if (found && found.orderOrIntent.status !== 'settled' && !existing) {
+    return res.status(409).json({
+      ok: false,
+      code: 'PAYMENT_NOT_VERIFIED',
+      message: 'PDF receipt becomes available automatically once payment verification settles.',
+    });
   }
 
   if (found && found.orderOrIntent.status === 'settled' && !existing) {
@@ -1774,10 +2023,30 @@ app.get('/api/invoices/:txRef', async (req, res) => {
   if (!invoice) {
     return res.status(409).json({
       ok: false,
-      message: 'Invoice is generated automatically once payment settlement completes.',
+      code: 'PAYMENT_NOT_VERIFIED',
+      message: 'PDF receipt becomes available once payment settlement completes.',
     });
   }
-  return res.json({ ok: true, invoice });
+
+  const record = found?.orderOrIntent;
+  const transaction = record
+    ? {
+        tx_ref: record.tx_ref,
+        provider: record.provider || invoice.provider || 'chapa',
+        provider_label: invoice.provider_label || null,
+        status: record.status,
+        amount: Number(record.amount || invoice.amount || 0),
+        currency: record.currency || invoice.currency || 'ETB',
+        customer_name: record.customer_name || record.party_name || 'Valued Customer',
+        customer_email: record.customer_email || record.payer_email || invoice.recipient_email || null,
+        description: record.description || record.service_name || 'Digital Service Payment',
+        payer_reference: record.payer_reference || record.chapa_reference || null,
+        mode: record.mode || 'sandbox',
+        settled_at: record.settled_at || invoice.issued_at || null,
+      }
+    : null;
+
+  return res.json({ ok: true, invoice, transaction });
 });
 
 app.get('/api/invoices/:txRef/pdf', async (req, res) => {
@@ -1785,14 +2054,20 @@ app.get('/api/invoices/:txRef/pdf', async (req, res) => {
   const found = findTransactionForInvoice(txRef);
   let entry = invoiceRegistry.get(txRef);
 
+  if (found && found.orderOrIntent.status !== 'settled' && !entry) {
+    return res.status(409).json({
+      ok: false,
+      code: 'PAYMENT_NOT_VERIFIED',
+      message: 'PDF receipt becomes available once the payment is verified as settled.',
+    });
+  }
+
   if (!entry) {
     if (!found) {
-      return res.status(404).json({ ok: false, message: 'Transaction reference not found.' });
-    }
-    if (found.orderOrIntent.status !== 'settled') {
-      return res.status(409).json({
+      return res.status(404).json({
         ok: false,
-        message: 'PDF invoice becomes available once the payment settles.',
+        code: 'INVOICE_NOT_FOUND',
+        message: `Transaction reference ${txRef || '(empty)'} not found.`,
       });
     }
     const data = buildInvoiceData(found.orderOrIntent, found.merchant);
@@ -1811,6 +2086,7 @@ app.get('/api/invoices/:txRef/pdf', async (req, res) => {
   const filename = entry.meta?.filename || `${txRef}.pdf`;
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${filename}"`);
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
   res.setHeader('Cache-Control', 'no-store');
   return res.send(entry.pdfBuffer);
 });

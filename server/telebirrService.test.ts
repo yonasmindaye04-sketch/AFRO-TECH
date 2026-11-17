@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import {
   buildTelebirrCheckoutUrl,
   buildTelebirrPreOrderPayload,
+  buildTelebirrQrScanPayload,
   buildTelebirrSignString,
   initializeTelebirrOrder,
   queryTelebirrOrder,
@@ -140,3 +141,87 @@ test('initializeTelebirrOrder & queryTelebirrOrder call /payment/v1/token, preOr
   assert.equal(queryTradeRes.verified, true);
   assert.equal(queryTradeRes.reference, 'TV-888222');
 });
+
+test('initializeTelebirrOrder & queryTelebirrOrder surface structured timeout and invalid credential errors safely', async () => {
+  const baseConfig = {
+    baseUrl: 'https://tb.sandbox.test',
+    webBaseUrl: 'https://tb.sandbox.test/web',
+    fabricAppId: 'FAB-ERR-01',
+    appSecret: 'SUPER-SECRET-APP-999',
+    merchantAppId: 'M-APP-99',
+    merchantCode: '554120',
+    privateKey,
+  };
+
+  const authFailRes = await initializeTelebirrOrder({
+    config: baseConfig,
+    orderParams: {
+      merchOrderId: 'TB-ERR-401',
+      title: 'Web Portal',
+      amount: 4000,
+      notifyUrl: 'https://afrotech.et/api/telebirr/notify',
+      redirectUrl: 'https://afrotech.et/services',
+    },
+    fetchFn: async () =>
+      new Response(JSON.stringify({ errorCode: '40101', errorMsg: 'Invalid appSecret SUPER-SECRET-APP-999' }), {
+        status: 401,
+      }),
+  });
+  assert.equal(authFailRes.ok, false);
+  assert.equal(authFailRes.code, 'INVALID_MERCHANT_CREDENTIALS');
+  assert.equal(authFailRes.stage, 'fabric_token');
+  assert.equal(authFailRes.statusCode, 401);
+  assert.match(authFailRes.error, /Invalid Telebirr merchant credentials/);
+  assert.doesNotMatch(authFailRes.error, /SUPER-SECRET-APP-999/);
+
+  const timeoutErr = Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+  const timeoutRes = await queryTelebirrOrder({
+    config: baseConfig,
+    merchOrderId: 'TB-ERR-TIMEOUT',
+    fetchFn: async () => {
+      throw timeoutErr;
+    },
+  });
+  assert.equal(timeoutRes.ok, false);
+  assert.equal(timeoutRes.verified, false);
+  assert.equal(timeoutRes.code, 'GATEWAY_TIMEOUT');
+  assert.equal(timeoutRes.statusCode, 504);
+  assert.equal(timeoutRes.stage, 'fabric_token');
+  assert.match(timeoutRes.error, /Connection timeout waiting for Telebirr Fabric API/);
+});
+
+test('buildTelebirrQrScanPayload prefers native live receiveCode and falls back cleanly', () => {
+  assert.equal(
+    buildTelebirrQrScanPayload({
+      mode: 'live',
+      receiveCode: 'TB_RECEIVE_9988',
+      checkoutUrl: 'https://196.188.120.3:38443/pay?prepay_id=123',
+      publicPayUrl: 'https://afrotech.et/pay/tbqr-1',
+      txRef: 'TB-QR-001',
+    }),
+    'TB_RECEIVE_9988',
+  );
+
+  assert.equal(
+    buildTelebirrQrScanPayload({
+      mode: 'live',
+      receiveCode: null,
+      checkoutUrl: 'https://196.188.120.3:38443/pay?prepay_id=123',
+      publicPayUrl: 'https://afrotech.et/pay/tbqr-1',
+      txRef: 'TB-QR-001',
+    }),
+    'https://196.188.120.3:38443/pay?prepay_id=123',
+  );
+
+  assert.equal(
+    buildTelebirrQrScanPayload({
+      mode: 'sandbox',
+      receiveCode: null,
+      checkoutUrl: '/pay/tbqr-abc',
+      publicPayUrl: 'https://afrotech.et/pay/tbqr-abc',
+      txRef: 'TB-QR-002',
+    }),
+    'https://afrotech.et/pay/tbqr-abc?scan=telebirr&tx_ref=TB-QR-002',
+  );
+});
+

@@ -1,9 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  appendTelebirrErrorLog,
   buildTelebirrOrderSummary,
+  classifyTelebirrVerifyOutcome,
+  evaluateTelebirrPollCycle,
+  extractTelebirrBackendError,
+  formatTelebirrStageLabel,
   normalizeTelebirrMerchantConfig,
+  resolveTelebirrGatewayIndicator,
   sanitizeTelebirrOrderNote,
+  TELEBIRR_GATEWAY_HEARTBEAT_MS,
+  TELEBIRR_MAX_POLL_ATTEMPTS,
+  TELEBIRR_POLL_INTERVAL_MS,
   validateTelebirrDirectForm,
 } from './telebirrCheckout';
 
@@ -28,11 +37,43 @@ test('normalizeTelebirrMerchantConfig parses live and sandbox responses safely w
   assert.equal(live.merchantCodeMasked, '55••20');
   assert.equal(live.publicKeyConfigured, true);
   assert.equal(live.webGatewayHost, 'developerportal.ethiotelebirr.et:38443');
+  assert.equal(live.connectionStatus, 'live');
 
   const fallback = normalizeTelebirrMerchantConfig(null);
   assert.equal(fallback.mode, 'sandbox');
   assert.equal(fallback.merchantConfigured, false);
   assert.equal(fallback.merchantCodeMasked, null);
+  assert.equal(fallback.connectionStatus, 'pending');
+});
+
+test('resolveTelebirrGatewayIndicator distinguishes Live vs Pending real-time connection states', () => {
+  assert.equal(TELEBIRR_GATEWAY_HEARTBEAT_MS, 15000);
+  const liveCfg = normalizeTelebirrMerchantConfig({
+    mode: 'live',
+    connection_status: 'live',
+    connection_reason: 'Telebirr Fabric merchant gateway connected.',
+    checked_at: '2026-11-16T12:00:00.000Z',
+  });
+  assert.deepEqual(
+    resolveTelebirrGatewayIndicator({ probing: false, config: liveCfg }),
+    { status: 'live', label: 'Live', detail: 'Telebirr Fabric merchant gateway connected.' },
+  );
+
+  const pendingCfg = normalizeTelebirrMerchantConfig({
+    mode: 'sandbox',
+    connection_status: 'pending',
+    connection_reason: 'Awaiting live Telebirr merchant credentials.',
+    checked_at: '2026-11-16T12:00:00.000Z',
+  });
+  assert.deepEqual(
+    resolveTelebirrGatewayIndicator({ probing: false, config: pendingCfg }),
+    { status: 'pending', label: 'Pending', detail: 'Awaiting live Telebirr merchant credentials.' },
+  );
+
+  assert.equal(
+    resolveTelebirrGatewayIndicator({ probing: false, config: liveCfg, networkError: true }).label,
+    'Pending',
+  );
 });
 
 test('buildTelebirrOrderSummary formats deposit, full, and custom ETB totals with sanitized title preview', () => {
@@ -77,3 +118,93 @@ test('validateTelebirrDirectForm validates required identity, optional wallet ph
   assert.equal(ok.amount, 4000);
   assert.equal(ok.sanitizedNote, 'Kickoff Deposit');
 });
+
+test('TELEBIRR_POLL_INTERVAL_MS is 5000ms and polling guards stop cleanly on verify, pause, failure, or cap', () => {
+  assert.equal(TELEBIRR_POLL_INTERVAL_MS, 5000);
+  assert.equal(TELEBIRR_MAX_POLL_ATTEMPTS, 60);
+
+  assert.equal(classifyTelebirrVerifyOutcome(true, { ok: true, verified: true, status: 'settled' }), 'verified');
+  assert.equal(classifyTelebirrVerifyOutcome(true, { ok: true, verified: false, status: 'PENDING' }), 'pending');
+  assert.equal(classifyTelebirrVerifyOutcome(true, { ok: true, verified: false, status: 'FAILED' }), 'failed');
+  assert.equal(classifyTelebirrVerifyOutcome(true, { ok: true, verified: false, status: 'EXPIRED' }), 'failed');
+  assert.equal(classifyTelebirrVerifyOutcome(false, null), 'error');
+
+  assert.deepEqual(
+    evaluateTelebirrPollCycle({ activeTxRef: null, verified: false, paused: false, attempts: 0 }),
+    { shouldPoll: false, reason: 'idle' },
+  );
+  assert.deepEqual(
+    evaluateTelebirrPollCycle({ activeTxRef: 'TB-SVC-1', verified: false, paused: false, attempts: 0 }),
+    { shouldPoll: true, reason: 'active' },
+  );
+  assert.deepEqual(
+    evaluateTelebirrPollCycle({ activeTxRef: 'TB-SVC-1', verified: true, paused: false, attempts: 1 }),
+    { shouldPoll: false, reason: 'verified' },
+  );
+  assert.deepEqual(
+    evaluateTelebirrPollCycle({ activeTxRef: 'TB-SVC-1', verified: false, paused: true, attempts: 1 }),
+    { shouldPoll: false, reason: 'paused' },
+  );
+  assert.deepEqual(
+    evaluateTelebirrPollCycle({
+      activeTxRef: 'TB-SVC-1',
+      verified: false,
+      terminalFailure: true,
+      paused: false,
+      attempts: 1,
+    }),
+    { shouldPoll: false, reason: 'failed' },
+  );
+  assert.deepEqual(
+    evaluateTelebirrPollCycle({ activeTxRef: 'TB-SVC-1', verified: false, paused: false, attempts: 60 }),
+    { shouldPoll: false, reason: 'max_attempts' },
+  );
+});
+
+test('extractTelebirrBackendError and appendTelebirrErrorLog extract exact backend codes and coalesce consecutive duplicates', () => {
+  const credErr = extractTelebirrBackendError({
+    resStatus: 401,
+    payload: {
+      ok: false,
+      code: 'INVALID_MERCHANT_CREDENTIALS',
+      stage: 'fabric_token',
+      status_code: 401,
+      message: 'Invalid Telebirr merchant credentials: appSecret mismatch',
+    },
+    defaultStage: 'pre_order',
+    fallbackMessage: 'Generic fallback',
+  });
+  assert.equal(credErr.code, 'INVALID_MERCHANT_CREDENTIALS');
+  assert.equal(credErr.stage, 'fabric_token');
+  assert.equal(credErr.statusCode, 401);
+  assert.equal(credErr.message, 'Invalid Telebirr merchant credentials: appSecret mismatch');
+  assert.equal(formatTelebirrStageLabel(credErr.stage), 'Fabric Auth');
+
+  const queryTimeout = extractTelebirrBackendError({
+    resStatus: 200,
+    payload: {
+      ok: true,
+      query_ok: false,
+      error_code: 'GATEWAY_TIMEOUT',
+      stage: 'query_order',
+      status_code: 504,
+      query_error: 'Connection timeout waiting for Telebirr Fabric API (query_order).',
+    },
+    defaultStage: 'query_order',
+    fallbackMessage: 'Query failed',
+    txRef: 'TB-SVC-TIMEOUT1',
+  });
+  assert.equal(queryTimeout.code, 'GATEWAY_TIMEOUT');
+  assert.equal(queryTimeout.statusCode, 504);
+  assert.equal(queryTimeout.txRef, 'TB-SVC-TIMEOUT1');
+
+  let log = appendTelebirrErrorLog([], credErr);
+  log = appendTelebirrErrorLog(log, queryTimeout);
+  log = appendTelebirrErrorLog(log, { ...queryTimeout, timestamp: '2026-11-16T19:55:00.000Z' });
+  assert.equal(log.length, 2);
+  assert.equal(log[0].code, 'GATEWAY_TIMEOUT');
+  assert.equal(log[0].repeatCount, 2);
+  assert.equal(log[1].code, 'INVALID_MERCHANT_CREDENTIALS');
+});
+
+

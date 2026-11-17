@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   formatEtb,
   PAYABLE_SERVICES,
@@ -6,13 +6,27 @@ import {
   type ServicePaymentErrors,
 } from '../utils/serviceCheckout';
 import {
+  appendTelebirrErrorLog,
   buildTelebirrOrderSummary,
+  classifyTelebirrVerifyOutcome,
+  evaluateTelebirrPollCycle,
+  extractTelebirrBackendError,
+  formatTelebirrStageLabel,
   normalizeTelebirrMerchantConfig,
+  resolveTelebirrGatewayIndicator,
+  TELEBIRR_GATEWAY_HEARTBEAT_MS,
+  TELEBIRR_MAX_POLL_ATTEMPTS,
   TELEBIRR_NOTE_MAX_LEN,
+  TELEBIRR_POLL_INTERVAL_MS,
   validateTelebirrDirectForm,
+  type TelebirrErrorLogEntry,
   type TelebirrMerchantConfig,
 } from '../utils/telebirrCheckout';
-import { saveRecentInvoiceContext } from '../utils/invoiceHistory';
+import {
+  fetchAndDownloadVerifiedPdfReceipt,
+  PdfReceiptDownloadError,
+  saveRecentInvoiceContext,
+} from '../utils/invoiceHistory';
 import { celebrateVerifiedPayment } from '../utils/paymentCelebration';
 
 interface TelebirrH5Session {
@@ -90,47 +104,139 @@ export function TelebirrPayPanel({
   });
   const [submitting, setSubmitting] = useState(false);
   const [verifying, setVerifying] = useState(() => Boolean(initialReturnTxRef));
+  const [pendingReturnTxRef, setPendingReturnTxRef] = useState<string | null>(null);
+  const [pollPaused, setPollPaused] = useState(false);
+  const [pollAttempts, setPollAttempts] = useState(0);
+  const [pollTerminalFailure, setPollTerminalFailure] = useState(false);
+  const [pollCountdownSec, setPollCountdownSec] = useState(TELEBIRR_POLL_INTERVAL_MS / 1000);
   const [resendingInvoice, setResendingInvoice] = useState(false);
+  const [downloadingReceipt, setDownloadingReceipt] = useState(false);
   const [invoiceNotice, setInvoiceNotice] = useState<string | null>(null);
   const [config, setConfig] = useState<TelebirrMerchantConfig>(() => normalizeTelebirrMerchantConfig(null));
+  const [probingGateway, setProbingGateway] = useState(true);
+  const [gatewayNetworkError, setGatewayNetworkError] = useState(false);
   const [session, setSession] = useState<TelebirrH5Session | null>(null);
   const [verifiedReceipt, setVerifiedReceipt] = useState<TelebirrVerifiedReceipt | null>(null);
+  const [errorLogs, setErrorLogs] = useState<TelebirrErrorLogEntry[]>([]);
+  const inFlightVerifyRef = useRef(false);
+
+  const recordBackendError = (entry: TelebirrErrorLogEntry): void => {
+    setErrorLogs((prev) => appendTelebirrErrorLog(prev, entry));
+  };
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/telebirr/config')
-      .then((res) => res.json().catch(() => null))
-      .then((data) => {
-        if (!cancelled && data?.ok) {
-          setConfig(normalizeTelebirrMerchantConfig(data));
-        }
-      })
-      .catch(() => {
-        // Keep sandbox fallback cleanly if config check is offline
-      });
+    const probeGatewayConfig = (): void => {
+      fetch('/api/telebirr/config')
+        .then(async (res) => {
+          const data = await res.json().catch(() => null);
+          if (cancelled) return;
+          if (res.ok && data?.ok) {
+            setGatewayNetworkError(false);
+            setConfig(normalizeTelebirrMerchantConfig(data));
+          } else {
+            setGatewayNetworkError(true);
+            setErrorLogs((prev) =>
+              appendTelebirrErrorLog(
+                prev,
+                extractTelebirrBackendError({
+                  resStatus: res.status,
+                  payload: data,
+                  defaultStage: 'config',
+                  fallbackMessage: `Unable to load Telebirr merchant configuration (HTTP ${res.status}).`,
+                }),
+              ),
+            );
+          }
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          setGatewayNetworkError(true);
+          const msg = err instanceof Error && err.message ? err.message : 'Unable to reach /api/telebirr/config.';
+          setErrorLogs((prev) =>
+            appendTelebirrErrorLog(
+              prev,
+              extractTelebirrBackendError({
+                resStatus: null,
+                payload: { code: 'CONFIG_NETWORK_ERROR', message: msg },
+                defaultStage: 'config',
+                fallbackMessage: msg,
+              }),
+            ),
+          );
+        })
+        .finally(() => {
+          if (!cancelled) setProbingGateway(false);
+        });
+    };
+
+    probeGatewayConfig();
+    const heartbeatTimer = window.setInterval(probeGatewayConfig, TELEBIRR_GATEWAY_HEARTBEAT_MS);
     return () => {
       cancelled = true;
+      window.clearInterval(heartbeatTimer);
     };
   }, []);
+
+  const gatewayIndicator = useMemo(
+    () =>
+      resolveTelebirrGatewayIndicator({
+        probing: probingGateway,
+        config,
+        networkError: gatewayNetworkError,
+      }),
+    [probingGateway, config, gatewayNetworkError],
+  );
 
   const applyVerificationPayload = (
     txRef: string,
     resOk: boolean,
+    resStatus: number,
     data: Record<string, unknown> | null,
     silentPending: boolean,
   ): void => {
-    if (!resOk || !data?.ok) {
+    const outcome = classifyTelebirrVerifyOutcome(resOk, data);
+
+    if (outcome === 'error') {
+      const errEntry = extractTelebirrBackendError({
+        resStatus,
+        payload: data,
+        defaultStage: 'query_order',
+        fallbackMessage: `Telebirr verification failed (HTTP ${resStatus || 502}).`,
+        txRef,
+      });
+      recordBackendError(errEntry);
       if (!silentPending) {
-        setServerError(
-          typeof data?.message === 'string'
-            ? data.message
-            : 'Unable to verify Telebirr transaction status.',
-        );
+        setServerError(`[${errEntry.code}] ${errEntry.message}`);
       }
       return;
     }
 
-    if (data.verified) {
+    if (outcome === 'failed') {
+      const statusText = String(data?.status || 'FAILED').toUpperCase();
+      const errEntry = extractTelebirrBackendError({
+        resStatus,
+        payload: {
+          code: `ORDER_${statusText}`,
+          stage: 'query_order',
+          status_code: resStatus,
+          message:
+            typeof data?.message === 'string' && data.message.trim()
+              ? data.message
+              : `Telebirr reported order ${txRef} as ${statusText}. Please start a fresh payment.`,
+        },
+        defaultStage: 'query_order',
+        fallbackMessage: `Telebirr reported order ${txRef} as ${statusText}.`,
+        txRef,
+      });
+      recordBackendError(errEntry);
+      setPollTerminalFailure(true);
+      setPendingNotice(null);
+      setServerError(`[${errEntry.code}] ${errEntry.message}`);
+      return;
+    }
+
+    if (outcome === 'verified' && data) {
       const order = (data.order && typeof data.order === 'object' ? data.order : {}) as Record<string, unknown>;
       const invoiceMeta = (data.invoice || order.invoice || null) as TelebirrInvoiceMeta | null;
       const resolvedRef = typeof order.tx_ref === 'string' && order.tx_ref ? order.tx_ref : txRef;
@@ -140,6 +246,8 @@ export function TelebirrPayPanel({
       saveRecentInvoiceContext({ email: resolvedEmail, txRef: resolvedRef });
       onTransactionTracked?.(resolvedRef, resolvedEmail);
       setSession(null);
+      setPendingReturnTxRef(null);
+      setPendingNotice(null);
       setVerifiedReceipt({
         tx_ref: resolvedRef,
         amount: Number(order.amount ?? data.amount ?? 0),
@@ -159,7 +267,25 @@ export function TelebirrPayPanel({
         status: typeof order.status === 'string' ? order.status : 'settled',
       });
       onStatusToast?.('success', `Telebirr H5 payment ${resolvedRef} verified & PDF invoice ready.`);
-    } else if (!silentPending) {
+      return;
+    }
+
+    if (data && data.query_ok === false && typeof data.query_error === 'string' && data.query_error.trim()) {
+      const queryErrEntry = extractTelebirrBackendError({
+        resStatus,
+        payload: data,
+        defaultStage: 'query_order',
+        fallbackMessage: data.query_error,
+        txRef,
+      });
+      recordBackendError(queryErrEntry);
+      if (!silentPending) {
+        setServerError(`[${queryErrEntry.code}] ${queryErrEntry.message}`);
+      }
+      return;
+    }
+
+    if (!silentPending && data) {
       setPendingNotice(
         `Order ${txRef} status is ${String(data.status || 'PENDING').toUpperCase()}. Authorize payment on Telebirr H5 checkout, then verify again.`,
       );
@@ -167,19 +293,35 @@ export function TelebirrPayPanel({
   };
 
   const verifyTelebirrTransaction = async (txRef: string, silentPending = false): Promise<void> => {
-    if (!txRef) return;
+    if (!txRef || inFlightVerifyRef.current) return;
+    inFlightVerifyRef.current = true;
     setVerifying(true);
-    setPendingNotice(null);
-    setServerError(null);
+    if (!silentPending) {
+      setPendingNotice(null);
+      setServerError(null);
+    }
     try {
       const res = await fetch(`/api/telebirr/verify/${encodeURIComponent(txRef)}`);
       const data = await res.json().catch(() => null);
-      applyVerificationPayload(txRef, res.ok, data, silentPending);
-    } catch {
+      applyVerificationPayload(txRef, res.ok, res.status, data, silentPending);
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Network failure reaching Telebirr verification endpoint.';
+      const errEntry = extractTelebirrBackendError({
+        resStatus: null,
+        payload: { code: 'VERIFY_NETWORK_ERROR', message: msg },
+        defaultStage: 'query_order',
+        fallbackMessage: msg,
+        txRef,
+      });
+      recordBackendError(errEntry);
       if (!silentPending) {
-        setServerError('Could not reach Telebirr verification endpoint.');
+        setServerError(`[${errEntry.code}] ${errEntry.message}`);
       }
     } finally {
+      inFlightVerifyRef.current = false;
       setVerifying(false);
     }
   };
@@ -191,11 +333,35 @@ export function TelebirrPayPanel({
       .then(async (res) => {
         const data = await res.json().catch(() => null);
         if (!cancelled) {
-          applyVerificationPayload(initialReturnTxRef, res.ok, data, true);
+          applyVerificationPayload(initialReturnTxRef, res.ok, res.status, data, true);
+          if (classifyTelebirrVerifyOutcome(res.ok, data) === 'pending') {
+            setPendingReturnTxRef(initialReturnTxRef);
+            setPollAttempts(0);
+            setPollPaused(false);
+            setPollTerminalFailure(false);
+            setPollCountdownSec(TELEBIRR_POLL_INTERVAL_MS / 1000);
+          }
         }
       })
-      .catch(() => {
-        // Ignore transient return verification error cleanly
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          const msg =
+            err instanceof Error && err.message
+              ? err.message
+              : 'Network failure verifying returned Telebirr order.';
+          setErrorLogs((prev) =>
+            appendTelebirrErrorLog(
+              prev,
+              extractTelebirrBackendError({
+                resStatus: null,
+                payload: { code: 'VERIFY_NETWORK_ERROR', message: msg },
+                defaultStage: 'query_order',
+                fallbackMessage: msg,
+                txRef: initialReturnTxRef,
+              }),
+            ),
+          );
+        }
       })
       .finally(() => {
         if (!cancelled) setVerifying(false);
@@ -205,6 +371,77 @@ export function TelebirrPayPanel({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialReturnTxRef]);
+
+  const activePollTxRef = session?.tx_ref ?? pendingReturnTxRef;
+  const pollDecision = useMemo(
+    () =>
+      evaluateTelebirrPollCycle({
+        activeTxRef: activePollTxRef,
+        verified: Boolean(verifiedReceipt),
+        terminalFailure: pollTerminalFailure,
+        paused: pollPaused,
+        attempts: pollAttempts,
+        maxAttempts: TELEBIRR_MAX_POLL_ATTEMPTS,
+      }),
+    [activePollTxRef, verifiedReceipt, pollTerminalFailure, pollPaused, pollAttempts],
+  );
+
+  useEffect(() => {
+    if (!pollDecision.shouldPoll || !activePollTxRef) return;
+
+    let cancelled = false;
+    const intervalSeconds = Math.max(1, Math.round(TELEBIRR_POLL_INTERVAL_MS / 1000));
+    let secondsRemaining = intervalSeconds;
+
+    const timer = window.setInterval(() => {
+      if (cancelled) return;
+      secondsRemaining -= 1;
+      if (secondsRemaining > 0) {
+        setPollCountdownSec(secondsRemaining);
+        return;
+      }
+
+      secondsRemaining = intervalSeconds;
+      setPollCountdownSec(intervalSeconds);
+      if (inFlightVerifyRef.current) return;
+
+      inFlightVerifyRef.current = true;
+      setPollAttempts((prev) => prev + 1);
+      fetch(`/api/telebirr/verify/${encodeURIComponent(activePollTxRef)}`)
+        .then(async (res) => {
+          const data = await res.json().catch(() => null);
+          if (!cancelled) {
+            applyVerificationPayload(activePollTxRef, res.ok, res.status, data, true);
+          }
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) {
+            const msg =
+              err instanceof Error && err.message
+                ? err.message
+                : 'Network error polling Telebirr verification endpoint.';
+            recordBackendError(
+              extractTelebirrBackendError({
+                resStatus: null,
+                payload: { code: 'POLL_NETWORK_ERROR', message: msg },
+                defaultStage: 'query_order',
+                fallbackMessage: msg,
+                txRef: activePollTxRef,
+              }),
+            );
+          }
+        })
+        .finally(() => {
+          inFlightVerifyRef.current = false;
+        });
+    }, 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollDecision.shouldPoll, activePollTxRef]);
 
   const activePackage = useMemo(
     () => PAYABLE_SERVICES.find((s) => s.id === serviceId) ?? PAYABLE_SERVICES[0],
@@ -263,15 +500,27 @@ export function TelebirrPayPanel({
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.ok || !data?.checkout_url) {
-        const msg = data?.message || 'Telebirr H5 pre-order initialization failed.';
-        setServerError(msg);
-        onStatusToast?.('error', msg);
+        const errEntry = extractTelebirrBackendError({
+          resStatus: res.status,
+          payload: data,
+          defaultStage: 'pre_order',
+          fallbackMessage: `Telebirr H5 pre-order initialization declined (HTTP ${res.status}).`,
+        });
+        recordBackendError(errEntry);
+        const formatted = `[${errEntry.code}] ${errEntry.message}`;
+        setServerError(formatted);
+        onStatusToast?.('error', errEntry.message);
         return;
       }
 
       saveRecentInvoiceContext({ email: email.trim(), txRef: data.tx_ref });
       onTransactionTracked?.(data.tx_ref, email.trim());
       setVerifiedReceipt(null);
+      setPendingReturnTxRef(null);
+      setPollAttempts(0);
+      setPollPaused(false);
+      setPollTerminalFailure(false);
+      setPollCountdownSec(TELEBIRR_POLL_INTERVAL_MS / 1000);
       setSession({
         tx_ref: data.tx_ref,
         amount: Number(data.amount ?? validation.amount),
@@ -283,11 +532,21 @@ export function TelebirrPayPanel({
         receive_code: data.receive_code || null,
         merchant_code_masked: data.merchant_code_masked || config.merchantCodeMasked,
       });
-      onStatusToast?.('success', `Telebirr H5 pre-order ${data.tx_ref} ready.`);
-    } catch {
-      const msg = 'Telebirr payment service is unreachable. Please try again.';
-      setServerError(msg);
-      onStatusToast?.('error', msg);
+      onStatusToast?.('success', `Telebirr H5 pre-order ${data.tx_ref} ready. Auto-verifying every 5s.`);
+    } catch (err: unknown) {
+      const rawMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Network connection failed reaching Telebirr initialization API.';
+      const errEntry = extractTelebirrBackendError({
+        resStatus: null,
+        payload: { code: 'INIT_NETWORK_ERROR', message: rawMsg },
+        defaultStage: 'pre_order',
+        fallbackMessage: rawMsg,
+      });
+      recordBackendError(errEntry);
+      setServerError(`[${errEntry.code}] ${errEntry.message}`);
+      onStatusToast?.('error', errEntry.message);
     } finally {
       setSubmitting(false);
     }
@@ -307,9 +566,16 @@ export function TelebirrPayPanel({
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.ok) {
-        const msg = data?.message || 'Unable to resend PDF invoice email.';
-        setInvoiceNotice(msg);
-        onStatusToast?.('error', msg);
+        const errEntry = extractTelebirrBackendError({
+          resStatus: res.status,
+          payload: data,
+          defaultStage: 'invoice',
+          fallbackMessage: `Unable to resend PDF invoice email (HTTP ${res.status}).`,
+          txRef: verifiedReceipt.tx_ref,
+        });
+        recordBackendError(errEntry);
+        setInvoiceNotice(`[${errEntry.code}] ${errEntry.message}`);
+        onStatusToast?.('error', errEntry.message);
         return;
       }
       setVerifiedReceipt((prev) => (prev ? { ...prev, invoice: data.invoice } : prev));
@@ -319,10 +585,62 @@ export function TelebirrPayPanel({
           : `PDF invoice queued in outbox (${data.invoice.recipient_email}).`;
       setInvoiceNotice(msg);
       onStatusToast?.('success', msg);
-    } catch {
-      setInvoiceNotice('Could not reach invoice dispatch service.');
+    } catch (err: unknown) {
+      const rawMsg = err instanceof Error && err.message ? err.message : 'Could not reach invoice dispatch service.';
+      recordBackendError(
+        extractTelebirrBackendError({
+          resStatus: null,
+          payload: { code: 'INVOICE_NETWORK_ERROR', message: rawMsg },
+          defaultStage: 'invoice',
+          fallbackMessage: rawMsg,
+          txRef: verifiedReceipt.tx_ref,
+        }),
+      );
+      setInvoiceNotice(rawMsg);
     } finally {
       setResendingInvoice(false);
+    }
+  };
+
+  const handleDownloadVerifiedPdf = async (): Promise<void> => {
+    if (!verifiedReceipt || downloadingReceipt) return;
+    setDownloadingReceipt(true);
+    setInvoiceNotice(null);
+    try {
+      const result = await fetchAndDownloadVerifiedPdfReceipt(verifiedReceipt.tx_ref, {
+        fallbackFilename: verifiedReceipt.invoice?.filename || `${verifiedReceipt.tx_ref}.pdf`,
+        pdfUrl: verifiedReceipt.invoice?.pdf_url,
+      });
+      if (result.invoice) {
+        setVerifiedReceipt((prev) =>
+          prev
+            ? {
+                ...prev,
+                invoice: result.invoice as unknown as TelebirrInvoiceMeta,
+              }
+            : prev,
+        );
+      }
+      const msg = `Downloaded ${result.filename} (${Math.max(1, Math.round(result.sizeBytes / 1024))} KB).`;
+      setInvoiceNotice(msg);
+      onStatusToast?.('success', msg);
+    } catch (err: unknown) {
+      const msg = err instanceof Error && err.message ? err.message : 'Unable to download PDF receipt from backend.';
+      const code = err instanceof PdfReceiptDownloadError ? err.code : 'PDF_DOWNLOAD_ERROR';
+      const statusCode = err instanceof PdfReceiptDownloadError ? err.statusCode : null;
+      recordBackendError(
+        extractTelebirrBackendError({
+          resStatus: statusCode,
+          payload: { code, stage: 'invoice', message: msg },
+          defaultStage: 'invoice',
+          fallbackMessage: msg,
+          txRef: verifiedReceipt.tx_ref,
+        }),
+      );
+      setInvoiceNotice(`[${code}] ${msg}`);
+      onStatusToast?.('error', msg);
+    } finally {
+      setDownloadingReceipt(false);
     }
   };
 
@@ -335,12 +653,23 @@ export function TelebirrPayPanel({
             <i className="fa-solid fa-mobile-screen-button" aria-hidden="true" />
             <span>Telebirr Direct H5 Checkout</span>
           </div>
-          <span className={`tb-mode-text ${config.mode}`}>
-            {config.mode === 'live' ? 'Live Merchant Credentials' : 'H5 Sandbox Preview'}
-          </span>
+          <div
+            className={`tb-gateway-status is-${gatewayIndicator.status}`}
+            role="status"
+            aria-live="polite"
+            title={gatewayIndicator.detail}
+            data-testid="telebirr-gateway-status"
+            data-status={gatewayIndicator.status}
+          >
+            <span className={`tb-status-dot is-${gatewayIndicator.status}`} aria-hidden="true" />
+            <strong>{gatewayIndicator.label}</strong>
+            <span className="tb-status-sub">
+              {gatewayIndicator.status === 'live' ? 'Merchant Gateway' : 'Gateway Pending'}
+            </span>
+          </div>
         </div>
         <div className="tb-meta-line">
-          <span>Ethio Telecom Fabric API</span>
+          <span>{gatewayIndicator.detail}</span>
           <span aria-hidden="true">·</span>
           <span>
             {config.merchantConfigured && config.merchantCodeMasked ? (
@@ -381,6 +710,47 @@ export function TelebirrPayPanel({
         </div>
       )}
 
+      {!session &&
+        pendingReturnTxRef &&
+        (pollDecision.reason === 'active' ||
+          pollDecision.reason === 'paused' ||
+          pollDecision.reason === 'max_attempts') && (
+          <div className="tb-poll-bar" role="status" aria-live="polite" data-testid="telebirr-poll-status">
+            <div className="tb-poll-info">
+              <i
+                className={
+                  pollDecision.shouldPoll
+                    ? 'fa-solid fa-arrows-rotate'
+                    : pollDecision.reason === 'paused'
+                      ? 'fa-solid fa-pause'
+                      : 'fa-solid fa-circle-info'
+                }
+                aria-hidden="true"
+              />
+              <span className="tb-tabular">
+                {pollDecision.shouldPoll
+                  ? `Checking ${pendingReturnTxRef} every 5s · Next check in ${pollCountdownSec}s${pollAttempts > 0 ? ` · Checks: ${pollAttempts}` : ''}`
+                  : pollDecision.reason === 'paused'
+                    ? `Automatic 5s status check paused for ${pendingReturnTxRef}.`
+                    : `Automatic status polling timed out for ${pendingReturnTxRef}.`}
+              </span>
+            </div>
+            {(pollDecision.reason === 'active' || pollDecision.reason === 'paused') && (
+              <button
+                type="button"
+                className="tb-poll-toggle"
+                onClick={() => {
+                  setPollPaused((prev) => !prev);
+                  setPollCountdownSec(TELEBIRR_POLL_INTERVAL_MS / 1000);
+                }}
+                data-testid="telebirr-poll-toggle"
+              >
+                {pollPaused ? 'Resume 5s check' : 'Pause'}
+              </button>
+            )}
+          </div>
+        )}
+
       {verifiedReceipt && (
         <div className="chapa-receipt-box" role="status" data-testid="telebirr-verified-receipt">
           <div className="chapa-receipt-top">
@@ -418,14 +788,19 @@ export function TelebirrPayPanel({
               ) : null}
             </div>
             <div className="invoice-status-actions">
-              <a
-                href={verifiedReceipt.invoice?.pdf_url || `/api/invoices/${encodeURIComponent(verifiedReceipt.tx_ref)}/pdf`}
-                download={verifiedReceipt.invoice?.filename || `${verifiedReceipt.tx_ref}.pdf`}
+              <button
+                type="button"
                 className="invoice-pdf-btn"
+                disabled={downloadingReceipt}
+                onClick={() => void handleDownloadVerifiedPdf()}
                 data-testid="telebirr-invoice-download"
               >
-                <i className="fa-solid fa-download" aria-hidden="true" /> Download PDF Invoice
-              </a>
+                <i
+                  className={`fa-solid ${downloadingReceipt ? 'fa-spinner fa-spin' : 'fa-download'}`}
+                  aria-hidden="true"
+                />{' '}
+                {downloadingReceipt ? 'Preparing PDF Receipt…' : 'Download PDF Receipt'}
+              </button>
               <button
                 type="button"
                 className="invoice-resend-btn"
@@ -480,6 +855,43 @@ export function TelebirrPayPanel({
               : 'Open the Telebirr H5 test checkout below to simulate wallet authorization, or verify payment status directly.'}
           </p>
 
+          <div className="tb-poll-bar" role="status" aria-live="polite" data-testid="telebirr-poll-status">
+            <div className="tb-poll-info">
+              <i
+                className={
+                  pollDecision.shouldPoll
+                    ? 'fa-solid fa-arrows-rotate'
+                    : pollDecision.reason === 'paused'
+                      ? 'fa-solid fa-pause'
+                      : 'fa-solid fa-circle-info'
+                }
+                aria-hidden="true"
+              />
+              <span className="tb-tabular">
+                {pollDecision.shouldPoll
+                  ? `Auto-checking verification every 5s · Next check in ${pollCountdownSec}s${pollAttempts > 0 ? ` · Checks: ${pollAttempts}` : ''}`
+                  : pollDecision.reason === 'paused'
+                    ? 'Automatic 5s status check paused.'
+                    : pollDecision.reason === 'max_attempts'
+                      ? 'Automatic status polling timed out after 5 minutes. Use Check Payment Status to verify manually.'
+                      : 'Polling stopped.'}
+              </span>
+            </div>
+            {(pollDecision.reason === 'active' || pollDecision.reason === 'paused') && (
+              <button
+                type="button"
+                className="tb-poll-toggle"
+                onClick={() => {
+                  setPollPaused((prev) => !prev);
+                  setPollCountdownSec(TELEBIRR_POLL_INTERVAL_MS / 1000);
+                }}
+                data-testid="telebirr-poll-toggle"
+              >
+                {pollPaused ? 'Resume 5s check' : 'Pause'}
+              </button>
+            )}
+          </div>
+
           {serverError && (
             <div className="chapa-alert chapa-alert-error" role="alert">
               <i className="fa-solid fa-circle-exclamation" aria-hidden="true" />
@@ -492,6 +904,10 @@ export function TelebirrPayPanel({
               href={session.checkout_url}
               className="btn-primary chapa-proceed-btn"
               data-testid="telebirr-h5-launch"
+              onClick={() => {
+                setPollPaused(false);
+                setPollCountdownSec(TELEBIRR_POLL_INTERVAL_MS / 1000);
+              }}
             >
               <i className="fa-solid fa-lock" aria-hidden="true" /> Open Telebirr H5 Checkout ({formatEtb(session.amount)})
             </a>
@@ -500,7 +916,10 @@ export function TelebirrPayPanel({
                 type="button"
                 className="chapa-secondary-btn"
                 disabled={verifying}
-                onClick={() => void verifyTelebirrTransaction(session.tx_ref, false)}
+                onClick={() => {
+                  setPollCountdownSec(TELEBIRR_POLL_INTERVAL_MS / 1000);
+                  void verifyTelebirrTransaction(session.tx_ref, false);
+                }}
                 data-testid="telebirr-verify-btn"
               >
                 {verifying ? 'Checking…' : 'Check Payment Status'}
@@ -510,8 +929,12 @@ export function TelebirrPayPanel({
                 className="chapa-secondary-btn"
                 onClick={() => {
                   setSession(null);
+                  setPendingReturnTxRef(null);
                   setPendingNotice(null);
                   setServerError(null);
+                  setPollAttempts(0);
+                  setPollPaused(false);
+                  setPollTerminalFailure(false);
                 }}
               >
                 Edit Order
@@ -729,6 +1152,63 @@ export function TelebirrPayPanel({
               : `Pay ${orderSummary.formattedAmount} via Telebirr H5`}
           </button>
         </form>
+      )}
+
+      {errorLogs.length > 0 && (
+        <section
+          className="tb-error-log"
+          aria-label="Telebirr backend error log"
+          data-testid="telebirr-error-log"
+        >
+          <div className="tb-error-log-head">
+            <div className="tb-error-log-title">
+              <i className="fa-solid fa-bug" aria-hidden="true" />
+              <span>Telebirr Backend Error Log</span>
+              <span className="tb-error-count tb-tabular">{errorLogs.length}</span>
+            </div>
+            <button
+              type="button"
+              className="tb-poll-toggle"
+              onClick={() => setErrorLogs([])}
+              data-testid="telebirr-error-log-clear"
+            >
+              Clear Log
+            </button>
+          </div>
+          <ul className="tb-error-log-list">
+            {errorLogs.map((entry) => {
+              const formattedTime = (() => {
+                const d = new Date(entry.timestamp);
+                return Number.isNaN(d.getTime())
+                  ? entry.timestamp
+                  : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+              })();
+              return (
+                <li
+                  key={entry.id}
+                  className="tb-error-log-item"
+                  data-testid="telebirr-error-log-entry"
+                >
+                  <div className="tb-error-log-meta">
+                    <span className="tb-error-stage">{formatTelebirrStageLabel(entry.stage)}</span>
+                    <code className="tb-error-code">{entry.code}</code>
+                    {entry.statusCode ? (
+                      <span className="tb-error-http tb-tabular">HTTP {entry.statusCode}</span>
+                    ) : null}
+                    {entry.txRef ? <code className="tb-error-ref">{entry.txRef}</code> : null}
+                    {entry.repeatCount > 1 ? (
+                      <span className="tb-error-repeat tb-tabular">×{entry.repeatCount}</span>
+                    ) : null}
+                    <time className="tb-error-time tb-tabular" dateTime={entry.timestamp}>
+                      {formattedTime}
+                    </time>
+                  </div>
+                  <p className="tb-error-log-msg">{entry.message}</p>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
     </div>
   );

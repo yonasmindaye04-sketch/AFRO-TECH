@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { fmtDateTime, fmtMoney } from '../api'
 import { PAYMENT_PROVIDERS, type PaymentProviderId } from '../utils/paymentEngine'
-import { saveRecentInvoiceContext } from '../../utils/invoiceHistory'
+import { fetchAndDownloadVerifiedPdfReceipt, saveRecentInvoiceContext } from '../../utils/invoiceHistory'
 import { celebrateVerifiedPayment } from '../../utils/paymentCelebration'
 import '../platform.css'
 
@@ -112,6 +112,7 @@ export default function PublicCheckout(): JSX.Element {
   const [verifyNotice, setVerifyNotice] = useState<string | null>(null)
   const [initState, setInitState] = useState<InitiateState | null>(null)
   const [resendingInvoice, setResendingInvoice] = useState(false)
+  const [downloadingReceipt, setDownloadingReceipt] = useState(false)
   const [invoiceFeedback, setInvoiceFeedback] = useState<string | null>(null)
   const [receiptSig, setReceiptSig] = useState<string | null>(null)
   const payerEmailRef = useRef(payerEmail)
@@ -522,15 +523,34 @@ export default function PublicCheckout(): JSX.Element {
                   )}
 
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <a
-                      href={data.intent.invoice?.pdf_url || `/api/invoices/${encodeURIComponent(data.intent.tx_ref)}/pdf`}
-                      download={data.intent.invoice?.filename || `${data.intent.tx_ref}.pdf`}
+                    <button
+                      type="button"
                       className="pl-btn pl-btn-ghost pl-btn-sm"
-                      style={{ textDecoration: 'none' }}
+                      disabled={downloadingReceipt}
+                      onClick={() => {
+                        if (!data) return
+                        setDownloadingReceipt(true)
+                        setInvoiceFeedback(null)
+                        void fetchAndDownloadVerifiedPdfReceipt(data.intent.tx_ref, {
+                          fallbackFilename: data.intent.invoice?.filename || `${data.intent.tx_ref}.pdf`,
+                          pdfUrl: data.intent.invoice?.pdf_url,
+                        })
+                          .then((res) => {
+                            setInvoiceFeedback(`Downloaded ${res.filename} (${Math.max(1, Math.round(res.sizeBytes / 1024))} KB).`)
+                          })
+                          .catch((err) => {
+                            setInvoiceFeedback(err instanceof Error ? err.message : 'Unable to download PDF receipt.')
+                          })
+                          .finally(() => setDownloadingReceipt(false))
+                      }}
                       data-testid="public-invoice-download"
                     >
-                      <i className="fa-solid fa-download" aria-hidden="true" /> Download PDF Invoice
-                    </a>
+                      <i
+                        className={`fa-solid ${downloadingReceipt ? 'fa-spinner fa-spin' : 'fa-download'}`}
+                        aria-hidden="true"
+                      />{' '}
+                      {downloadingReceipt ? 'Preparing PDF…' : 'Download PDF Receipt'}
+                    </button>
                     <button
                       type="button"
                       className="pl-btn pl-btn-ghost pl-btn-sm"
