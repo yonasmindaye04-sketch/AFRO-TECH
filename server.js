@@ -8,6 +8,12 @@ import fs from 'fs';
 import QRCode from 'qrcode';
 import { sendContactTelegramNotification } from './server/contactTelegram.js';
 import {
+  allocateFefoBatches,
+  enrichBatchCompliance,
+  isBatchExpired,
+  recomputeProductBatchMetrics,
+} from './server/fefoBatchEngine.js';
+import {
   decryptSecret,
   encryptSecret,
   maskSecret,
@@ -44,6 +50,10 @@ import {
   generateInvoicePdfBuffer,
   isValidEmail,
 } from './server/invoiceService.js';
+import {
+  buildProductLabelPayload,
+  generateBarcodeLabelPdfBuffer,
+} from './server/barcodeLabelService.js';
 import {
   getPlatformGatewayEnv,
   initiateGatewayCheckout,
@@ -209,6 +219,40 @@ function syncProductStock(prod, deltaUnits) {
   prod.display_stock = prod.sell_by_pill ? nextUnits * Math.max(1, Number(prod.pills_per_unit || 1)) : nextUnits;
 }
 
+function resolveProductThreshold(store, prod) {
+  const globalRaw = Number(store?.settings?.low_stock_threshold ?? 10);
+  const globalThreshold = Number.isFinite(globalRaw) ? Math.max(0, Math.floor(globalRaw)) : 10;
+  const mode = store?.settings?.low_stock_mode === 'per_product' ? 'per_product' : 'global';
+  if (mode === 'per_product' && prod && prod.low_stock_threshold !== undefined && prod.low_stock_threshold !== null) {
+    const prodRaw = Number(prod.low_stock_threshold);
+    if (Number.isFinite(prodRaw) && prodRaw >= 0) return Math.floor(prodRaw);
+  }
+  return globalThreshold;
+}
+
+function evaluateLowStockProducts(store) {
+  return (store?.products || [])
+    .map((p) => {
+      const stock = Math.max(0, Number(p.stock || 0));
+      const threshold = resolveProductThreshold(store, p);
+      const deficit = threshold > 0 && stock < threshold ? threshold - stock : 0;
+      return {
+        product: p,
+        stock,
+        threshold,
+        deficit,
+        isOutOfStock: threshold > 0 && stock <= 0,
+        isBelowThreshold: threshold > 0 && stock < threshold,
+      };
+    })
+    .filter((entry) => entry.isBelowThreshold)
+    .sort((a, b) => {
+      if (a.isOutOfStock !== b.isOutOfStock) return a.isOutOfStock ? -1 : 1;
+      if (b.deficit !== a.deficit) return b.deficit - a.deficit;
+      return String(a.product.name || '').localeCompare(String(b.product.name || ''));
+    });
+}
+
 function ensureTenantStore(tenantId, businessType = 'pharmacy', tenantName = 'Workspace') {
   if (!tenantData.has(tenantId)) {
     const today = new Date().toISOString().slice(0, 10);
@@ -263,6 +307,9 @@ function ensureTenantStore(tenantId, businessType = 'pharmacy', tenantName = 'Wo
       },
     ];
 
+    const expired14DaysAgo = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+    const in60Days = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+
     const initialBatches = [
       {
         id: 'bat-1',
@@ -286,7 +333,32 @@ function ensureTenantStore(tenantId, businessType = 'pharmacy', tenantName = 'Wo
         cost_price: '310',
         created_at: new Date(Date.now() - 86400000 * 60).toISOString(),
       },
+      {
+        id: 'bat-3',
+        product_id: 'prod-1',
+        product_name: initialProducts[0].name,
+        category: initialProducts[0].category,
+        batch_no: 'AMX-2024-EXP',
+        expiry_date: expired14DaysAgo,
+        quantity: 4,
+        cost_price: '310',
+        created_at: new Date(Date.now() - 86400000 * 400).toISOString(),
+      },
+      {
+        id: 'bat-4',
+        product_id: 'prod-2',
+        product_name: initialProducts[1].name,
+        category: initialProducts[1].category,
+        batch_no: 'PCM-2026-60D',
+        expiry_date: in60Days,
+        quantity: 8,
+        cost_price: '55',
+        created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
+      },
     ];
+    for (const p of initialProducts) {
+      recomputeProductBatchMetrics(p, initialBatches);
+    }
 
     const warehouses = [
       { id: 'wh-1', name: 'Main Store', code: 'MAIN', location: 'Ground Floor', is_default: true, stock_map: { 'prod-1': 36, 'prod-2': 8 } },
@@ -303,6 +375,8 @@ function ensureTenantStore(tenantId, businessType = 'pharmacy', tenantName = 'Wo
         receipt_header: 'Thank you for choosing us!',
         receipt_footer: 'Please keep your receipt.',
         academic_year: '2025/2026',
+        low_stock_threshold: 10,
+        low_stock_mode: 'global',
       },
       products: initialProducts,
       batches: initialBatches,
@@ -2304,7 +2378,15 @@ app.get('/api/v1/tenant/settings', (req, res) => {
 
 app.put('/api/v1/tenant/settings', (req, res) => {
   const { store } = activeCtx(req);
-  store.settings = { ...store.settings, ...(req.body ?? {}) };
+  const incoming = { ...(req.body ?? {}) };
+  if (incoming.low_stock_threshold !== undefined) {
+    const parsed = Number(incoming.low_stock_threshold);
+    incoming.low_stock_threshold = Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 10;
+  }
+  if (incoming.low_stock_mode !== undefined) {
+    incoming.low_stock_mode = incoming.low_stock_mode === 'per_product' ? 'per_product' : 'global';
+  }
+  store.settings = { ...store.settings, ...incoming };
   res.json({ settings: store.settings });
 });
 
@@ -2344,12 +2426,8 @@ app.delete('/api/v1/tenant/custom-fields/:id', (req, res) => {
 });
 
 /* ── Retail / Pharmacy (/api/v1/retail/*) ──────────────────── */
-function enrichBatch(b) {
-  const now = Date.now();
-  const expTs = b.expiry_date ? new Date(b.expiry_date).getTime() : null;
-  const expired = expTs !== null && expTs < now;
-  const expiring_soon = expTs !== null && !expired && expTs <= now + 90 * 86400000;
-  return { ...b, expired, expiring_soon };
+function enrichBatch(b, windowDays = 90) {
+  return enrichBatchCompliance(b, Date.now(), windowDays);
 }
 
 app.get('/api/v1/retail/dashboard', (req, res) => {
@@ -2357,9 +2435,11 @@ app.get('/api/v1/retail/dashboard', (req, res) => {
   const completedSales = store.sales.filter((s) => s.status === 'completed');
   const totalSales = completedSales.reduce((acc, s) => acc + Number(s.total || 0), 0);
   const totalExpenses = store.expenses.reduce((acc, e) => acc + Number(e.amount || 0), 0);
-  const lowStock = store.products
-    .filter((p) => Number(p.stock) <= Number(p.low_stock_threshold))
-    .map((p) => ({ name: p.name, stock: Number(p.stock), threshold: Number(p.low_stock_threshold) }));
+  const lowStock = evaluateLowStockProducts(store).map(({ product, stock, threshold }) => ({
+    name: product.name,
+    stock,
+    threshold,
+  }));
 
   const expiringSoon = store.batches
     .map(enrichBatch)
@@ -2434,14 +2514,12 @@ app.get('/api/v1/retail/reports', (req, res) => {
       retail_value,
       units,
       dead_stock: [],
-      reorder: store.products
-        .filter((p) => p.stock <= p.low_stock_threshold)
-        .map((p) => ({
-          name: p.name,
-          stock: p.stock,
-          threshold: p.low_stock_threshold,
-          suggested: Math.max(10, p.low_stock_threshold * 2 - p.stock),
-        })),
+      reorder: evaluateLowStockProducts(store).map(({ product, stock, threshold }) => ({
+        name: product.name,
+        stock,
+        threshold,
+        suggested: Math.max(10, threshold * 2 - stock),
+      })),
     },
   });
 });
@@ -2542,6 +2620,13 @@ app.delete('/api/v1/reports/presets/:id', (req, res) => {
 
 app.get('/api/v1/retail/products', (req, res) => {
   const { store } = activeCtx(req);
+  for (const prod of store.products) {
+    const loose = Number(prod.loose_pills || 0);
+    recomputeProductBatchMetrics(prod, store.batches);
+    if (prod.sell_by_pill && loose > 0) {
+      prod.display_stock = Number(prod.display_stock || 0) + loose;
+    }
+  }
   res.json({ products: store.products });
 });
 
@@ -2549,13 +2634,52 @@ app.get('/api/v1/retail/products/barcode/:code', (req, res) => {
   const { store } = activeCtx(req);
   const product = store.products.find((p) => p.barcode === req.params.code);
   if (!product) return res.status(404).json({ error: 'No product matches this barcode' });
+  const loose = Number(product.loose_pills || 0);
+  recomputeProductBatchMetrics(product, store.batches);
+  if (product.sell_by_pill && loose > 0) {
+    product.display_stock = Number(product.display_stock || 0) + loose;
+  }
   return res.json({ product });
 });
 
 app.get('/api/v1/retail/products/:id/batches', (req, res) => {
   const { store } = activeCtx(req);
-  const batches = store.batches.filter((b) => b.product_id === req.params.id && b.quantity > 0).map(enrichBatch);
+  const batches = store.batches
+    .filter((b) => b.product_id === req.params.id && b.quantity > 0)
+    .map((b) => enrichBatch(b, 90));
   res.json({ batches });
+});
+
+app.get('/api/v1/retail/products/:id/label.pdf', async (req, res) => {
+  try {
+    const { tenant, store } = activeCtx(req);
+    const product = store.products.find((p) => p.id === req.params.id);
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+    const payload = buildProductLabelPayload(
+      product,
+      {
+        name: store?.settings?.business_name || tenant?.name || 'AFRO Suite',
+        currency: store?.settings?.currency || 'ETB',
+      },
+      {
+        layout: req.query.layout,
+        copies: req.query.copies,
+        includePrice: req.query.price,
+      },
+    );
+    const pdfBuffer = await generateBarcodeLabelPdfBuffer(payload);
+    const disposition = req.query.download === '1' || req.query.download === 'true' ? 'attachment' : 'inline';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${payload.filename}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(pdfBuffer);
+  } catch (err) {
+    console.error('[barcode-label-pdf] Generation error:', err);
+    return res.status(500).json({ error: 'Failed to generate product barcode PDF label' });
+  }
 });
 
 app.post('/api/v1/retail/products', (req, res) => {
@@ -2603,18 +2727,53 @@ app.patch('/api/v1/retail/products/:id', (req, res) => {
   const { store } = activeCtx(req);
   const idx = store.products.findIndex((p) => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Product not found' });
+  const prev = store.products[idx];
   const b = req.body ?? {};
-  store.products[idx] = {
-    ...store.products[idx],
-    name: b.name !== undefined ? String(b.name).trim() : store.products[idx].name,
-    category: b.category !== undefined ? String(b.category).trim() : store.products[idx].category,
-    unit: b.unit !== undefined ? String(b.unit).trim() : store.products[idx].unit,
-    sell_price: b.sell_price !== undefined ? String(b.sell_price) : store.products[idx].sell_price,
-    cost_price: b.cost_price !== undefined ? String(b.cost_price) : store.products[idx].cost_price,
-    low_stock_threshold: b.low_stock_threshold !== undefined ? Number(b.low_stock_threshold) : store.products[idx].low_stock_threshold,
-    barcode: b.barcode !== undefined ? b.barcode : store.products[idx].barcode,
-    custom_values: b.custom_values !== undefined ? b.custom_values : (store.products[idx].custom_values ?? {}),
+  const nextSellByPill = b.sell_by_pill !== undefined ? Boolean(b.sell_by_pill) : Boolean(prev.sell_by_pill);
+  const nextPillsPerUnit =
+    b.pills_per_unit !== undefined ? Math.max(1, Number(b.pills_per_unit) || 1) : Math.max(1, Number(prev.pills_per_unit || 1));
+
+  const updated = {
+    ...prev,
+    name: b.name !== undefined ? String(b.name).trim() : prev.name,
+    category: b.category !== undefined ? String(b.category).trim() : prev.category,
+    unit: b.unit !== undefined ? String(b.unit).trim() : prev.unit,
+    sell_price: b.sell_price !== undefined ? String(b.sell_price) : prev.sell_price,
+    cost_price: b.cost_price !== undefined ? String(b.cost_price) : prev.cost_price,
+    low_stock_threshold: b.low_stock_threshold !== undefined ? Math.max(0, Number(b.low_stock_threshold) || 0) : prev.low_stock_threshold,
+    barcode: b.barcode !== undefined ? b.barcode : prev.barcode,
+    sell_by_pill: nextSellByPill,
+    pills_per_unit: nextPillsPerUnit,
+    default_margin: b.default_margin !== undefined ? String(b.default_margin) : prev.default_margin,
+    custom_values: b.custom_values !== undefined ? b.custom_values : (prev.custom_values ?? {}),
   };
+
+  if (b.stock !== undefined || b.initial_stock !== undefined) {
+    const requestedStock = Math.max(0, Number(b.stock ?? b.initial_stock));
+    const prevStock = Number(prev.stock || 0);
+    if (Number.isFinite(requestedStock)) {
+      const delta = requestedStock - prevStock;
+      syncProductStock(updated, delta);
+      if (delta !== 0) {
+        const defWh = store.warehouses[0];
+        if (defWh) defWh.stock_map[updated.id] = requestedStock;
+        appendStockLedger(store, {
+          voucher_type: 'Stock Adjustment',
+          voucher_no: `EDT-${store.stockLedger.length + 1}`,
+          product: updated,
+          warehouse_id: defWh?.id,
+          qty_change: delta,
+          rate: Number(updated.cost_price || 0),
+        });
+      }
+    }
+  } else {
+    updated.display_stock = updated.sell_by_pill
+      ? Number(updated.stock || 0) * Math.max(1, Number(updated.pills_per_unit || 1))
+      : Number(updated.stock || 0);
+  }
+
+  store.products[idx] = updated;
   res.json({ product: store.products[idx] });
 });
 
@@ -2640,7 +2799,38 @@ app.get('/api/v1/retail/sales', (req, res) => {
 function createSaleInternal(store, user, b) {
   const rawItems = Array.isArray(b.items) ? b.items : [];
   const invoiceNo = `INV-${1001 + store.sales.length}`;
-  const lineItems = rawItems.map((it) => {
+
+  // Pre-validate FEFO batch availability against cloned quantities before mutating stock
+  const stagedBatches = store.batches.map((bat) => ({ ...bat }));
+  const stagedAllocations = new Map();
+
+  for (let idx = 0; idx < rawItems.length; idx += 1) {
+    const it = rawItems[idx];
+    const prod = store.products.find((p) => p.id === it.product_id);
+    if (!prod) continue;
+    const qty = Math.max(1, Number(it.quantity || 1));
+    const soldAsPills = Boolean(it.sold_as_pills ?? prod.sell_by_pill);
+    const pillsPerUnit = Math.max(1, Number(prod.pills_per_unit || 1));
+    let packsNeeded = qty;
+    let nextLoose = Number(prod.loose_pills || 0);
+
+    if (soldAsPills) {
+      const fromLoose = Math.min(nextLoose, qty);
+      const fromPacksPills = qty - fromLoose;
+      packsNeeded = Math.ceil(fromPacksPills / pillsPerUnit);
+      nextLoose = nextLoose - fromLoose + packsNeeded * pillsPerUnit - fromPacksPills;
+    }
+
+    const alloc = allocateFefoBatches(stagedBatches, prod.id, packsNeeded);
+    if (!alloc.ok) {
+      const err = new Error(`${prod.name}: ${alloc.error}`);
+      err.statusCode = 400;
+      throw err;
+    }
+    stagedAllocations.set(idx, { alloc, nextLoose, packsNeeded });
+  }
+
+  const lineItems = rawItems.map((it, idx) => {
     const prod = store.products.find((p) => p.id === it.product_id);
     const qty = Math.max(1, Number(it.quantity || 1));
     const soldAsPills = Boolean(it.sold_as_pills ?? prod?.sell_by_pill);
@@ -2653,25 +2843,57 @@ function createSaleInternal(store, user, b) {
       const baseCost = soldAsPills ? Number(prod.cost_price) / Math.max(1, prod.pills_per_unit) : Number(prod.cost_price);
       unitPrice = baseCost * (1 + Number(it.margin) / 100);
     }
+
+    let batchAllocations = [];
     if (prod) {
-      if (soldAsPills) {
+      const stage = stagedAllocations.get(idx);
+      const packsNeeded = stage?.packsNeeded ?? qty;
+      const realAlloc = allocateFefoBatches(store.batches, prod.id, packsNeeded);
+      batchAllocations = realAlloc.allocations || [];
+
+      if (realAlloc.hasTrackedBatches) {
+        if (soldAsPills) {
+          prod.loose_pills = stage?.nextLoose ?? 0;
+        }
+        recomputeProductBatchMetrics(prod, store.batches);
+        if (soldAsPills && prod.loose_pills > 0) {
+          prod.display_stock = Number(prod.display_stock || 0) + Number(prod.loose_pills || 0);
+        }
+      } else if (soldAsPills) {
         prod.display_stock = Math.max(0, Number(prod.display_stock || 0) - qty);
         prod.stock = Math.floor(prod.display_stock / Math.max(1, prod.pills_per_unit));
         prod.sellable_stock = prod.stock;
       } else {
         syncProductStock(prod, -qty);
       }
+
       const defWh = store.warehouses[0];
-      if (defWh) defWh.stock_map[prod.id] = Math.max(0, Number(defWh.stock_map[prod.id] ?? prod.stock));
-      appendStockLedger(store, {
-        voucher_type: 'POS Sale',
-        voucher_no: invoiceNo,
-        product: prod,
-        warehouse_id: defWh?.id,
-        qty_change: soldAsPills ? -Math.ceil(qty / Math.max(1, prod.pills_per_unit)) : -qty,
-        rate: Number(prod.cost_price || 0),
-      });
+      if (defWh) defWh.stock_map[prod.id] = Math.max(0, Number(prod.stock || 0));
+
+      if (batchAllocations.length > 0) {
+        for (const a of batchAllocations) {
+          appendStockLedger(store, {
+            voucher_type: 'POS Sale',
+            voucher_no: invoiceNo,
+            product: prod,
+            warehouse_id: defWh?.id,
+            batch_no: a.batch_no,
+            qty_change: -a.qty,
+            rate: Number(prod.cost_price || 0),
+          });
+        }
+      } else {
+        appendStockLedger(store, {
+          voucher_type: 'POS Sale',
+          voucher_no: invoiceNo,
+          product: prod,
+          warehouse_id: defWh?.id,
+          qty_change: soldAsPills ? -Math.ceil(qty / Math.max(1, prod.pills_per_unit)) : -qty,
+          rate: Number(prod.cost_price || 0),
+        });
+      }
     }
+
     const lineTotal = unitPrice * qty;
     return {
       product_id: it.product_id,
@@ -2680,6 +2902,7 @@ function createSaleInternal(store, user, b) {
       unit_price: Number(unitPrice.toFixed(2)),
       line_total: Number(lineTotal.toFixed(2)),
       sold_as_pills: soldAsPills,
+      batch_allocations: batchAllocations,
     };
   });
 
@@ -2762,9 +2985,14 @@ function createSaleInternal(store, user, b) {
 }
 
 app.post('/api/v1/retail/sales', (req, res) => {
-  const { user, store } = activeCtx(req);
-  const result = createSaleInternal(store, user, req.body ?? {});
-  res.status(201).json(result);
+  try {
+    const { user, store } = activeCtx(req);
+    const result = createSaleInternal(store, user, req.body ?? {});
+    return res.status(201).json(result);
+  } catch (err) {
+    const status = err?.statusCode || 400;
+    return res.status(status).json({ error: err instanceof Error ? err.message : 'Checkout failed' });
+  }
 });
 
 app.get('/api/v1/retail/returns', (req, res) => {
@@ -2883,6 +3111,7 @@ function createPurchaseInternal(store, user, b) {
         cost_price: String(unitCost),
         created_at: new Date().toISOString(),
       });
+      recomputeProductBatchMetrics(prod, store.batches);
       appendStockLedger(store, {
         voucher_type: 'Purchase Receipt',
         voucher_no: purchaseNo,
@@ -3186,44 +3415,110 @@ app.post('/api/v1/retail/customers/:id/payments', (req, res) => {
   res.status(201).json({ payment, customer: cust });
 });
 
-app.get('/api/v1/retail/expiry', (req, res) => {
-  const { store } = activeCtx(req);
-  const days = Number(req.query.days || 90);
-  const cutoff = Date.now() + days * 86400000;
-  const batches = store.batches
-    .filter((b) => b.quantity > 0 && b.expiry_date && new Date(b.expiry_date).getTime() <= cutoff)
-    .map(enrichBatch);
-  res.json({ batches });
-});
-
-app.post('/api/v1/retail/expiry/:id/write-off', (req, res) => {
-  const { user, store } = activeCtx(req);
-  const bat = store.batches.find((b) => b.id === req.params.id);
-  if (!bat) return res.status(404).json({ error: 'Batch not found' });
+function executeBatchWriteOff(store, user, bat, rawReason, rawNotes = '') {
   const qty = Number(bat.quantity || 0);
+  if (qty <= 0) return null;
   const prod = store.products.find((p) => p.id === bat.product_id);
-  if (prod && qty > 0) {
-    syncProductStock(prod, -qty);
+  const cleanReason = String(rawReason || 'Expired — disposed').trim();
+  const cleanNotes = String(rawNotes || '').trim();
+  const fullReason = cleanNotes ? `${cleanReason} · ${cleanNotes}` : cleanReason;
+  const unitCost = Number(bat.cost_price || prod?.cost_price || 0);
+  const writeOffValue = Number((qty * unitCost).toFixed(2));
+
+  bat.quantity = 0;
+  bat.write_off_reason = fullReason;
+  bat.written_off_at = new Date().toISOString();
+  bat.written_off_by = user.full_name;
+
+  if (prod) {
+    const loose = Number(prod.loose_pills || 0);
+    recomputeProductBatchMetrics(prod, store.batches);
+    if (prod.sell_by_pill && loose > 0) {
+      prod.display_stock = Number(prod.display_stock || 0) + loose;
+    }
+    const defWh = store.warehouses[0];
+    if (defWh) defWh.stock_map[prod.id] = Math.max(0, Number(prod.stock || 0));
+
     appendStockLedger(store, {
       voucher_type: 'Expiry Write-off',
       voucher_no: bat.batch_no,
       product: prod,
+      warehouse_id: defWh?.id,
       batch_no: bat.batch_no,
       qty_change: -qty,
-      rate: Number(bat.cost_price || prod.cost_price || 0),
+      rate: unitCost,
     });
-    store.adjustments.unshift({
+    const adj = {
       id: `adj-${crypto.randomUUID().slice(0, 8)}`,
       product_id: prod.id,
       product_name: prod.name,
       delta: -qty,
-      reason: req.body?.reason || `Expired batch ${bat.batch_no} written off`,
+      reason: `${fullReason} (Batch ${bat.batch_no})`,
       recorded_by: user.full_name,
       created_at: new Date().toISOString(),
-    });
+    };
+    store.adjustments.unshift(adj);
+
+    if (writeOffValue > 0) {
+      appendGlEntry(store, {
+        voucher_type: 'Expiry Write-off',
+        voucher_no: bat.batch_no,
+        account_code: '5100',
+        debit: writeOffValue,
+        credit: 0,
+        party: prod.name,
+        remarks: `${fullReason} — ${qty} ${prod.unit || 'units'}`,
+      });
+      appendGlEntry(store, {
+        voucher_type: 'Expiry Write-off',
+        voucher_no: bat.batch_no,
+        account_code: '1410',
+        debit: 0,
+        credit: writeOffValue,
+        party: prod.name,
+        remarks: `Inventory disposal (${bat.batch_no})`,
+      });
+    }
   }
-  bat.quantity = 0;
-  res.json({ ok: true, batch: bat });
+  return { batch: bat, qty, writeOffValue };
+}
+
+app.get('/api/v1/retail/expiry', (req, res) => {
+  const { store } = activeCtx(req);
+  const days = Math.max(1, Number(req.query.days || 90));
+  const cutoff = Date.now() + days * 86400000;
+  const batches = store.batches
+    .filter((b) => b.quantity > 0 && b.expiry_date && new Date(b.expiry_date).getTime() <= cutoff)
+    .map((b) => enrichBatch(b, days))
+    .sort((a, b) => (a.days_remaining ?? 9999) - (b.days_remaining ?? 9999));
+  res.json({ batches });
+});
+
+app.post('/api/v1/retail/expiry/write-off-expired', (req, res) => {
+  const { tenant, user, store } = activeCtx(req);
+  const now = Date.now();
+  const reason = req.body?.reason || 'Expired — disposed';
+  const notes = req.body?.notes || '';
+  const targets = store.batches.filter((b) => Number(b.quantity || 0) > 0 && isBatchExpired(b, now));
+  const writtenOff = [];
+  for (const bat of targets) {
+    const resEntry = executeBatchWriteOff(store, user, bat, reason, notes);
+    if (resEntry) writtenOff.push(resEntry);
+  }
+  recordAudit(tenant?.name, user?.full_name, 'expiry.bulk_write_off', 'batch', `${writtenOff.length} batches written off`);
+  res.json({ ok: true, count: writtenOff.length, written_off: writtenOff });
+});
+
+app.post('/api/v1/retail/expiry/:id/write-off', (req, res) => {
+  const { tenant, user, store } = activeCtx(req);
+  const bat = store.batches.find((b) => b.id === req.params.id);
+  if (!bat) return res.status(404).json({ error: 'Batch not found' });
+  if (Number(bat.quantity || 0) <= 0) {
+    return res.status(400).json({ error: 'Batch has no remaining quantity to write off' });
+  }
+  const outcome = executeBatchWriteOff(store, user, bat, req.body?.reason, req.body?.notes);
+  recordAudit(tenant?.name, user?.full_name, 'expiry.write_off', 'batch', `${bat.batch_no} (${outcome?.qty ?? 0} units)`);
+  res.json({ ok: true, batch: bat, value_written_off: outcome?.writeOffValue ?? 0 });
 });
 
 app.get('/api/v1/retail/adjustments', (req, res) => res.json({ adjustments: activeCtx(req).store.adjustments }));
@@ -6359,18 +6654,19 @@ app.get('/api/v1/notifications/feed', (req, res) => {
   const alerts = [];
 
   if (bType === 'pharmacy' || bType === 'store') {
-    // Low stock alerts (retail / pharmacy)
-    const lowStock = (store.products || []).filter(
-      (p) => Number(p.stock) <= Number(p.low_stock_threshold ?? 10)
-    );
-    for (const p of lowStock.slice(0, 4)) {
+    // Low stock alerts (retail / pharmacy) — strictly below active user-defined threshold
+    const lowStock = evaluateLowStockProducts(store);
+    for (const { product: p, stock, threshold, deficit, isOutOfStock } of lowStock.slice(0, 8)) {
+      const unitLabel = p.unit || 'pcs';
       alerts.push({
-        id: `low-stock-${p.id}`,
-        title: `Low stock: ${p.name}`,
-        detail: `${p.stock} left (reorder at ${p.low_stock_threshold ?? 10})`,
-        severity: Number(p.stock) === 0 ? 'bad' : 'warn',
+        id: `low-stock-${p.id}-${stock}-${threshold}`,
+        title: isOutOfStock ? `Out of stock: ${p.name}` : `Low stock: ${p.name}`,
+        detail: isOutOfStock
+          ? `0 ${unitLabel} remaining (${deficit} below threshold of ${threshold})`
+          : `${stock} ${unitLabel} remaining (${deficit} below threshold of ${threshold})`,
+        severity: isOutOfStock ? 'bad' : 'warn',
         route: '/app/products',
-        icon: 'fa-solid fa-boxes-stacked',
+        icon: isOutOfStock ? 'fa-solid fa-circle-exclamation' : 'fa-solid fa-triangle-exclamation',
       });
     }
 

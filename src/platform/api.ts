@@ -91,3 +91,11 @@ export const fmtDateTime = (d: string | Date | null | undefined): string => {
   if (!d) return '—'
   return new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
+
+export const NOTIFICATIONS_REFRESH_EVENT = 'afro:notifications-refresh'
+
+export function triggerNotificationsRefresh(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(NOTIFICATIONS_REFRESH_EVENT))
+  }
+}

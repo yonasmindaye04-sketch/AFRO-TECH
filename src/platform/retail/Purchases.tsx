@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { api, fmtDate, fmtMoney } from '../api'
+import { api, fmtDate, fmtMoney, triggerNotificationsRefresh } from '../api'
 import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
 import { DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
@@ -81,6 +81,7 @@ export default function Purchases(): JSX.Element {
       setDiscount('0')
       setTax('0')
       purchases.reload()
+      triggerNotificationsRefresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not record purchase')
     } finally {
@@ -94,6 +95,7 @@ export default function Purchases(): JSX.Element {
     try {
       await api.del(`/retail/purchases/${p.id}?reason=${encodeURIComponent(reason.trim())}`)
       purchases.reload()
+      triggerNotificationsRefresh()
     } catch (err) {
       window.alert(err instanceof Error ? err.message : 'Delete failed')
     }

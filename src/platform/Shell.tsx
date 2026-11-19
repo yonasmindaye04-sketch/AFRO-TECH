@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useTheme } from '../context/useTheme'
-import { api } from './api'
+import { api, NOTIFICATIONS_REFRESH_EVENT } from './api'
 import {
   countUnreadAlerts,
   filterQuickSearchItems,
@@ -148,16 +148,22 @@ export default function Shell({ children }: { children: ReactNode }): JSX.Elemen
   useEffect(() => {
     if (!me) return
     let cancelled = false
-    api
-      .get<{ alerts: WorkspaceAlert[] }>('/notifications/feed')
-      .then((res) => {
-        if (!cancelled) setAlerts(Array.isArray(res.alerts) ? res.alerts : [])
-      })
-      .catch(() => {
-        if (!cancelled) setAlerts([])
-      })
+    const fetchFeed = (): void => {
+      api
+        .get<{ alerts: WorkspaceAlert[] }>('/notifications/feed')
+        .then((res) => {
+          if (!cancelled) setAlerts(Array.isArray(res.alerts) ? res.alerts : [])
+        })
+        .catch(() => {
+          if (!cancelled) setAlerts([])
+        })
+    }
+    fetchFeed()
+    const onRefresh = (): void => fetchFeed()
+    window.addEventListener(NOTIFICATIONS_REFRESH_EVENT, onRefresh)
     return () => {
       cancelled = true
+      window.removeEventListener(NOTIFICATIONS_REFRESH_EVENT, onRefresh)
     }
   }, [me, location.pathname])
 

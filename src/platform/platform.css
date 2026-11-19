@@ -570,7 +570,7 @@ label:has(input[type="radio"]) {
 /* â”€â”€ Attendance / grade grids â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .pl-att-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px dashed var(--border); gap: 12px; }
 .pl-att-row:last-child { border-bottom: none; }
-.pl-seg { display: flex; gap: 4px; background: var(--input); padding: 3px; border-radius: 9px; border: 1px solid var(--border); }
+.pl-seg { display: flex; flex-wrap: wrap; max-width: 100%; gap: 4px; background: var(--input); padding: 3px; border-radius: 9px; border: 1px solid var(--border); }
 .pl-seg button { border: none; background: transparent; color: var(--text-dim); padding: 5px 11px; border-radius: 7px; cursor: pointer; font-size: .78rem; font-weight: 600; }
 .pl-seg button.on { background: var(--accent); color: var(--accent-text, #171307); }
 
@@ -1960,3 +1960,401 @@ label:has(input[type="radio"]) {
 @media (max-width: 640px) {
   .sub-provider-option { min-width: 0; flex: 1 1 calc(50% - 5px); padding: 8px 12px; }
 }
+
+/* ── Inventory Low Stock Monitor & Warning Indicators ──────── */
+.pl-num-cell {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pl-inv-monitor-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+}
+
+.pl-inv-threshold-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pl-inv-threshold-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: .84rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+.pl-inv-threshold-label i {
+  color: var(--accent);
+}
+
+.pl-inv-threshold-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pl-inv-threshold-input {
+  width: 88px !important;
+  padding: 6px 10px !important;
+  font-size: .88rem !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.pl-inv-mode-select {
+  width: auto !important;
+  padding: 6px 10px !important;
+  font-size: .84rem !important;
+}
+
+.pl-inv-threshold-msg {
+  font-size: .78rem;
+  font-weight: 600;
+  color: #059669;
+}
+[data-theme="dark"] .pl-inv-threshold-msg {
+  color: #34d399;
+}
+
+.pl-inv-summary-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.pl-inv-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.pl-inv-metric-val {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.pl-inv-metric-lbl {
+  font-size: .78rem;
+  color: var(--text-dim);
+}
+.pl-inv-metric.is-warn .pl-inv-metric-val { color: #d97706; }
+[data-theme="dark"] .pl-inv-metric.is-warn .pl-inv-metric-val { color: #fbbf24; }
+.pl-inv-metric.is-bad .pl-inv-metric-val { color: #dc2626; }
+[data-theme="dark"] .pl-inv-metric.is-bad .pl-inv-metric-val { color: #f87171; }
+
+.pl-inv-alert-banner {
+  background: rgba(217, 119, 6, .08);
+  border: 1px solid rgba(217, 119, 6, .35);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.pl-inv-alert-banner.has-critical {
+  background: rgba(220, 38, 38, .08);
+  border-color: rgba(220, 38, 38, .35);
+}
+
+.pl-inv-alert-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pl-inv-alert-title-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.pl-inv-alert-title-wrap > i {
+  margin-top: 3px;
+  font-size: 1rem;
+  color: #d97706;
+}
+.pl-inv-alert-banner.has-critical .pl-inv-alert-title-wrap > i {
+  color: #dc2626;
+}
+[data-theme="dark"] .pl-inv-alert-title-wrap > i {
+  color: #fbbf24;
+}
+[data-theme="dark"] .pl-inv-alert-banner.has-critical .pl-inv-alert-title-wrap > i {
+  color: #f87171;
+}
+.pl-inv-alert-title-wrap strong {
+  display: block;
+  font-size: .9rem;
+  color: var(--text);
+}
+.pl-inv-alert-title-wrap small {
+  display: block;
+  font-size: .78rem;
+  color: var(--text-dim);
+  margin-top: 1px;
+}
+
+.pl-inv-alert-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pl-inv-alert-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pl-inv-alert-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  font-size: .8rem;
+}
+.pl-inv-alert-item.severity-warn i { color: #d97706; }
+.pl-inv-alert-item.severity-bad i { color: #dc2626; }
+[data-theme="dark"] .pl-inv-alert-item.severity-warn i { color: #fbbf24; }
+[data-theme="dark"] .pl-inv-alert-item.severity-bad i { color: #f87171; }
+
+.pl-inv-alert-item-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pl-inv-alert-item-qty {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.pl-inv-alert-restock {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: .78rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.pl-inv-alert-restock:hover { text-decoration: underline; }
+.pl-inv-alert-more {
+  display: inline-flex;
+  align-items: center;
+  font-size: .78rem;
+  color: var(--text-dim);
+  padding: 4px 6px;
+}
+
+.pl-stock-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .84rem;
+  line-height: 1.25;
+}
+.pl-stock-indicator > span {
+  display: flex;
+  flex-direction: column;
+}
+.pl-stock-indicator strong {
+  font-size: .83rem;
+  font-weight: 700;
+}
+.pl-stock-indicator small {
+  font-size: .74rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.pl-stock-indicator.is-low i,
+.pl-stock-indicator.is-low strong {
+  color: #d97706;
+}
+.pl-stock-indicator.is-out i,
+.pl-stock-indicator.is-out strong {
+  color: #dc2626;
+}
+.pl-stock-indicator.is-ok i,
+.pl-stock-indicator.is-ok span {
+  color: #059669;
+  font-weight: 600;
+}
+[data-theme="dark"] .pl-stock-indicator.is-low i,
+[data-theme="dark"] .pl-stock-indicator.is-low strong {
+  color: #fbbf24;
+}
+[data-theme="dark"] .pl-stock-indicator.is-out i,
+[data-theme="dark"] .pl-stock-indicator.is-out strong {
+  color: #f87171;
+}
+[data-theme="dark"] .pl-stock-indicator.is-ok i,
+[data-theme="dark"] .pl-stock-indicator.is-ok span {
+  color: #34d399;
+}
+
+.pl-table tbody tr.pl-row-low-stock {
+  background: rgba(217, 119, 6, .045);
+}
+.pl-table tbody tr.pl-row-low-stock:hover {
+  background: rgba(217, 119, 6, .09);
+}
+.pl-table tbody tr.pl-row-out-stock {
+  background: rgba(220, 38, 38, .055);
+}
+.pl-table tbody tr.pl-row-out-stock:hover {
+  background: rgba(220, 38, 38, .1);
+}
+
+@media (max-width: 640px) {
+  .pl-inv-monitor-bar { padding: 12px; gap: 12px; }
+  .pl-inv-threshold-controls { width: 100%; }
+  .pl-inv-summary-group { width: 100%; justify-content: space-between; }
+}
+
+/* ── Product Barcode Label Modal & Physical Sticker Preview ── */
+.pl-label-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pl-label-controls {
+  display: grid;
+  grid-template-columns: 1.5fr 100px auto;
+  gap: 12px;
+  align-items: end;
+}
+.pl-label-checkbox-wrap {
+  padding-bottom: 10px;
+}
+@media (max-width: 640px) {
+  .pl-label-controls {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .pl-label-checkbox-wrap {
+    padding-bottom: 0;
+  }
+}
+
+.pl-label-preview-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 22px 16px;
+  background: var(--input);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.pl-label-sticker {
+  width: 100%;
+  max-width: 280px;
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pl-label-sticker-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: .64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #475569;
+}
+
+.pl-label-sticker-title {
+  font-size: .88rem;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pl-label-svg {
+  width: 100%;
+  height: 54px;
+  display: block;
+  margin-top: 2px;
+}
+
+.pl-label-sticker-code {
+  text-align: center;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: .8rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: #0f172a;
+}
+
+.pl-label-sticker-price {
+  text-align: center;
+  font-size: .84rem;
+  font-weight: 700;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+.pl-label-sku-note {
+  font-size: .78rem;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.pl-label-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+.pl-label-pdf-meta {
+  font-size: .82rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.pl-label-pdf-meta i {
+  color: var(--accent);
+  margin-right: 5px;
+}
+
+.pl-label-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+

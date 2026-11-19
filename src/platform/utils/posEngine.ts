@@ -10,6 +10,8 @@ export interface PosProduct {
   pills_per_unit: number
   default_margin: string
   stock: number
+  sellable_stock?: number
+  expired_qty?: number
   display_stock: number
   low_stock_threshold?: number
 }
@@ -128,7 +130,8 @@ export function round2(n: number): number {
 }
 
 export function getAvailableStock(product: PosProduct): number {
-  return product.sell_by_pill ? Number(product.display_stock || 0) : Number(product.stock || 0)
+  if (product.sell_by_pill) return Number(product.display_stock || 0)
+  return Number(product.sellable_stock ?? product.stock ?? 0)
 }
 
 export function getListUnitPrice(product: PosProduct): number {

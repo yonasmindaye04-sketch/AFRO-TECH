@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { api, fmtDateTime } from '../api'
+import { api, fmtDateTime, triggerNotificationsRefresh } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { exportCsv } from '../utils/csv'
 import { DataTable, EmptyState, Field, Modal, PageHeader, Spinner } from '../ui'
@@ -63,6 +63,7 @@ export default function StockAdjustments(): JSX.Element {
       setForm({ product_id: '', batch_id: '', delta: '', reason: REASONS[0], note: '' })
       setBatches([])
       reload()
+      triggerNotificationsRefresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
     } finally {

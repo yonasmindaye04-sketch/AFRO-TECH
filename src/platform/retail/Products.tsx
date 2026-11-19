@@ -1,8 +1,17 @@
-import { useState, type FormEvent } from 'react'
-import { api } from '../api'
+import { useMemo, useState, type FormEvent } from 'react'
+import { api, triggerNotificationsRefresh } from '../api'
 import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
+import {
+  DEFAULT_LOW_STOCK_THRESHOLD,
+  buildLowStockSignature,
+  collectLowStockSummary,
+  evaluateProductStock,
+  normalizeThreshold,
+  type LowStockMode,
+} from '../utils/lowStockMonitor'
 import { Badge, DataTable, Field, Modal, PageHeader, Spinner } from '../ui'
+import BarcodeLabelModal, { type LabelProduct } from '../ui/BarcodeLabelModal'
 import BarcodeScanner from '../ui/BarcodeScanner'
 import BarcodeScannerDiagnostics from '../ui/BarcodeScannerDiagnostics'
 import { CustomFieldsInputs } from '../components/CustomFieldsInputs'
@@ -26,6 +35,12 @@ interface Product {
   expiring_soon: number
   custom_values?: Record<string, string>
 }
+
+interface TenantSettings {
+  low_stock_threshold?: number
+  low_stock_mode?: LowStockMode
+}
+
 interface FormState {
   name: string
   category: string
@@ -59,20 +74,89 @@ export default function Products(): JSX.Element {
   const isPharmacy = me?.tenant?.business_type === 'pharmacy'
 
   const { data, loading, reload } = useApiData<{ products: Product[] }>('/retail/products')
+  const settingsQ = useApiData<{ settings: TenantSettings }>('/tenant/settings')
+
   const [modal, setModal] = useState<{ open: boolean; editing: Product | null }>({ open: false, editing: null })
   const [form, setForm] = useState<FormState>(EMPTY)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scannerOpen, setScannerOpen] = useState(false)
   const [showDiagnostics, setShowDiagnostics] = useState(false)
+  const [labelProduct, setLabelProduct] = useState<LabelProduct | null>(null)
   const [customValues, setCustomValues] = useState<Record<string, string>>({})
 
+  const [thresholdInput, setThresholdInput] = useState<string | null>(null)
+  const [modeOverride, setModeOverride] = useState<LowStockMode | null>(null)
+  const [thresholdSaving, setThresholdSaving] = useState(false)
+  const [thresholdMsg, setThresholdMsg] = useState<string | null>(null)
+  const [lowStockOnly, setLowStockOnly] = useState(false)
+  const [dismissedSig, setDismissedSig] = useState<string | null>(null)
+
+  const serverThreshold = normalizeThreshold(settingsQ.data?.settings?.low_stock_threshold, DEFAULT_LOW_STOCK_THRESHOLD)
+  const serverMode: LowStockMode = settingsQ.data?.settings?.low_stock_mode === 'per_product' ? 'per_product' : 'global'
+
+  const activeThreshold =
+    thresholdInput !== null ? normalizeThreshold(thresholdInput, serverThreshold) : serverThreshold
+  const activeMode: LowStockMode = modeOverride ?? serverMode
+  const displayedThresholdValue = thresholdInput !== null ? thresholdInput : String(serverThreshold)
+
+  const rows = useMemo(() => data?.products ?? [], [data?.products])
+  const summary = useMemo(
+    () => collectLowStockSummary(rows, activeThreshold, activeMode),
+    [rows, activeThreshold, activeMode]
+  )
+  const alertSignature = useMemo(() => buildLowStockSignature(summary), [summary])
+  const showBanner = summary.alertCount > 0 && dismissedSig !== alertSignature
+
+  const filteredRows = useMemo(() => {
+    if (!lowStockOnly) return rows
+    return rows.filter((p) => evaluateProductStock(p, activeThreshold, activeMode).isBelowThreshold)
+  }, [rows, lowStockOnly, activeThreshold, activeMode])
+
+  const persistThresholdSettings = async (nextThreshold: number, nextMode: LowStockMode): Promise<void> => {
+    setThresholdSaving(true)
+    setThresholdMsg(null)
+    try {
+      await api.put('/tenant/settings', {
+        low_stock_threshold: nextThreshold,
+        low_stock_mode: nextMode,
+      })
+      await settingsQ.reload()
+      setThresholdInput(null)
+      setModeOverride(null)
+      setDismissedSig(null)
+      setThresholdMsg(
+        nextMode === 'global'
+          ? `Saved · Alerting when stock < ${nextThreshold}`
+          : `Saved · Per-product thresholds active (default < ${nextThreshold})`
+      )
+      triggerNotificationsRefresh()
+    } catch (err) {
+      setThresholdMsg(err instanceof Error ? err.message : 'Failed to save threshold')
+    } finally {
+      setThresholdSaving(false)
+    }
+  }
+
+  const handleThresholdSubmit = async (e: FormEvent): Promise<void> => {
+    e.preventDefault()
+    const clean = normalizeThreshold(displayedThresholdValue, serverThreshold)
+    await persistThresholdSettings(clean, activeMode)
+  }
+
+  const handleModeChange = async (nextMode: LowStockMode): Promise<void> => {
+    setModeOverride(nextMode)
+    const clean = normalizeThreshold(displayedThresholdValue, serverThreshold)
+    await persistThresholdSettings(clean, nextMode)
+  }
+
   const openNew = (): void => {
-    setForm(EMPTY)
+    setForm({ ...EMPTY, low_stock_threshold: String(activeThreshold) })
     setCustomValues({})
     setError(null)
     setModal({ open: true, editing: null })
   }
+
   const openEdit = (p: Product): void => {
     setForm({
       name: p.name,
@@ -96,18 +180,20 @@ export default function Products(): JSX.Element {
     e.preventDefault()
     setBusy(true)
     setError(null)
+    const nextStock = Math.max(0, Number(form.initial_stock) || 0)
     const body = {
       name: form.name.trim(),
       category: form.category.trim() || 'General',
       unit: form.unit.trim() || 'pcs',
       sell_price: Number(form.sell_price) || 0,
       cost_price: Number(form.cost_price) || 0,
-      low_stock_threshold: Number(form.low_stock_threshold) || 0,
+      low_stock_threshold: Math.max(0, Number(form.low_stock_threshold) || 0),
       barcode: form.barcode.trim() || null,
       sell_by_pill: isPharmacy ? form.sell_by_pill : false,
       pills_per_unit: isPharmacy && form.sell_by_pill ? Math.max(1, Number(form.pills_per_unit) || 1) : 1,
       default_margin: Number(form.default_margin) || 25,
-      initial_stock: Math.max(0, Number(form.initial_stock) || 0),
+      stock: nextStock,
+      initial_stock: nextStock,
       custom_values: customValues,
     }
     try {
@@ -115,6 +201,7 @@ export default function Products(): JSX.Element {
       else await api.post('/retail/products', body)
       setModal({ open: false, editing: null })
       reload()
+      triggerNotificationsRefresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
     } finally {
@@ -122,13 +209,11 @@ export default function Products(): JSX.Element {
     }
   }
 
-  const rows = data?.products ?? []
-
   return (
     <div>
       <PageHeader
         title="Products"
-        subtitle="Your catalog — stock updates automatically from purchases and sales"
+        subtitle="Inventory Management — automated low stock monitoring & catalog control"
         action={
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <button
@@ -150,17 +235,179 @@ export default function Products(): JSX.Element {
         <BarcodeScannerDiagnostics onClose={() => setShowDiagnostics(false)} />
       )}
 
-      <div className="pl-toolbar">
-        <span style={{ color: 'var(--text-dim)', fontSize: '.85rem' }}>{rows.length} items</span>
-      </div>
+      {/* User-defined low stock threshold control & live inventory summary */}
+      <section className="pl-inv-monitor-bar" aria-label="Low stock threshold monitor">
+        <form className="pl-inv-threshold-form" onSubmit={handleThresholdSubmit}>
+          <label className="pl-inv-threshold-label" htmlFor="inventory-threshold-input">
+            <i className="fa-solid fa-sliders" aria-hidden="true" />
+            <span>Low stock threshold</span>
+          </label>
+          <div className="pl-inv-threshold-controls">
+            <input
+              id="inventory-threshold-input"
+              data-testid="low-stock-threshold-input"
+              className="pl-input pl-inv-threshold-input"
+              type="number"
+              min={0}
+              max={100000}
+              step={1}
+              value={displayedThresholdValue}
+              onChange={(e) => {
+                setThresholdInput(e.target.value)
+                setThresholdMsg(null)
+              }}
+              aria-label="User-defined low stock threshold"
+            />
+            <select
+              className="pl-select pl-inv-mode-select"
+              value={activeMode}
+              onChange={(e) => void handleModeChange(e.target.value === 'per_product' ? 'per_product' : 'global')}
+              aria-label="Threshold evaluation mode"
+              data-testid="low-stock-mode-select"
+            >
+              <option value="global">Apply to all products</option>
+              <option value="per_product">Per-product overrides</option>
+            </select>
+            <button
+              type="submit"
+              className="pl-btn pl-btn-primary pl-btn-sm"
+              disabled={thresholdSaving}
+              data-testid="save-threshold-btn"
+            >
+              {thresholdSaving ? 'Saving…' : 'Apply threshold'}
+            </button>
+          </div>
+          {thresholdMsg && (
+            <span className="pl-inv-threshold-msg" role="status">
+              {thresholdMsg}
+            </span>
+          )}
+        </form>
+
+        <div className="pl-inv-summary-group">
+          <div className="pl-inv-metric">
+            <span className="pl-inv-metric-val">{summary.totalProducts}</span>
+            <span className="pl-inv-metric-lbl">Items</span>
+          </div>
+          <div className={`pl-inv-metric ${summary.lowStockCount > 0 ? 'is-warn' : ''}`}>
+            <span className="pl-inv-metric-val" data-testid="low-stock-count">{summary.lowStockCount}</span>
+            <span className="pl-inv-metric-lbl">Low stock</span>
+          </div>
+          <div className={`pl-inv-metric ${summary.outOfStockCount > 0 ? 'is-bad' : ''}`}>
+            <span className="pl-inv-metric-val" data-testid="out-of-stock-count">{summary.outOfStockCount}</span>
+            <span className="pl-inv-metric-lbl">Out of stock</span>
+          </div>
+          <button
+            type="button"
+            className={`pl-btn pl-btn-sm ${lowStockOnly ? 'pl-btn-primary' : 'pl-btn-ghost'}`}
+            onClick={() => setLowStockOnly((v) => !v)}
+            aria-pressed={lowStockOnly}
+            data-testid="filter-low-stock-btn"
+          >
+            <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" />
+            {lowStockOnly ? `Showing Alerts (${summary.alertCount})` : `Low Stock Only (${summary.alertCount})`}
+          </button>
+        </div>
+      </section>
+
+      {/* Automated Low Stock Notification Banner */}
+      {showBanner && (
+        <section
+          className={`pl-inv-alert-banner ${summary.outOfStockCount > 0 ? 'has-critical' : ''}`}
+          role="alert"
+          aria-live="polite"
+          data-testid="low-stock-notification-banner"
+        >
+          <div className="pl-inv-alert-head">
+            <div className="pl-inv-alert-title-wrap">
+              <i
+                className={summary.outOfStockCount > 0 ? 'fa-solid fa-circle-exclamation' : 'fa-solid fa-triangle-exclamation'}
+                aria-hidden="true"
+              />
+              <div>
+                <strong>
+                  Automated Low Stock Notification · {summary.alertCount} product{summary.alertCount === 1 ? '' : 's'} below threshold
+                </strong>
+                <small>
+                  {activeMode === 'global'
+                    ? `Triggered automatically for quantities strictly below ${activeThreshold} units`
+                    : `Triggered automatically using per-product thresholds (default < ${activeThreshold})`}
+                </small>
+              </div>
+            </div>
+            <div className="pl-inv-alert-actions">
+              <button
+                type="button"
+                className="pl-btn pl-btn-ghost pl-btn-sm"
+                onClick={() => setLowStockOnly((v) => !v)}
+              >
+                {lowStockOnly ? 'Show full catalog' : 'Filter table'}
+              </button>
+              <button
+                type="button"
+                className="pl-icon-btn"
+                onClick={() => setDismissedSig(alertSignature)}
+                aria-label="Dismiss low stock notification"
+                title="Dismiss alert until stock or threshold changes"
+              >
+                <i className="fa-solid fa-xmark" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
+          <ul className="pl-inv-alert-list">
+            {summary.alerts.slice(0, 5).map((alert) => {
+              const targetProduct = rows.find((p) => p.id === alert.productId)
+              return (
+                <li key={alert.id} className={`pl-inv-alert-item severity-${alert.severity}`}>
+                  <span className="pl-inv-alert-item-name">
+                    <i
+                      className={alert.severity === 'bad' ? 'fa-solid fa-circle-exclamation' : 'fa-solid fa-triangle-exclamation'}
+                      aria-hidden="true"
+                    />
+                    <strong>{alert.productName}</strong>
+                  </span>
+                  <span className="pl-inv-alert-item-qty">
+                    {alert.quantity} / {alert.threshold} {alert.unit}
+                  </span>
+                  {targetProduct && (
+                    <button
+                      type="button"
+                      className="pl-inv-alert-restock"
+                      onClick={() => openEdit(targetProduct)}
+                    >
+                      Restock
+                    </button>
+                  )}
+                </li>
+              )
+            })}
+            {summary.alerts.length > 5 && (
+              <li className="pl-inv-alert-more">
+                +{summary.alerts.length - 5} more below threshold
+              </li>
+            )}
+          </ul>
+        </section>
+      )}
 
       {loading ? (
         <Spinner />
       ) : (
         <DataTable
-          rows={rows}
+          rows={filteredRows}
           searchPlaceholder="Search products or barcodes…"
-          empty="No products yet — add your first product or receive stock from a purchase."
+          empty={
+            lowStockOnly
+              ? `No products are currently below the threshold (${activeThreshold} units).`
+              : 'No products yet — add your first product or receive stock from a purchase.'
+          }
+          rowClassName={(p) => {
+            const st = evaluateProductStock(p, activeThreshold, activeMode)
+            if (st.level === 'out_of_stock') return 'pl-row-out-stock'
+            if (st.level === 'low_stock') return 'pl-row-low-stock'
+            return undefined
+          }}
           columns={[
             {
               key: 'name',
@@ -176,36 +423,93 @@ export default function Products(): JSX.Element {
                 </div>
               ),
             },
-            { key: 'price', header: 'Sell price', render: (p) => `${Number(p.sell_price).toFixed(2)} ETB` },
-            { key: 'cost', header: 'Cost', render: (p) => `${Number(p.cost_price).toFixed(2)} ETB` },
+            {
+              key: 'price',
+              header: 'Sell price',
+              render: (p) => <span className="pl-num-cell">{Number(p.sell_price).toFixed(2)} ETB</span>,
+            },
+            {
+              key: 'cost',
+              header: 'Cost',
+              render: (p) => <span className="pl-num-cell">{Number(p.cost_price).toFixed(2)} ETB</span>,
+            },
             {
               key: 'stock',
-              header: 'Stock',
+              header: 'Stock qty',
               render: (p) => {
                 const isPill = isPharmacy && p.sell_by_pill
-                const sellable = isPill ? p.display_stock : p.sellable_stock
-                const unitLabel = isPill ? 'pills' : (p.unit || 'pcs')
+                const status = evaluateProductStock(p, activeThreshold, activeMode)
+                const unitLabel = p.unit || 'pcs'
                 return (
-                  <span>
-                    {p.stock <= p.low_stock_threshold ? (
-                      <Badge tone="bad">
-                        {sellable} {unitLabel} left
-                      </Badge>
-                    ) : (
-                      <>
-                        {sellable} {unitLabel}
-                        {isPill && (
-                          <small style={{ display: 'block', color: 'var(--text-dim)' }}>
-                            ≈ {Math.floor(sellable / p.pills_per_unit)} {p.unit} + {sellable % p.pills_per_unit} pills
-                          </small>
-                        )}
-                      </>
+                  <div>
+                    <span className="pl-num-cell" style={{ fontWeight: status.isBelowThreshold ? 700 : 600 }}>
+                      {status.quantity} {unitLabel}
+                    </span>
+                    {isPill && (
+                      <small style={{ display: 'block', color: 'var(--text-dim)' }}>
+                        {p.display_stock} pills sellable
+                      </small>
                     )}
                     {p.expired_qty > 0 && (
                       <small style={{ display: 'block', color: '#e07a7a' }} title="Expired stock cannot be sold — write it off from the Expiry page">
                         +{p.expired_qty} expired (write off)
                       </small>
                     )}
+                  </div>
+                )
+              },
+            },
+            {
+              key: 'threshold',
+              header: 'Threshold',
+              render: (p) => {
+                const status = evaluateProductStock(p, activeThreshold, activeMode)
+                return (
+                  <span className="pl-num-cell" style={{ color: 'var(--text-dim)' }}>
+                    {status.threshold > 0 ? `< ${status.threshold} ${status.unit}` : 'Off'}
+                  </span>
+                )
+              },
+            },
+            {
+              key: 'status',
+              header: 'Warning status',
+              searchText: (p) => {
+                const st = evaluateProductStock(p, activeThreshold, activeMode)
+                return st.level === 'out_of_stock'
+                  ? 'out of stock warning critical'
+                  : st.level === 'low_stock'
+                    ? 'low stock warning reorder'
+                    : 'in stock healthy'
+              },
+              render: (p) => {
+                const status = evaluateProductStock(p, activeThreshold, activeMode)
+                if (status.level === 'out_of_stock') {
+                  return (
+                    <span className="pl-stock-indicator is-out" data-stock-status="out_of_stock" role="status">
+                      <i className="fa-solid fa-circle-exclamation" aria-hidden="true" />
+                      <span>
+                        <strong>Out of stock</strong>
+                        <small>Short {status.deficit} {status.unit}</small>
+                      </span>
+                    </span>
+                  )
+                }
+                if (status.level === 'low_stock') {
+                  return (
+                    <span className="pl-stock-indicator is-low" data-stock-status="low_stock" role="status">
+                      <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" />
+                      <span>
+                        <strong>Low stock warning</strong>
+                        <small>{status.deficit} {status.unit} below threshold</small>
+                      </span>
+                    </span>
+                  )
+                }
+                return (
+                  <span className="pl-stock-indicator is-ok" data-stock-status="in_stock">
+                    <i className="fa-solid fa-circle-check" aria-hidden="true" />
+                    <span>In stock</span>
                   </span>
                 )
               },
@@ -217,10 +521,21 @@ export default function Products(): JSX.Element {
             },
             {
               key: 'act',
-              header: '',
-              width: '80px',
+              header: 'Actions',
+              width: '175px',
               render: (p) => (
                 <div className="pl-row-actions">
+                  <button
+                    type="button"
+                    className="pl-btn pl-btn-ghost pl-btn-sm"
+                    aria-label={`Print Label for ${p.name}`}
+                    title="Generate printable PDF barcode label"
+                    onClick={() => setLabelProduct(p)}
+                    data-testid={`print-label-${p.id}`}
+                  >
+                    <i className="fa-solid fa-barcode" aria-hidden="true" />
+                    <span>Print Label</span>
+                  </button>
                   <button type="button" className="pl-icon-btn" aria-label={`Edit ${p.name}`} title="Edit product & stock" onClick={() => openEdit(p)}>
                     <i className="fa-solid fa-pen" aria-hidden="true" />
                   </button>
@@ -308,7 +623,14 @@ export default function Products(): JSX.Element {
                 placeholder="0"
               />
             </Field>
-            <Field label="Low stock alert threshold" hint="We warn you when total stock drops to this level">
+            <Field
+              label="Product-specific threshold"
+              hint={
+                activeMode === 'global'
+                  ? `Workspace threshold (${activeThreshold}) applies unless switched to Per-product overrides`
+                  : 'We warn when stock drops strictly below this level'
+              }
+            >
               <input className="pl-input" type="number" min="0" value={form.low_stock_threshold} onChange={(e) => setForm((f) => ({ ...f, low_stock_threshold: e.target.value }))} />
             </Field>
           </div>
@@ -321,6 +643,12 @@ export default function Products(): JSX.Element {
           </div>
         </form>
       </Modal>
+
+      <BarcodeLabelModal
+        product={labelProduct}
+        businessName={me?.tenant?.name || 'AFRO Suite'}
+        onClose={() => setLabelProduct(null)}
+      />
     </div>
   )
 }

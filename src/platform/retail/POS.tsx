@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { api, fmtDateTime, fmtMoney } from '../api'
+import { api, fmtDateTime, fmtMoney, triggerNotificationsRefresh } from '../api'
 import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, EmptyState, Field, Modal, PageHeader, SearchInput, Spinner } from '../ui'
@@ -433,6 +433,7 @@ export default function POS(): JSX.Element {
       setCustomer(DEFAULT_POS_CUSTOMER)
       reload()
       shiftQ.reload()
+      triggerNotificationsRefresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Checkout failed')
     } finally {
@@ -717,6 +718,7 @@ export default function POS(): JSX.Element {
                       </span>
                       <small className={isLow ? 'pl-pos-stock-low' : ''}>
                         {available > 0 ? `${available} ${pillMode ? 'pills' : p.unit}` : 'Out of stock'}
+                        {p.expired_qty && p.expired_qty > 0 ? ` · ${p.expired_qty} exp. blocked` : ''}
                       </small>
                     </div>
                   </button>

@@ -121,12 +121,14 @@ export function DataTable<T>({
   empty,
   searchable = true,
   searchPlaceholder,
+  rowClassName,
 }: {
   columns: Column<T>[]
   rows: T[]
   empty?: string
   searchable?: boolean
   searchPlaceholder?: string
+  rowClassName?: (row: T) => string | undefined
 }): JSX.Element {
   const [searchQuery, setSearchQuery] = useState('')
   const deferredQuery = useDeferredValue(searchQuery)
@@ -170,7 +172,7 @@ export function DataTable<T>({
           <tbody>
             {filteredRows.length > 0 ? (
               filteredRows.map((row, i) => (
-                <tr key={(row as { id?: string }).id ?? i}>
+                <tr key={(row as { id?: string }).id ?? i} className={rowClassName?.(row)}>
                   {columns.map((c) => (
                     <td key={c.key}>{c.render(row)}</td>
                   ))}
