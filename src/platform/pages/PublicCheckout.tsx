@@ -295,6 +295,13 @@ export default function PublicCheckout(): JSX.Element {
       return
     }
 
+    // Validate optional receipt email format when provided
+    const cleanPayerEmail = payerEmail.trim()
+    if (cleanPayerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanPayerEmail)) {
+      setError('Please enter a valid receipt email address or leave it blank.')
+      return
+    }
+
     // Step 1: Initiate real protocol session (Chapa initialize / Telebirr preOrder / M-Pesa STK Push)
     setBusy(true)
     setError(null)
@@ -832,7 +839,11 @@ export default function PublicCheckout(): JSX.Element {
 
                     <div className="pl-field">
                       <label className="pl-field-label" htmlFor="payer-email">
-                        {selectedProv === 'chapa' ? 'Receipt Email (Required by Chapa)' : 'Receipt Email (for PDF Invoice)'}
+                        {selectedProv === 'chapa'
+                          ? 'Receipt Email (Required by Chapa)'
+                          : selectedProv === 'telebirr'
+                            ? 'Send Receipt to Email (Optional)'
+                            : 'Receipt Email (for PDF Invoice)'}
                       </label>
                       <input
                         id="payer-email"

@@ -2,10 +2,13 @@ import {
   formatEtb,
   PAYABLE_SERVICES,
   resolvePayableAmount,
+  validateOptionalReceiptEmail,
   validateServicePaymentForm,
   type PaymentPlanMode,
   type ServicePaymentErrors,
 } from './serviceCheckout';
+
+export { validateOptionalReceiptEmail };
 
 export const TELEBIRR_NOTE_MAX_LEN = 24;
 export const TELEBIRR_GATEWAY_HEARTBEAT_MS = 15000;
@@ -160,7 +163,7 @@ export function buildTelebirrOrderSummary(input: {
 }
 
 /**
- * Validates customer, Telebirr wallet phone, and ETB amount inputs before H5 preOrder initialization.
+ * Validates customer, optional receipt email, Telebirr wallet phone, and ETB amount inputs before H5 preOrder initialization.
  */
 export function validateTelebirrDirectForm(input: {
   serviceId: number;
@@ -173,6 +176,7 @@ export function validateTelebirrDirectForm(input: {
 }): {
   valid: boolean;
   amount: number;
+  receiptEmail: string | null;
   sanitizedNote: string;
   errors: ServicePaymentErrors;
 } {
@@ -190,6 +194,7 @@ export function validateTelebirrDirectForm(input: {
   return {
     valid: base.valid,
     amount: base.amount,
+    receiptEmail: base.receiptEmail,
     sanitizedNote: sanitizeTelebirrOrderNote(input.notes),
     errors: base.errors,
   };

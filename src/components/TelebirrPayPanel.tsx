@@ -20,6 +20,7 @@ import {
   TELEBIRR_NOTE_MAX_LEN,
   TELEBIRR_POLL_INTERVAL_MS,
   TELEBIRR_SESSION_TTL_MS,
+  validateOptionalReceiptEmail,
   validateTelebirrDirectForm,
   type TelebirrErrorLogEntry,
   type TelebirrMerchantConfig,
@@ -525,7 +526,8 @@ export function TelebirrPayPanel({
           paymentPlan,
           amount: validation.amount,
           fullName: fullName.trim(),
-          email: email.trim(),
+          email: validation.receiptEmail ?? '',
+          ...(validation.receiptEmail ? { receiptEmail: validation.receiptEmail } : {}),
           phone: phone.trim(),
           notes: validation.sanitizedNote,
           returnPath,
@@ -546,8 +548,10 @@ export function TelebirrPayPanel({
         return;
       }
 
-      saveRecentInvoiceContext({ email: email.trim(), txRef: data.tx_ref });
-      onTransactionTracked?.(data.tx_ref, email.trim());
+      if (validation.receiptEmail) {
+        saveRecentInvoiceContext({ email: validation.receiptEmail, txRef: data.tx_ref });
+      }
+      onTransactionTracked?.(data.tx_ref, validation.receiptEmail ?? undefined);
       setVerifiedReceipt(null);
       setPendingReturnTxRef(null);
       setPollAttempts(0);
@@ -840,15 +844,17 @@ export function TelebirrPayPanel({
                 />{' '}
                 {downloadingReceipt ? 'Preparing PDF Receipt…' : 'Download PDF Receipt'}
               </button>
-              <button
-                type="button"
-                className="invoice-resend-btn"
-                disabled={resendingInvoice}
-                onClick={() => void handleResendInvoice()}
-              >
-                <i className="fa-solid fa-paper-plane" aria-hidden="true" />{' '}
-                {resendingInvoice ? 'Sending…' : 'Resend Email'}
-              </button>
+              {(verifiedReceipt.invoice?.recipient_email || verifiedReceipt.customer_email) && (
+                <button
+                  type="button"
+                  className="invoice-resend-btn"
+                  disabled={resendingInvoice}
+                  onClick={() => void handleResendInvoice()}
+                >
+                  <i className="fa-solid fa-paper-plane" aria-hidden="true" />{' '}
+                  {resendingInvoice ? 'Sending…' : 'Resend Email'}
+                </button>
+              )}
             </div>
             {invoiceNotice && <p className="invoice-feedback">{invoiceNotice}</p>}
           </div>
@@ -1153,7 +1159,7 @@ export function TelebirrPayPanel({
 
             <div className={`form-group ${errors.email ? 'has-error' : ''}`}>
               <label htmlFor="tb-email">
-                Receipt Email <span className="req">*</span>
+                Send Receipt to Email <span className="chapa-optional">(optional)</span>
               </label>
               <input
                 id="tb-email"
@@ -1161,16 +1167,28 @@ export function TelebirrPayPanel({
                 placeholder="you@company.com"
                 value={email}
                 onChange={(e) => {
-                  setEmail(e.target.value);
+                  const nextVal = e.target.value;
+                  setEmail(nextVal);
                   setErrors((prev) => ({ ...prev, email: undefined }));
                 }}
+                onBlur={() => {
+                  const check = validateOptionalReceiptEmail(email);
+                  if (!check.valid && check.error) {
+                    setErrors((prev) => ({ ...prev, email: check.error }));
+                  }
+                }}
                 aria-invalid={Boolean(errors.email)}
-                aria-describedby={errors.email ? 'tb-email-error' : undefined}
+                aria-describedby={errors.email ? 'tb-email-error' : 'tb-email-hint'}
                 className={errors.email ? 'input-error' : ''}
+                data-testid="telebirr-receipt-email-input"
               />
-              {errors.email && (
+              {errors.email ? (
                 <span id="tb-email-error" className="field-error" role="alert">
                   <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> {errors.email}
+                </span>
+              ) : (
+                <span id="tb-email-hint" className="pgs-field-hint">
+                  Optional — PDF invoice &amp; confirmation receipt are sent here once payment settles.
                 </span>
               )}
             </div>

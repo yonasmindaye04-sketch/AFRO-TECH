@@ -108,7 +108,7 @@ export const GATEWAY_REQUIREMENTS: Record<ServicePaymentProvider, GatewayRequire
     referenceMaxLen: 24,
     requirements: [
       'Active TeleBirr SuperApp or USSD (*127#) wallet account',
-      'Customer Full Name & Receipt Email for order tracking',
+      'Customer Full Name (optional receipt email for PDF invoice)',
       'RSA-signed Pre-Order token redirects directly to TeleBirr H5 checkout',
       'Order title notes are trimmed to 24 characters per Fabric API spec',
     ],
@@ -239,6 +239,31 @@ export function formatMpesaMsisdnPreview(phone: string): string | null {
   return `251${digits}`;
 }
 
+export const EMAIL_FORMAT_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Validates an optional receipt email address: blank is valid (returns null),
+ * while any non-empty value must match a valid email format.
+ */
+export function validateOptionalReceiptEmail(email: string): {
+  valid: boolean;
+  normalized: string | null;
+  error?: string;
+} {
+  const clean = String(email || '').trim();
+  if (!clean) {
+    return { valid: true, normalized: null };
+  }
+  if (!EMAIL_FORMAT_REGEX.test(clean)) {
+    return {
+      valid: false,
+      normalized: null,
+      error: 'Please enter a valid email address (e.g. name@company.com) or leave blank.',
+    };
+  }
+  return { valid: true, normalized: clean };
+}
+
 /**
  * Evaluates gateway-specific pre-checkout readiness items dynamically as user switches gateways or types.
  */
@@ -247,7 +272,20 @@ export function evaluateGatewayReadiness(input: ServicePaymentFormInput): Gatewa
   const spec = GATEWAY_REQUIREMENTS[provider];
   const amount = resolvePayableAmount(input.serviceId, input.paymentPlan, input.customAmount);
   const effectiveAmount = spec.wholeEtbOnly ? Math.round(amount) : amount;
-  const hasIdentity = input.fullName.trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim());
+  const cleanName = input.fullName.trim();
+  const emailCheck = validateOptionalReceiptEmail(input.email);
+  const hasIdentity =
+    provider === 'telebirr'
+      ? cleanName.length >= 2 && emailCheck.valid
+      : cleanName.length >= 2 && EMAIL_FORMAT_REGEX.test(input.email.trim());
+  const identityLabel =
+    provider === 'telebirr'
+      ? !emailCheck.valid
+        ? 'Check receipt email format (or leave blank)'
+        : emailCheck.normalized
+          ? 'Payer name & receipt email ready'
+          : 'Payer name ready (receipt email optional)'
+      : 'Payer name & receipt email';
   const validAmount = Number.isFinite(effectiveAmount) && effectiveAmount >= 50 && effectiveAmount <= 5_000_000;
   const cleanPhone = input.phone.trim();
   const phoneValid =
@@ -258,7 +296,7 @@ export function evaluateGatewayReadiness(input: ServicePaymentFormInput): Gatewa
   const items: GatewayChecklistItem[] = [
     {
       id: 'identity',
-      label: 'Payer name & receipt email',
+      label: identityLabel,
       met: hasIdentity,
       required: true,
     },
@@ -313,12 +351,14 @@ export function evaluateGatewayReadiness(input: ServicePaymentFormInput): Gatewa
 export function validateServicePaymentForm(input: ServicePaymentFormInput): {
   valid: boolean;
   amount: number;
+  receiptEmail: string | null;
   errors: ServicePaymentErrors;
 } {
   const errors: ServicePaymentErrors = {};
   const provider = input.provider ?? 'chapa';
   const cleanName = input.fullName.trim();
-  const cleanEmail = input.email.trim();
+  const emailCheck = validateOptionalReceiptEmail(input.email);
+  const cleanEmail = emailCheck.normalized ?? '';
   const cleanPhone = input.phone.trim();
   const rawAmount = resolvePayableAmount(input.serviceId, input.paymentPlan, input.customAmount);
   const amount = GATEWAY_REQUIREMENTS[provider].wholeEtbOnly ? Math.round(rawAmount) : rawAmount;
@@ -326,7 +366,11 @@ export function validateServicePaymentForm(input: ServicePaymentFormInput): {
   if (cleanName.length < 2) {
     errors.fullName = 'Please enter your full name (min 2 characters).';
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+  if (provider === 'telebirr') {
+    if (!emailCheck.valid && emailCheck.error) {
+      errors.email = emailCheck.error;
+    }
+  } else if (!EMAIL_FORMAT_REGEX.test(input.email.trim())) {
     errors.email = 'Please enter a valid email for your payment receipt.';
   }
   if (provider === 'mpesa') {
@@ -343,6 +387,7 @@ export function validateServicePaymentForm(input: ServicePaymentFormInput): {
   return {
     valid: Object.keys(errors).length === 0,
     amount,
+    receiptEmail: emailCheck.valid ? (cleanEmail || null) : null,
     errors,
   };
 }

@@ -15,6 +15,7 @@ import {
   TELEBIRR_MAX_POLL_ATTEMPTS,
   TELEBIRR_POLL_INTERVAL_MS,
   TELEBIRR_SESSION_TTL_MS,
+  validateOptionalReceiptEmail,
   validateTelebirrDirectForm,
 } from './telebirrCheckout';
 
@@ -91,7 +92,18 @@ test('buildTelebirrOrderSummary formats deposit, full, and custom ETB totals wit
   assert.match(summary.fabricTitlePreview, /40% Deposit.*Phase 1 Bole/);
 });
 
-test('validateTelebirrDirectForm validates required identity, optional wallet phone, and ETB bounds', () => {
+test('validateTelebirrDirectForm validates required identity, optional receipt email, optional wallet phone, and ETB bounds', () => {
+  assert.deepEqual(validateOptionalReceiptEmail(''), { valid: true, normalized: null });
+  assert.deepEqual(validateOptionalReceiptEmail('   '), { valid: true, normalized: null });
+  assert.deepEqual(validateOptionalReceiptEmail('  yonaeld99@gmail.com  '), {
+    valid: true,
+    normalized: 'yonaeld99@gmail.com',
+  });
+  const badOpt = validateOptionalReceiptEmail('not-an-email');
+  assert.equal(badOpt.valid, false);
+  assert.equal(badOpt.normalized, null);
+  assert.ok(badOpt.error);
+
   const bad = validateTelebirrDirectForm({
     serviceId: 1,
     paymentPlan: 'custom',
@@ -107,17 +119,31 @@ test('validateTelebirrDirectForm validates required identity, optional wallet ph
   assert.ok(bad.errors.phone);
   assert.ok(bad.errors.amount);
 
+  const blankEmailOk = validateTelebirrDirectForm({
+    serviceId: 1,
+    paymentPlan: 'deposit',
+    customAmount: '',
+    fullName: 'Abebe Bikila',
+    email: '   ',
+    phone: '',
+    notes: '',
+  });
+  assert.equal(blankEmailOk.valid, true);
+  assert.equal(blankEmailOk.errors.email, undefined);
+  assert.equal(blankEmailOk.receiptEmail, null);
+
   const ok = validateTelebirrDirectForm({
     serviceId: 1,
     paymentPlan: 'deposit',
     customAmount: '',
     fullName: 'Selamawit Tadesse',
-    email: 'selam@afrotech.et',
+    email: '  selam@afrotech.et ',
     phone: '+251 911 223344',
     notes: 'Kickoff Deposit',
   });
   assert.equal(ok.valid, true);
   assert.equal(ok.amount, 4000);
+  assert.equal(ok.receiptEmail, 'selam@afrotech.et');
   assert.equal(ok.sanitizedNote, 'Kickoff Deposit');
 });
 

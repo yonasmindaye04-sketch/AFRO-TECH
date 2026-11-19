@@ -1263,6 +1263,7 @@ app.post('/api/telebirr/initialize', async (req, res) => {
     amount,
     fullName,
     email,
+    receiptEmail,
     phone = '',
     notes = '',
     returnPath = '/services',
@@ -1273,13 +1274,20 @@ app.post('/api/telebirr/initialize', async (req, res) => {
     return res.status(400).json({ ok: false, message: 'Amount must be between 50 and 5,000,000 ETB.' });
   }
   const cleanName = String(fullName || '').trim();
-  const cleanEmail = String(email || '').trim();
+  const rawEmail = String(receiptEmail ?? email ?? '').trim();
   if (cleanName.length < 2) {
     return res.status(400).json({ ok: false, message: 'Please enter your full name.' });
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-    return res.status(400).json({ ok: false, message: 'A valid email address is required.' });
+  if (rawEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+    return res.status(400).json({
+      ok: false,
+      code: 'INVALID_EMAIL',
+      stage: 'validation',
+      status_code: 400,
+      message: 'Please enter a valid receipt email address or leave it blank.',
+    });
   }
+  const cleanEmail = rawEmail || null;
 
   const merchOrderId = generateTelebirrOrderId('TB-SVC');
   const token = `tb-${crypto.randomUUID().slice(0, 10)}`;
@@ -1369,6 +1377,7 @@ app.post('/api/telebirr/initialize', async (req, res) => {
     receive_code: receiveCode,
     amount: numAmount,
     currency: 'ETB',
+    receipt_email: cleanEmail,
     checkout_url: checkoutUrl,
     return_url: returnUrl,
     created_at: createdAt,
@@ -1384,6 +1393,7 @@ app.post('/api/telebirr/qr', async (req, res) => {
     amount,
     fullName = '',
     email = '',
+    receiptEmail,
     phone = '',
     notes = '',
     returnPath = '/services',
@@ -1401,13 +1411,14 @@ app.post('/api/telebirr/qr', async (req, res) => {
 
   const rawName = String(fullName || '').trim();
   const cleanName = rawName.length >= 2 ? rawName : 'Telebirr QR Customer';
-  const rawEmail = String(email || '').trim();
+  const rawEmail = String(receiptEmail ?? email ?? '').trim();
   if (rawEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
     return res.status(400).json({
       ok: false,
       code: 'INVALID_EMAIL',
       stage: 'validation',
-      message: 'Please enter a valid receipt email address.',
+      status_code: 400,
+      message: 'Please enter a valid receipt email address or leave it blank.',
     });
   }
 
@@ -1531,6 +1542,7 @@ app.post('/api/telebirr/qr', async (req, res) => {
     qr_data_url: qrDataUrl,
     amount: numAmount,
     currency: 'ETB',
+    receipt_email: rawEmail || null,
     service_name: String(serviceName).trim(),
     checkout_url: checkoutUrl,
     return_url: returnUrl,
@@ -1667,7 +1679,7 @@ app.post('/api/telebirr/notify', async (req, res) => {
     await dispatchTransactionInvoice(svcOrder, { merchant: DEFAULT_SERVICE_MERCHANT });
     await sendContactTelegramNotification({
       name: `${svcOrder.customer_name} (Telebirr Payment)`,
-      email: svcOrder.customer_email,
+      email: svcOrder.customer_email || '',
       phone: svcOrder.customer_phone || '',
       message: `Telebirr Payment Verified: ${svcOrder.amount} ${svcOrder.currency} for ${svcOrder.description} (Ref: ${txRef})`,
     }).catch(() => null);
@@ -5827,14 +5839,18 @@ app.get('/api/v1/public/pay/:token', async (req, res) => {
 });
 
 app.post('/api/v1/public/pay/:token/initiate', async (req, res) => {
-  const { provider, payer_name = '', payer_email = '', payer_phone = '' } = req.body ?? {};
+  const { provider, payer_name = '', payer_email = '', payer_phone = '', receiptEmail } = req.body ?? {};
   const origin = getRequestOrigin(req);
+  const rawOptEmail = String(receiptEmail ?? payer_email ?? '').trim();
+  if (rawOptEmail && !isValidEmail(rawOptEmail)) {
+    return res.status(400).json({ error: 'Please enter a valid receipt email address or leave it blank.' });
+  }
 
   const svcOrder = findPublicServiceOrderByToken(req.params.token);
   if (svcOrder) {
     const prov = svcOrder.provider || 'chapa';
     if (payer_name.trim()) svcOrder.customer_name = payer_name.trim();
-    if (isValidEmail(payer_email)) svcOrder.customer_email = payer_email.trim();
+    if (rawOptEmail && isValidEmail(rawOptEmail)) svcOrder.customer_email = rawOptEmail;
     if (payer_phone.trim()) svcOrder.customer_phone = payer_phone.trim();
 
     const runtime = resolveGatewayRuntime({ store: null, provider: prov, env: process.env });

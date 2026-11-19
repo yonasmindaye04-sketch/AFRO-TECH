@@ -5,6 +5,7 @@ import {
   PAYABLE_SERVICES,
   resolvePayableAmount,
   SERVICE_PAYMENT_PROVIDERS,
+  validateOptionalReceiptEmail,
   validateServicePaymentForm,
   type PaymentPlanMode,
   type ServicePaymentErrors,
@@ -125,6 +126,7 @@ export function ServicePayNow({
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<ServicePaymentErrors>({});
+  const [qrEmailError, setQrEmailError] = useState<string | undefined>(undefined);
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [session, setSession] = useState<CheckoutSession | null>(null);
@@ -500,25 +502,15 @@ export function ServicePayNow({
       return;
     }
 
-    const trimmedEmail = params.targetEmail.trim();
-    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+    const emailCheck = validateOptionalReceiptEmail(params.targetEmail);
+    const trimmedEmail = emailCheck.normalized ?? '';
+    if (!emailCheck.valid) {
       setQrLoading(false);
-      setQrSession(null);
-      setQrError(
-        extractTelebirrBackendError({
-          resStatus: 400,
-          payload: {
-            code: 'INVALID_EMAIL',
-            stage: 'validation',
-            message: 'Please enter a valid receipt email address or leave it blank.',
-          },
-          defaultStage: 'validation',
-          fallbackMessage: 'Invalid receipt email.',
-        }),
-      );
+      setQrEmailError(emailCheck.error || 'Please enter a valid receipt email address or leave it blank.');
       return;
     }
 
+    setQrEmailError(undefined);
     setQrError(null);
     setQrSignature(sig);
     setTbPollAttempts(0);
@@ -538,6 +530,7 @@ export function ServicePayNow({
           amount: computedAmount,
           fullName: params.targetFullName.trim(),
           email: trimmedEmail,
+          ...(trimmedEmail ? { receiptEmail: trimmedEmail } : {}),
           phone: phone.trim(),
           notes: params.targetNotes.trim(),
           returnPath,
@@ -736,6 +729,7 @@ export function ServicePayNow({
     setErrors({});
     setSubmitting(true);
     try {
+      const submittedEmail = validation.receiptEmail ?? '';
       const res = await fetch(activeProvider.initEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -745,7 +739,8 @@ export function ServicePayNow({
           paymentPlan,
           amount: validation.amount,
           fullName: fullName.trim(),
-          email: email.trim(),
+          email: submittedEmail,
+          ...(submittedEmail ? { receiptEmail: submittedEmail } : {}),
           phone: phone.trim(),
           notes: notes.trim(),
           returnPath,
@@ -765,7 +760,9 @@ export function ServicePayNow({
         return;
       }
 
-      saveRecentInvoiceContext({ email: email.trim(), txRef: data.tx_ref });
+      if (submittedEmail) {
+        saveRecentInvoiceContext({ email: submittedEmail, txRef: data.tx_ref });
+      }
       setTrackedRefs((prev) => (prev.includes(data.tx_ref) ? prev : [data.tx_ref, ...prev]));
       setTbPollAttempts(0);
       setTbPollPaused(false);
@@ -1142,17 +1139,40 @@ export function ServicePayNow({
                       onChange={(e) => setFullName(e.target.value)}
                     />
                   </div>
-                  <div className="form-group">
+                  <div className={`form-group ${qrEmailError ? 'has-error' : ''}`}>
                     <label htmlFor="qr-email">
-                      Receipt Email <span className="chapa-optional">(for PDF invoice)</span>
+                      Send Receipt to Email <span className="chapa-optional">(optional)</span>
                     </label>
                     <input
                       id="qr-email"
                       type="email"
                       placeholder="you@company.com"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setQrEmailError(undefined);
+                        setErrors((prev) => ({ ...prev, email: undefined }));
+                      }}
+                      onBlur={() => {
+                        const check = validateOptionalReceiptEmail(email);
+                        if (!check.valid && check.error) {
+                          setQrEmailError(check.error);
+                        }
+                      }}
+                      aria-invalid={Boolean(qrEmailError)}
+                      aria-describedby={qrEmailError ? 'qr-email-error' : 'qr-email-hint'}
+                      className={qrEmailError ? 'input-error' : ''}
+                      data-testid="qr-receipt-email-input"
                     />
+                    {qrEmailError ? (
+                      <span id="qr-email-error" className="field-error" role="alert">
+                        <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> {qrEmailError}
+                      </span>
+                    ) : (
+                      <span id="qr-email-hint" className="pgs-field-hint">
+                        Optional — PDF invoice will be emailed here once payment is confirmed.
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1240,16 +1260,18 @@ export function ServicePayNow({
                 />{' '}
                 {downloadingReceipt ? 'Preparing PDF Receipt…' : 'Download PDF Receipt'}
               </button>
-              <button
-                type="button"
-                className="invoice-resend-btn"
-                disabled={resendingInvoice}
-                onClick={() => void handleResendInvoice()}
-                data-testid="invoice-resend-btn"
-              >
-                <i className="fa-solid fa-paper-plane" aria-hidden="true" />{' '}
-                {resendingInvoice ? 'Sending…' : 'Resend Email'}
-              </button>
+              {(verifiedReceipt.invoice?.recipient_email || verifiedReceipt.customer_email) && (
+                <button
+                  type="button"
+                  className="invoice-resend-btn"
+                  disabled={resendingInvoice}
+                  onClick={() => void handleResendInvoice()}
+                  data-testid="invoice-resend-btn"
+                >
+                  <i className="fa-solid fa-paper-plane" aria-hidden="true" />{' '}
+                  {resendingInvoice ? 'Sending…' : 'Resend Email'}
+                </button>
+              )}
             </div>
             {invoiceNotice && <p className="invoice-feedback">{invoiceNotice}</p>}
           </div>
@@ -1526,26 +1548,48 @@ export function ServicePayNow({
 
             <div className={`form-group ${errors.email ? 'has-error' : ''}`}>
               <label htmlFor="pay-email">
-                Receipt Email <span className="req">*</span>
+                {provider === 'telebirr' ? (
+                  <>
+                    Send Receipt to Email <span className="chapa-optional">(optional)</span>
+                  </>
+                ) : (
+                  <>
+                    Receipt Email <span className="req">*</span>
+                  </>
+                )}
               </label>
               <input
                 id="pay-email"
                 type="email"
+                required={provider !== 'telebirr'}
                 placeholder="you@company.com"
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
                   setErrors((prev) => ({ ...prev, email: undefined }));
                 }}
+                onBlur={() => {
+                  if (provider === 'telebirr') {
+                    const check = validateOptionalReceiptEmail(email);
+                    if (!check.valid && check.error) {
+                      setErrors((prev) => ({ ...prev, email: check.error }));
+                    }
+                  }
+                }}
                 aria-invalid={Boolean(errors.email)}
-                aria-describedby={errors.email ? 'pay-email-error' : undefined}
+                aria-describedby={errors.email ? 'pay-email-error' : provider === 'telebirr' ? 'pay-email-hint' : undefined}
                 className={errors.email ? 'input-error' : ''}
+                data-testid="service-receipt-email-input"
               />
-              {errors.email && (
+              {errors.email ? (
                 <span id="pay-email-error" className="field-error" role="alert">
                   <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> {errors.email}
                 </span>
-              )}
+              ) : provider === 'telebirr' ? (
+                <span id="pay-email-hint" className="pgs-field-hint">
+                  Optional — PDF receipt is sent here automatically once Telebirr confirms payment.
+                </span>
+              ) : null}
             </div>
           </div>
 
@@ -1553,7 +1597,7 @@ export function ServicePayNow({
             provider={provider}
             onSelectProvider={(nextProvider) => {
               setProvider(nextProvider);
-              setErrors((prev) => ({ ...prev, phone: undefined }));
+              setErrors((prev) => ({ ...prev, phone: undefined, email: undefined }));
               setServerError(null);
               const maxLen = GATEWAY_REQUIREMENTS[nextProvider].referenceMaxLen;
               if (notes.length > maxLen) {

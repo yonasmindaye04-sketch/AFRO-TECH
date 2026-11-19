@@ -3,6 +3,7 @@ import { fmtDate, fmtMoney, api } from '../api'
 import { useApiData } from '../hooks/useApiData'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { Badge, DataTable, EmptyState, PageHeader, SearchInput, StatCard } from '../ui'
+import BarcodeScannerDiagnostics from '../ui/BarcodeScannerDiagnostics'
 
 interface TenantRow {
   id: string
@@ -46,6 +47,7 @@ const statusTone = (s: TenantRow['status']): 'good' | 'warn' | 'bad' | 'neutral'
 export default function AdminPanel(): JSX.Element {
   const [search, setSearch] = useState('')
   const [showAudit, setShowAudit] = useState(false)
+  const [showScannerDiag, setShowScannerDiag] = useState(false)
   const debouncedSearch = useDebouncedValue(search, 300)
   const statsQ = useApiData<AdminStats>('/admin/stats')
   const tenantsQ = useApiData<{ tenants: TenantRow[]; total: number }>(`/admin/tenants?search=${encodeURIComponent(debouncedSearch)}&limit=100`)
@@ -114,10 +116,24 @@ export default function AdminPanel(): JSX.Element {
           ariaLabel="Search companies"
         />
         <span style={{ color: 'var(--text-dim)', fontSize: '.85rem' }}>{tenantsQ.data?.total ?? 0} companies</span>
-        <button type="button" className="pl-btn pl-btn-ghost pl-btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setShowAudit((v) => !v)}>
-          <i className="fa-solid fa-clipboard-list" aria-hidden="true" /> {showAudit ? 'Hide audit log' : 'Platform audit log'}
-        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className={`pl-btn ${showScannerDiag ? 'pl-btn-primary' : 'pl-btn-ghost'} pl-btn-sm`}
+            onClick={() => setShowScannerDiag((v) => !v)}
+          >
+            <i className="fa-solid fa-camera-retro" aria-hidden="true" />{' '}
+            {showScannerDiag ? 'Hide Scanner Diagnostics' : 'Scanner Diagnostics'}
+          </button>
+          <button type="button" className="pl-btn pl-btn-ghost pl-btn-sm" onClick={() => setShowAudit((v) => !v)}>
+            <i className="fa-solid fa-clipboard-list" aria-hidden="true" /> {showAudit ? 'Hide audit log' : 'Platform audit log'}
+          </button>
+        </div>
       </div>
+
+      {showScannerDiag && (
+        <BarcodeScannerDiagnostics enableProductLookup={false} onClose={() => setShowScannerDiag(false)} />
+      )}
 
       {showAudit && (
         <div className="pl-card" style={{ maxHeight: 420, overflowY: 'auto' }}>

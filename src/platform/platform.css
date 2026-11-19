@@ -304,6 +304,7 @@
 .pl-card h2 { font-size: 1.02rem; font-family: 'Space Grotesk', sans-serif; margin-bottom: 14px; }
 .pl-cols-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
 .pl-cols-3 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; align-items: start; }
+.pl-cols-2 > *, .pl-cols-3 > * { min-width: 0; }
 @media (max-width: 900px) { .pl-cols-2, .pl-cols-3 { grid-template-columns: 1fr; } }
 
 /* â”€â”€ Table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */

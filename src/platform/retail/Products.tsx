@@ -4,6 +4,7 @@ import { useAuth } from '../AuthContext'
 import { useApiData } from '../hooks/useApiData'
 import { Badge, DataTable, Field, Modal, PageHeader, Spinner } from '../ui'
 import BarcodeScanner from '../ui/BarcodeScanner'
+import BarcodeScannerDiagnostics from '../ui/BarcodeScannerDiagnostics'
 import { CustomFieldsInputs } from '../components/CustomFieldsInputs'
 
 interface Product {
@@ -63,6 +64,7 @@ export default function Products(): JSX.Element {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scannerOpen, setScannerOpen] = useState(false)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
   const [customValues, setCustomValues] = useState<Record<string, string>>({})
 
   const openNew = (): void => {
@@ -128,11 +130,26 @@ export default function Products(): JSX.Element {
         title="Products"
         subtitle="Your catalog — stock updates automatically from purchases and sales"
         action={
-          <button type="button" className="pl-btn pl-btn-primary" onClick={openNew}>
-            <i className="fa-solid fa-plus" aria-hidden="true" /> Add product
-          </button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className={`pl-btn ${showDiagnostics ? 'pl-btn-primary' : 'pl-btn-ghost'}`}
+              onClick={() => setShowDiagnostics((v) => !v)}
+            >
+              <i className="fa-solid fa-camera-retro" aria-hidden="true" />{' '}
+              {showDiagnostics ? 'Hide Scanner Diagnostics' : 'Scanner Diagnostics'}
+            </button>
+            <button type="button" className="pl-btn pl-btn-primary" onClick={openNew}>
+              <i className="fa-solid fa-plus" aria-hidden="true" /> Add product
+            </button>
+          </div>
         }
       />
+
+      {showDiagnostics && (
+        <BarcodeScannerDiagnostics onClose={() => setShowDiagnostics(false)} />
+      )}
+
       <div className="pl-toolbar">
         <span style={{ color: 'var(--text-dim)', fontSize: '.85rem' }}>{rows.length} items</span>
       </div>
@@ -142,17 +159,20 @@ export default function Products(): JSX.Element {
       ) : (
         <DataTable
           rows={rows}
-          searchPlaceholder="Search products…"
+          searchPlaceholder="Search products or barcodes…"
           empty="No products yet — add your first product or receive stock from a purchase."
           columns={[
             {
               key: 'name',
               header: 'Product',
-              searchText: (p) => `${p.name} ${p.category}`,
+              searchText: (p) => `${p.name} ${p.category} ${p.barcode ?? ''}`,
               render: (p) => (
                 <div>
                   <strong>{p.name}</strong>
-                  <small style={{ display: 'block', color: 'var(--text-dim)' }}>{p.category}</small>
+                  <small style={{ display: 'block', color: 'var(--text-dim)' }}>
+                    {p.category}
+                    {p.barcode ? ` · ${p.barcode}` : ''}
+                  </small>
                 </div>
               ),
             },

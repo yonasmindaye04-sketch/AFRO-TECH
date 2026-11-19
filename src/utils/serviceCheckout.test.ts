@@ -124,3 +124,63 @@ test('GATEWAY_REQUIREMENTS and evaluateGatewayReadiness reflect provider-specifi
   assert.equal(mpesaReady.every((item) => item.met), true);
   assert.ok(mpesaReady.find((item) => item.id === 'phone')?.label.includes('251711223344'));
 });
+
+test('Telebirr provider allows blank receipt email while rejecting malformed email format; Chapa still requires email', () => {
+  const telebirrBlankOk = validateServicePaymentForm({
+    provider: 'telebirr',
+    serviceId: 1,
+    paymentPlan: 'deposit',
+    customAmount: '',
+    fullName: 'Abebe Bikila',
+    email: '',
+    phone: '',
+  });
+  assert.equal(telebirrBlankOk.valid, true);
+  assert.equal(telebirrBlankOk.receiptEmail, null);
+
+  const telebirrBadEmail = validateServicePaymentForm({
+    provider: 'telebirr',
+    serviceId: 1,
+    paymentPlan: 'deposit',
+    customAmount: '',
+    fullName: 'Abebe Bikila',
+    email: 'bad@',
+    phone: '',
+  });
+  assert.equal(telebirrBadEmail.valid, false);
+  assert.ok(telebirrBadEmail.errors.email);
+
+  const chapaBlankRejected = validateServicePaymentForm({
+    provider: 'chapa',
+    serviceId: 1,
+    paymentPlan: 'deposit',
+    customAmount: '',
+    fullName: 'Abebe Bikila',
+    email: '',
+    phone: '',
+  });
+  assert.equal(chapaBlankRejected.valid, false);
+  assert.ok(chapaBlankRejected.errors.email);
+
+  const readinessBlank = evaluateGatewayReadiness({
+    provider: 'telebirr',
+    serviceId: 1,
+    paymentPlan: 'deposit',
+    customAmount: '',
+    fullName: 'Abebe Bikila',
+    email: '',
+    phone: '',
+  });
+  assert.equal(readinessBlank.find((item) => item.id === 'identity')?.met, true);
+
+  const readinessMalformed = evaluateGatewayReadiness({
+    provider: 'telebirr',
+    serviceId: 1,
+    paymentPlan: 'deposit',
+    customAmount: '',
+    fullName: 'Abebe Bikila',
+    email: 'invalid-email',
+    phone: '',
+  });
+  assert.equal(readinessMalformed.find((item) => item.id === 'identity')?.met, false);
+});
